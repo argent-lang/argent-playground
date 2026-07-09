@@ -1,0 +1,10 @@
+[package]
+name = "argent-playground"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94.0"
+
+[dependencies]
+argent = { path = "../argent" }
+argent-runtime = { path = "../argent/crates/argent-runtime" }
+kaspa-consensus-core = { git = "https://github.com/kaspanet/rusty-kaspa", tag = "v2.0.1" }
