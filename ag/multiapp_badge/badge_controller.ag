@@ -1,0 +1,44 @@
+import "./badge_asset.ag";
+
+state ControllerState {
+    int minted;
+}
+
+actor Controller owns ControllerState {
+    entry mint(asset_id: covid, amount: int)
+    observes asset by asset_id {
+        inputs {
+            badge: Badge;
+        }
+
+        outputs {
+            badge: Badge;
+        }
+    }
+    emits {
+        controller: Controller;
+    } {
+        BadgeState prev_badge = asset.inputs.badge.state;
+        require(prev_badge.controller_id == self.covenant_id);
+        require(amount > 0);
+
+        BadgeState next_badge = {
+            controller_id: self.covenant_id,
+            balance: prev_badge.balance + amount,
+        };
+
+        require asset.outputs become {
+            badge <- Badge(next_badge);
+        };
+
+        ControllerState next_controller = {
+            minted: minted + amount,
+        };
+
+        become controller <- Controller(next_controller);
+    }
+}
+
+app BadgeController {
+    actor Controller;
+}
