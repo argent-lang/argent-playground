@@ -27,6 +27,11 @@ src/bin/two_actor_exchange.rs
   builds `build/ping_pong`
   creates and executes Ping::send and Pong::reply txs
 
+src/bin/dynamic_actor_choice.rs
+  inline Router/Alpha/Beta `.ag` app
+  builds `build/dynamic_actor_choice`
+  creates Router::choose txs for two runtime-selected targets
+
 build/
   generated artifacts and Silverscript output
 ```
@@ -36,4 +41,5 @@ Run the first demo:
 ```bash
 cargo run --bin basic_counter
 cargo run --bin two_actor_exchange
+cargo run --bin dynamic_actor_choice
 ```
