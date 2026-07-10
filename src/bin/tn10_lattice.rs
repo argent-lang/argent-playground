@@ -18,7 +18,7 @@ use kaspa_consensus_core::Hash;
 use kaspa_consensus_core::hashing::sighash::{SigHashReusedValuesUnsync, calc_schnorr_signature_hash};
 use kaspa_consensus_core::hashing::sighash_type::SIG_HASH_ALL;
 use kaspa_consensus_core::tx::{
-    GenesisCovenantGroup, MutableTransaction, Transaction, TransactionOutpoint, TransactionOutput, UtxoEntry,
+    GenesisCovenantGroup, MutableTransaction, Transaction, TransactionInput, TransactionOutpoint, TransactionOutput, UtxoEntry,
 };
 use kaspa_rpc_core::api::rpc::RpcApi;
 use kaspa_txscript::pay_to_address_script;
@@ -39,8 +39,18 @@ const EMPTY_SENTINEL: [u8; 32] = [0x00; 32];
 
 // KIP-9 storage mass punishes small outputs; keep every output >= 1 TKAS.
 const COVENANT_VALUE: u64 = 100_000_000; // 1 TKAS
-const FEE: u64 = 5_000_000; // 0.05 TKAS, generous for ~14KB txs
+const FEE: u64 = 15_000_000; // 0.15 TKAS — compute mass is priced at 100 sompi/gram
 const MIN_FUNDING: u64 = 2 * COVENANT_VALUE + 2 * COVENANT_VALUE + 4 * FEE;
+
+// Toccata v1 inputs commit a compute budget (1 unit = 10,000 script units).
+// A schnorr sig verification costs 100,000 units => budget 10; covenant
+// P2SH scripts carry no sigops, so a modest budget covers their opcodes.
+const P2PK_BUDGET: u16 = 12;
+const COVENANT_BUDGET: u16 = 400;
+
+fn input_with_budget(outpoint: TransactionOutpoint, sigscript: Vec<u8>, budget: u16) -> TransactionInput {
+    TransactionInput::new_with_compute_budget(outpoint, sigscript, 0, budget)
+}
 
 fn load_or_create_keypair() -> PlaygroundResult<Keypair> {
     let secp = Secp256k1::new();
@@ -183,7 +193,7 @@ async fn main() -> PlaygroundResult<()> {
     let cell_initial = cell_state(40, empty_covid, EMPTY_SENTINEL.to_vec(), EMPTY_SENTINEL);
     let change_1 = funding_entry.amount - COVENANT_VALUE - FEE;
     let mut world_tx = TxBuilder::transaction(
-        vec![TxBuilder::transaction_input(funding_outpoint, Vec::new())],
+        vec![input_with_budget(funding_outpoint, Vec::new(), P2PK_BUDGET)],
         vec![
             builder.genesis_output("Cell", cell_initial.clone(), COVENANT_VALUE)?,
             TransactionOutput::new(change_1, change_spk.clone()),
@@ -208,7 +218,7 @@ async fn main() -> PlaygroundResult<()> {
     };
     let change_2 = change_1 - COVENANT_VALUE - FEE;
     let mut agent_tx = TxBuilder::transaction(
-        vec![TxBuilder::transaction_input(change_1_outpoint, Vec::new())],
+        vec![input_with_budget(change_1_outpoint, Vec::new(), P2PK_BUDGET)],
         vec![
             builder.genesis_output_in_app("open_lattice_agent", "Agent", agent_initial.clone(), COVENANT_VALUE)?,
             TransactionOutput::new(change_2, change_spk.clone()),
@@ -251,8 +261,8 @@ async fn main() -> PlaygroundResult<()> {
     )?;
     let mut attach_tx = TxBuilder::transaction(
         vec![
-            TxBuilder::transaction_input(cell_root.outpoint, cell_sig),
-            TxBuilder::transaction_input(agent_root.outpoint, agent_sig),
+            input_with_budget(cell_root.outpoint, cell_sig, COVENANT_BUDGET),
+            input_with_budget(agent_root.outpoint, agent_sig, COVENANT_BUDGET),
         ],
         attach_outputs,
     );
@@ -304,8 +314,8 @@ async fn main() -> PlaygroundResult<()> {
         builder.p2sh_signature_script_in_app("open_lattice_agent", "Agent", "step", agent_prev, args![agent_next])?;
     let mut harvest_tx = TxBuilder::transaction(
         vec![
-            TxBuilder::transaction_input(TransactionOutpoint::new(attach_tx.id(), 0), cell_sig),
-            TxBuilder::transaction_input(TransactionOutpoint::new(attach_tx.id(), 1), agent_sig),
+            input_with_budget(TransactionOutpoint::new(attach_tx.id(), 0), cell_sig, COVENANT_BUDGET),
+            input_with_budget(TransactionOutpoint::new(attach_tx.id(), 1), agent_sig, COVENANT_BUDGET),
         ],
         harvest_outputs,
     );
