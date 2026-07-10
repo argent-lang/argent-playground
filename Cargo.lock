@@ -141,12 +141,14 @@ version = "0.1.0"
 dependencies = [
  "argent",
  "argent-runtime",
+ "futures",
  "kaspa-addresses",
  "kaspa-consensus-core",
  "kaspa-rpc-core",
  "kaspa-txscript",
  "kaspa-wrpc-client",
  "secp256k1",
+ "serde_json",
  "tokio",
 ]
 
