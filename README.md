@@ -43,10 +43,13 @@ src/bin/multiapp_badge.rs
 src/bin/open_lattice.rs
   file-backed open-agent game apps under `ag/open_lattice`
   builds `build/open_lattice`
-  Season 0 physics for the Open Lattice game: genesis-launches an empty
-  world cell and an unbound agent, then executes attach (join), quota-bound
-  harvest, a quota violation the cell covenant rejects, and reap (death +
-  food mulch) through open observed covenants
+  Season 0 physics for the Open Lattice game, full verb set executing:
+  attach (join), quota-bound harvest plus a violation the cell covenant
+  rejects, share (two observed covenants, positive-sum transfer), reap
+  (death + food mulch, input-only observation), move (consumed peer cell
+  self-validating through a delegate, one world covenant id for all cells),
+  and reproduce (pre-launched child bound by the world, breed-true enforced
+  by a shared actor handle)
 
 build/
   generated artifacts and Silverscript output

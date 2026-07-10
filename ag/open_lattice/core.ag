@@ -14,6 +14,8 @@ const int QUOTA_FLOOR = 20;
 const int HARVEST_POWER_CAP = 10;
 const int DEATH_MULCH = 12;
 const int FOOD_CAP = 100;
+const int REPRO_COST = 24;
+const int CHILD_ENERGY = 18;
 
 // World convention: an empty cell stores this sentinel as its occupant lock.
 const byte[32] EMPTY_SENTINEL = 0x0000000000000000000000000000000000000000000000000000000000000000;
@@ -205,6 +207,211 @@ actor Cell owns CellState {
         };
 
         become cell <- Cell(next_cell);
+    }
+
+    // Occupant gives energy to an adjacent agent. Sharing is positive-sum by
+    // world law: the receiver gains 120% of what the giver spends
+    // (5 * gain == 6 * amount keeps it in integers). The receiving agent may
+    // occupy any neighboring cell; adjacency is proven from the capsules.
+    // This entry observes TWO foreign covenants at once.
+    entry share(
+        amount: int,
+        receiver_gain: int,
+        receiver_covid: covid,
+        receiver_type: actor<AgentCapsule>,
+        receiver_caps_digest: byte[32]
+    )
+    observes giving by self.occupant_agent_covid {
+        inputs {
+            agent: self.occupant_agent_type;
+        }
+
+        outputs {
+            agent: self.occupant_agent_type;
+        }
+    }
+    observes receiving by receiver_covid {
+        inputs {
+            agent: receiver_type;
+        }
+
+        outputs {
+            agent: receiver_type;
+        }
+    }
+    emits {
+        cell: Cell;
+    } {
+        AgentCapsule giver = giving.inputs.agent.state;
+        AgentCapsule recv = receiving.inputs.agent.state;
+
+        require(amount > 0);
+        require(5 * receiver_gain == 6 * amount);
+        require(giver.world_id == world_id);
+        require(recv.world_id == world_id);
+        require(giver.x == x);
+        require(giver.y == y);
+        require(giver.capabilities_digest == occupant_caps_digest);
+        require(recv.capabilities_digest == receiver_caps_digest);
+        require(giver.energy > amount);
+
+        int dist = abs1(giver.x - recv.x) + abs1(giver.y - recv.y);
+        require(dist == 1);
+
+        AgentCapsule next_giver = {
+            world_id: giver.world_id,
+            agent_id: giver.agent_id,
+            species_id: giver.species_id,
+            controller_id: giver.controller_id,
+            capabilities_digest: giver.capabilities_digest,
+            strategy: giver.strategy,
+            x: giver.x,
+            y: giver.y,
+            energy: giver.energy - amount,
+            generation: giver.generation,
+        };
+
+        AgentCapsule next_recv = {
+            world_id: recv.world_id,
+            agent_id: recv.agent_id,
+            species_id: recv.species_id,
+            controller_id: recv.controller_id,
+            capabilities_digest: recv.capabilities_digest,
+            strategy: recv.strategy,
+            x: recv.x,
+            y: recv.y,
+            energy: recv.energy + receiver_gain,
+            generation: recv.generation,
+        };
+
+        require giving.outputs become {
+            agent <- self.occupant_agent_type(next_giver);
+        };
+
+        require receiving.outputs become {
+            agent <- receiver_type(next_recv);
+        };
+
+        CellState next_cell = {
+            world_id: world_id,
+            x: x,
+            y: y,
+            food: food,
+            occupant_agent_covid: occupant_agent_covid,
+            occupant_agent_type: occupant_agent_type,
+            occupant_caps_digest: occupant_caps_digest,
+        };
+
+        become cell <- Cell(next_cell);
+    }
+
+    // A parent agent on an adjacent cell births a pre-launched child agent
+    // onto this empty cell. The child covenant is genesis-launched unbound by
+    // the player (the lobby step); reproduce is the world recognizing the
+    // birth: it charges the parent, checks lineage, and binds the child.
+    // Descendants must carry the parent's exact template — breeding true is
+    // world law, not strategy courtesy.
+    entry reproduce(
+        parent_covid: covid,
+        parent_type: actor<AgentCapsule>,
+        parent_caps_digest: byte[32],
+        child_covid: covid,
+        child_caps_digest: byte[32]
+    )
+    observes parent_lane by parent_covid {
+        inputs {
+            agent: parent_type;
+        }
+
+        outputs {
+            agent: parent_type;
+        }
+    }
+    observes child_lane by child_covid {
+        inputs {
+            agent: parent_type;
+        }
+
+        outputs {
+            agent: parent_type;
+        }
+    }
+    emits {
+        cell: Cell;
+    } {
+        AgentCapsule parent = parent_lane.inputs.agent.state;
+        AgentCapsule child = child_lane.inputs.agent.state;
+
+        require(occupant_caps_digest == EMPTY_SENTINEL);
+        require(parent.world_id == world_id);
+        require(child.world_id == world_id);
+        require(parent.capabilities_digest == parent_caps_digest);
+        require(child.capabilities_digest == child_caps_digest);
+
+        int dist = abs1(parent.x - x) + abs1(parent.y - y);
+        require(dist == 1);
+        require(child.x == x);
+        require(child.y == y);
+
+        require(parent.energy > REPRO_COST);
+        require(child.energy == CHILD_ENERGY);
+        require(child.species_id == parent.species_id);
+        require(child.generation == parent.generation + 1);
+
+        AgentCapsule next_parent = {
+            world_id: parent.world_id,
+            agent_id: parent.agent_id,
+            species_id: parent.species_id,
+            controller_id: parent.controller_id,
+            capabilities_digest: parent.capabilities_digest,
+            strategy: parent.strategy,
+            x: parent.x,
+            y: parent.y,
+            energy: parent.energy - REPRO_COST,
+            generation: parent.generation,
+        };
+
+        AgentCapsule next_child = {
+            world_id: child.world_id,
+            agent_id: child.agent_id,
+            species_id: child.species_id,
+            controller_id: child.controller_id,
+            capabilities_digest: child.capabilities_digest,
+            strategy: child.strategy,
+            x: child.x,
+            y: child.y,
+            energy: child.energy,
+            generation: child.generation,
+        };
+
+        require parent_lane.outputs become {
+            agent <- parent_type(next_parent);
+        };
+
+        require child_lane.outputs become {
+            agent <- parent_type(next_child);
+        };
+
+        CellState next_cell = {
+            world_id: world_id,
+            x: x,
+            y: y,
+            food: food,
+            occupant_agent_covid: child_covid,
+            occupant_agent_type: parent_type,
+            occupant_caps_digest: child_caps_digest,
+        };
+
+        become cell <- Cell(next_cell);
+    }
+
+    // Non-leading role: this cell is the consumed target of a peer cell's
+    // move. The move leader enforces all physics; this delegate only proves
+    // it is coordinating with a same-world Cell leader.
+    delegate host_move() consumes {
+        source_cell: Cell;
+    } {
+        require(source_cell.world_id == world_id);
     }
 
     // Occupant moves to an adjacent empty cell (open_icc pattern).
