@@ -28,7 +28,7 @@ use secp256k1::{Keypair, Secp256k1, SecretKey};
 
 const NODE_URL: &str = "ws://10.0.3.26:17210";
 const KEY_FILE: &str = ".tn10-key";
-const EXPLORER: &str = "https://explorer-tn10.kaspa.org/txs";
+const EXPLORER: &str = "https://tn10.kaspa.stream/transactions";
 
 const CORE_SOURCE: &str = "ag/open_lattice/core.ag";
 const AGENT_SOURCE: &str = "ag/open_lattice/agent.ag";
