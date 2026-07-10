@@ -40,6 +40,14 @@ src/bin/multiapp_badge.rs
   builds `build/multiapp_badge`
   genesis-launches both covenants and executes an observed co-spend
 
+src/bin/open_lattice.rs
+  file-backed open-agent game apps under `ag/open_lattice`
+  builds `build/open_lattice`
+  Season 0 physics for the Open Lattice game: genesis-launches an empty
+  world cell and an unbound agent, then executes attach (join), quota-bound
+  harvest, a quota violation the cell covenant rejects, and reap (death +
+  food mulch) through open observed covenants
+
 build/
   generated artifacts and Silverscript output
 ```
@@ -51,4 +59,5 @@ cargo run --bin basic_counter
 cargo run --bin two_actor_exchange
 cargo run --bin dynamic_actor_choice
 cargo run --bin multiapp_badge
+cargo run --bin open_lattice
 ```

@@ -1,0 +1,296 @@
+// Open Lattice — Season 0 cell-physics core app.
+//
+// Extends the open_icc pattern with the two Season 0 physics rules that the
+// off-chain economy simulator showed are decisive:
+//
+//   harvest quota  the cell refuses to be harvested below QUOTA_FLOOR, so no
+//                  strategy can strip-mine the commons (rule-of-law worlds);
+//   death mulch    a spent agent recycles energy into the cell as food.
+//
+// Tuned constants come from the Season 0 simulator
+// (https://elldeeone.github.io/open-lattice/).
+
+const int QUOTA_FLOOR = 20;
+const int HARVEST_POWER_CAP = 10;
+const int DEATH_MULCH = 12;
+const int FOOD_CAP = 100;
+
+// World convention: an empty cell stores this sentinel as its occupant lock.
+const byte[32] EMPTY_SENTINEL = 0x0000000000000000000000000000000000000000000000000000000000000000;
+
+state AgentCapsule {
+    byte[32] world_id;
+    byte[32] agent_id;
+    byte[32] species_id;
+
+    covid controller_id;
+    byte[32] capabilities_digest;
+    virtual strategy;
+
+    int x;
+    int y;
+    int energy;
+    int generation;
+}
+
+state CellState {
+    byte[32] world_id;
+    int x;
+    int y;
+    int food;
+
+    covid occupant_agent_covid;
+    actor<AgentCapsule> occupant_agent_type;
+    byte[32] occupant_caps_digest;
+}
+
+fn abs1(value: int) -> int {
+    int result = value;
+    if (value < 0) {
+        result = 0 - value;
+    }
+    return result;
+}
+
+actor Cell owns CellState {
+    // An unbound agent joins the world on this empty cell. This is the lobby
+    // transition: the player launches their agent covenant with the world cell
+    // covenant as controller, then attach binds it into the cell lock.
+    entry attach(
+        agent_covid: covid,
+        agent_type: actor<AgentCapsule>,
+        agent_caps_digest: byte[32]
+    )
+    observes joining by agent_covid {
+        inputs {
+            agent: agent_type;
+        }
+
+        outputs {
+            agent: agent_type;
+        }
+    }
+    emits {
+        cell: Cell;
+    } {
+        AgentCapsule prev_agent = joining.inputs.agent.state;
+
+        require(occupant_caps_digest == EMPTY_SENTINEL);
+        require(prev_agent.world_id == world_id);
+        require(prev_agent.x == x);
+        require(prev_agent.y == y);
+        require(prev_agent.capabilities_digest == agent_caps_digest);
+
+        AgentCapsule next_agent = {
+            world_id: prev_agent.world_id,
+            agent_id: prev_agent.agent_id,
+            species_id: prev_agent.species_id,
+            controller_id: prev_agent.controller_id,
+            capabilities_digest: prev_agent.capabilities_digest,
+            x: prev_agent.x,
+            y: prev_agent.y,
+            energy: prev_agent.energy,
+            generation: prev_agent.generation,
+        };
+
+        require joining.outputs become {
+            agent <- agent_type(next_agent);
+        };
+
+        CellState next_cell = {
+            world_id: world_id,
+            x: x,
+            y: y,
+            food: food,
+            occupant_agent_covid: agent_covid,
+            occupant_agent_type: agent_type,
+            occupant_caps_digest: agent_caps_digest,
+        };
+
+        become cell <- Cell(next_cell);
+    }
+
+    // Occupant harvests this cell. The quota floor is world law: it binds
+    // regardless of what the foreign agent contract wants.
+    entry harvest(amount: int)
+    observes remote by self.occupant_agent_covid {
+        inputs {
+            agent: self.occupant_agent_type;
+        }
+
+        outputs {
+            agent: self.occupant_agent_type;
+        }
+    }
+    emits {
+        cell: Cell;
+    } {
+        AgentCapsule prev_agent = remote.inputs.agent.state;
+
+        require(prev_agent.world_id == world_id);
+        require(prev_agent.x == x);
+        require(prev_agent.y == y);
+        require(prev_agent.capabilities_digest == occupant_caps_digest);
+
+        require(amount > 0);
+        require(amount <= HARVEST_POWER_CAP);
+        require(food - amount >= QUOTA_FLOOR);
+
+        AgentCapsule next_agent = {
+            world_id: prev_agent.world_id,
+            agent_id: prev_agent.agent_id,
+            species_id: prev_agent.species_id,
+            controller_id: prev_agent.controller_id,
+            capabilities_digest: prev_agent.capabilities_digest,
+            x: prev_agent.x,
+            y: prev_agent.y,
+            energy: prev_agent.energy + amount,
+            generation: prev_agent.generation,
+        };
+
+        require remote.outputs become {
+            agent <- self.occupant_agent_type(next_agent);
+        };
+
+        CellState next_cell = {
+            world_id: world_id,
+            x: x,
+            y: y,
+            food: food - amount,
+            occupant_agent_covid: occupant_agent_covid,
+            occupant_agent_type: occupant_agent_type,
+            occupant_caps_digest: occupant_caps_digest,
+        };
+
+        become cell <- Cell(next_cell);
+    }
+
+    // Occupant dies: the agent covenant is spent with no successor, its energy
+    // must already be zero, and the corpse mulches into cell food. The empty
+    // sentinel values become the cell's new stored occupant lock.
+    entry reap(
+        empty_agent_covid: covid,
+        empty_agent_type: actor<AgentCapsule>,
+        empty_caps_digest: byte[32]
+    )
+    observes remote by self.occupant_agent_covid {
+        inputs {
+            agent: self.occupant_agent_type;
+        }
+    }
+    emits {
+        cell: Cell;
+    } {
+        AgentCapsule prev_agent = remote.inputs.agent.state;
+
+        require(prev_agent.world_id == world_id);
+        require(prev_agent.x == x);
+        require(prev_agent.y == y);
+        require(prev_agent.energy == 0);
+        require(prev_agent.capabilities_digest == occupant_caps_digest);
+
+        int next_food = food + DEATH_MULCH;
+        if (next_food > FOOD_CAP) {
+            next_food = FOOD_CAP;
+        }
+
+        CellState next_cell = {
+            world_id: world_id,
+            x: x,
+            y: y,
+            food: next_food,
+            occupant_agent_covid: empty_agent_covid,
+            occupant_agent_type: empty_agent_type,
+            occupant_caps_digest: empty_caps_digest,
+        };
+
+        become cell <- Cell(next_cell);
+    }
+
+    // Occupant moves to an adjacent empty cell (open_icc pattern).
+    entry move(
+        dx: int,
+        dy: int,
+        empty_agent_covid: covid,
+        empty_agent_type: actor<AgentCapsule>,
+        empty_caps_digest: byte[32]
+    )
+    observes remote by self.occupant_agent_covid {
+        inputs {
+            agent: self.occupant_agent_type;
+        }
+
+        outputs {
+            agent: self.occupant_agent_type;
+        }
+    }
+    consumes {
+        target_cell: Cell;
+    }
+    emits {
+        source_cell: Cell;
+        target_cell: Cell;
+    } {
+        AgentCapsule prev_agent = remote.inputs.agent.state;
+
+        int distance = abs1(dx) + abs1(dy);
+        require(distance == 1);
+        require(prev_agent.world_id == world_id);
+        require(prev_agent.x == x);
+        require(prev_agent.y == y);
+        require(prev_agent.energy > 0);
+        require(prev_agent.capabilities_digest == occupant_caps_digest);
+
+        require(target_cell.world_id == world_id);
+        require(target_cell.x == x + dx);
+        require(target_cell.y == y + dy);
+        require(target_cell.occupant_agent_covid == empty_agent_covid);
+        require(target_cell.occupant_agent_type == empty_agent_type);
+        require(target_cell.occupant_caps_digest == empty_caps_digest);
+
+        AgentCapsule next_agent = {
+            world_id: prev_agent.world_id,
+            agent_id: prev_agent.agent_id,
+            species_id: prev_agent.species_id,
+            controller_id: prev_agent.controller_id,
+            capabilities_digest: prev_agent.capabilities_digest,
+            x: target_cell.x,
+            y: target_cell.y,
+            energy: prev_agent.energy - 1,
+            generation: prev_agent.generation,
+        };
+
+        CellState next_source = {
+            world_id: world_id,
+            x: x,
+            y: y,
+            food: food,
+            occupant_agent_covid: empty_agent_covid,
+            occupant_agent_type: empty_agent_type,
+            occupant_caps_digest: empty_caps_digest,
+        };
+
+        CellState next_target = {
+            world_id: target_cell.world_id,
+            x: target_cell.x,
+            y: target_cell.y,
+            food: target_cell.food,
+            occupant_agent_covid: occupant_agent_covid,
+            occupant_agent_type: occupant_agent_type,
+            occupant_caps_digest: occupant_caps_digest,
+        };
+
+        require remote.outputs become {
+            agent <- self.occupant_agent_type(next_agent);
+        };
+
+        become {
+            source_cell <- Cell(next_source);
+            target_cell <- Cell(next_target);
+        };
+    }
+}
+
+app OpenLatticeCore {
+    actor Cell;
+}
