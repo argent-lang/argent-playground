@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use argent::build_file;
-use argent_playground::PlaygroundResult;
+use argent_playground::{PlaygroundResult, node_url};
 use argent_runtime::{ArtifactBundle, ObservedCovenantContext, TxBuilder, args, execute_input_with_covenants, state};
 use kaspa_addresses::{Address, Prefix, Version};
 use kaspa_consensus_core::Hash;
@@ -26,7 +26,6 @@ use kaspa_txscript::script_builder::ScriptBuilder;
 use kaspa_wrpc_client::{KaspaRpcClient, WrpcEncoding, prelude::ConnectOptions};
 use secp256k1::{Keypair, Secp256k1, SecretKey};
 
-const NODE_URL: &str = "ws://10.0.3.26:17210";
 const KEY_FILE: &str = ".tn10-key";
 const EXPLORER: &str = "https://tn10.kaspa.stream/transactions";
 
@@ -152,7 +151,7 @@ async fn main() -> PlaygroundResult<()> {
     let change_spk = pay_to_address_script(&address);
     println!("funding address: {address}");
 
-    let client = KaspaRpcClient::new(WrpcEncoding::Borsh, Some(NODE_URL), None, None, None)?;
+    let client = KaspaRpcClient::new(WrpcEncoding::Borsh, Some(&node_url()), None, None, None)?;
     client.connect(Some(ConnectOptions::blocking_fallback())).await?;
     let info = client.get_server_info().await?;
     println!("connected: {} v{} synced={}", info.network_id, info.server_version, info.is_synced);

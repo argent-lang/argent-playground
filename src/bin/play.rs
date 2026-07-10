@@ -14,7 +14,7 @@ use std::io::Write;
 
 use argent::build_file;
 use argent_playground::{
-    CAPS_DIGEST, COVENANT_BUDGET, EMPTY_SENTINEL, EXPLORER, NODE_URL, PlaygroundResult, WorldState, hex_bytes,
+    CAPS_DIGEST, COVENANT_BUDGET, EMPTY_SENTINEL, EXPLORER, node_url, PlaygroundResult, WorldState, hex_bytes,
     input_with_budget, lattice_capsule, lattice_cell, lattice_observe_ctx,
 };
 use argent_runtime::{ArtifactBundle, TerminalPathOutputRequest, TxBuilder, args, execute_input_with_covenants};
@@ -69,7 +69,7 @@ async fn main() -> PlaygroundResult<()> {
         .map_err(|e| format!("no live world ({e}) — run `cargo run --bin tn10_world` first"))?;
     let me = world.agents.iter().position(|a| a.id == me_id).ok_or("no such agent id")?;
 
-    let client = KaspaRpcClient::new(WrpcEncoding::Borsh, Some(NODE_URL), None, None, None)?;
+    let client = KaspaRpcClient::new(WrpcEncoding::Borsh, Some(&node_url()), None, None, None)?;
     client.connect(Some(ConnectOptions::blocking_fallback())).await?;
     let info = client.get_server_info().await?;
     println!("connected: {} v{} synced={}", info.network_id, info.server_version, info.is_synced);

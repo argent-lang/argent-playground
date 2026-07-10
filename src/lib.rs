@@ -20,7 +20,11 @@ pub fn demo_outpoint(byte: u8, index: u32) -> TransactionOutpoint {
 
 // ---- tn10 helpers ----------------------------------------------------------
 
-pub const NODE_URL: &str = "ws://10.0.3.26:17210";
+/// Borsh wRPC endpoint of a covenant-enabled tn10 node.
+/// Override with KASPA_NODE_URL, e.g. `KASPA_NODE_URL=ws://myhost:17210`.
+pub fn node_url() -> String {
+    std::env::var("KASPA_NODE_URL").unwrap_or_else(|_| "ws://127.0.0.1:17210".to_string())
+}
 pub const EXPLORER: &str = "https://tn10.kaspa.stream/transactions";
 
 // Toccata v1 inputs commit a compute budget (1 unit = 10,000 script units).

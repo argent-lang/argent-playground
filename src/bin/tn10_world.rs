@@ -14,7 +14,7 @@ use std::time::Instant;
 use argent::build_file;
 use argent_playground::{
     AgentView, CellView, WorldState,
-    CAPS_DIGEST, COVENANT_BUDGET, EMPTY_SENTINEL, EXPLORER, NODE_URL, P2PK_BUDGET, PlaygroundResult, funding_address,
+    CAPS_DIGEST, COVENANT_BUDGET, EMPTY_SENTINEL, EXPLORER, node_url, P2PK_BUDGET, PlaygroundResult, funding_address,
     hex_bytes, input_with_budget, lattice_capsule, lattice_cell, lattice_observe_ctx, load_or_create_keypair,
     sign_p2pk_input,
 };
@@ -64,7 +64,7 @@ async fn main() -> PlaygroundResult<()> {
     let address = funding_address(&keypair);
     let change_spk = pay_to_address_script(&address);
 
-    let client = KaspaRpcClient::new(WrpcEncoding::Borsh, Some(NODE_URL), None, None, None)?;
+    let client = KaspaRpcClient::new(WrpcEncoding::Borsh, Some(&node_url()), None, None, None)?;
     client.connect(Some(ConnectOptions::blocking_fallback())).await?;
     let info = client.get_server_info().await?;
     println!("connected: {} v{} synced={}", info.network_id, info.server_version, info.is_synced);
