@@ -13,6 +13,7 @@ use std::time::Instant;
 
 use argent::build_file;
 use argent_playground::{
+    AgentView, CellView, WorldState,
     CAPS_DIGEST, COVENANT_BUDGET, EMPTY_SENTINEL, EXPLORER, NODE_URL, P2PK_BUDGET, PlaygroundResult, funding_address,
     hex_bytes, input_with_budget, lattice_capsule, lattice_cell, lattice_observe_ctx, load_or_create_keypair,
     sign_p2pk_input,
@@ -37,27 +38,6 @@ const GENESIS_FEE: u64 = 20_000_000;
 
 const QUOTA_FLOOR: i64 = 20;
 const HARVEST: i64 = 8;
-
-struct CellView {
-    x: i64,
-    y: i64,
-    food: i64,
-    occupant: Option<usize>,
-    outpoint: TransactionOutpoint,
-    value: u64,
-    spk: kaspa_consensus_core::tx::ScriptPublicKey,
-}
-
-struct AgentView {
-    covid: Hash,
-    id: u8,
-    x: i64,
-    y: i64,
-    energy: i64,
-    outpoint: TransactionOutpoint,
-    value: u64,
-    spk: kaspa_consensus_core::tx::ScriptPublicKey,
-}
 
 fn cell_idx(x: i64, y: i64) -> usize {
     (y * SIZE + x) as usize
@@ -489,7 +469,10 @@ async fn main() -> PlaygroundResult<()> {
         "events": log_events,
     });
     std::fs::write("build/world-log.json", serde_json::to_string_pretty(&log)?)?;
+    let world_state = WorldState { world_covid, size: SIZE, cells: cells.clone(), agents: agents.clone() };
+    world_state.save("build/world-state.json")?;
     println!("world log: build/world-log.json");
+    println!("continuation state: build/world-state.json (use `cargo run --bin play`)");
     println!("world covenant: {world_covid}");
     Ok(())
 }

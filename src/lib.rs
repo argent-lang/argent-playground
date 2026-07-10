@@ -126,6 +126,50 @@ pub fn lattice_cell(
     }
 }
 
+// ---- Persistent world state (continue a live tn10 world across sessions) ----
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct CellView {
+    pub x: i64,
+    pub y: i64,
+    pub food: i64,
+    pub occupant: Option<usize>,
+    pub outpoint: TransactionOutpoint,
+    pub value: u64,
+    pub spk: kaspa_consensus_core::tx::ScriptPublicKey,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct AgentView {
+    pub covid: Hash,
+    pub id: u8,
+    pub x: i64,
+    pub y: i64,
+    pub energy: i64,
+    pub outpoint: TransactionOutpoint,
+    pub value: u64,
+    pub spk: kaspa_consensus_core::tx::ScriptPublicKey,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct WorldState {
+    pub world_covid: Hash,
+    pub size: i64,
+    pub cells: Vec<CellView>,
+    pub agents: Vec<AgentView>,
+}
+
+impl WorldState {
+    pub fn save(&self, path: &str) -> PlaygroundResult<()> {
+        std::fs::write(path, serde_json::to_string_pretty(self)?)?;
+        Ok(())
+    }
+
+    pub fn load(path: &str) -> PlaygroundResult<Self> {
+        Ok(serde_json::from_str(&std::fs::read_to_string(path)?)?)
+    }
+}
+
 pub fn lattice_observe_ctx(
     observe: &str,
     utxo: UtxoEntry,
