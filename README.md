@@ -25,6 +25,16 @@ src/bin/basic_counter.rs
   builds `build/counter`
   creates and executes one Counter::bump tx
 
+src/bin/counter_reject.rs
+  inline Counter `.ag` app (negative-path hardening demo)
+  builds `build/counter_reject`
+  asserts an honest Counter::bump passes and a tampered one is rejected
+
+src/bin/genesis_counter.rs
+  inline Counter `.ag` app
+  builds `build/counter`
+  launches the Counter covenant, then executes one Counter::bump tx
+
 src/bin/two_actor_exchange.rs
   inline Ping/Pong `.ag` app
   builds `build/ping_pong`
@@ -48,6 +58,8 @@ Run the first demo:
 
 ```bash
 cargo run --bin basic_counter
+cargo run --bin counter_reject
+cargo run --bin genesis_counter
 cargo run --bin two_actor_exchange
 cargo run --bin dynamic_actor_choice
 cargo run --bin multiapp_badge
