@@ -25,6 +25,10 @@ src/bin/basic_counter.rs
   builds `build/counter`
   creates and executes one Counter::bump tx
 
+src/bin/signed_counter.rs
+  adds owner authorization to the basic counter
+  builds transaction-dependent signature arguments through the fluent builder
+
 src/bin/two_actor_exchange.rs
   inline Ping/Pong `.ag` app
   builds `build/ping_pong`
@@ -53,6 +57,7 @@ Run the first demo:
 
 ```bash
 cargo run --bin basic_counter
+cargo run --bin signed_counter
 cargo run --bin two_actor_exchange
 cargo run --bin dynamic_actor_choice
 cargo run --bin multiapp_badge

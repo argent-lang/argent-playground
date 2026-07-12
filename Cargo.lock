@@ -142,6 +142,7 @@ dependencies = [
  "argent",
  "argent-runtime",
  "kaspa-consensus-core",
+ "secp256k1",
 ]
 
 [[package]]

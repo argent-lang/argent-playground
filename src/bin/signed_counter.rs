@@ -1,16 +1,20 @@
 use argent::build_inline;
-use argent_playground::{PlaygroundResult, demo_outpoint};
+use argent_playground::{PlaygroundResult, demo_keypair, demo_outpoint, sign_input};
 use argent_runtime::{TxBuilder, args, state};
 use kaspa_consensus_core::Hash;
 
 const COUNTER_APP: &str = r#"
 state CounterState {
+    pubkey owner;
     int count;
 }
 
 actor Counter owns CounterState {
-    entry bump(delta: int) emits one Counter {
+    entry bump(owner_sig: sig, delta: int) emits one Counter {
+        require(checkSig(owner_sig, owner));
+
         CounterState next = {
+            owner: owner,
             count: count + delta,
         };
 
@@ -24,27 +28,30 @@ app CounterApp {
 "#;
 
 fn main() -> PlaygroundResult<()> {
-    let artifact = build_inline("counter.ag", COUNTER_APP, "build/counter")?;
+    let artifact = build_inline("signed_counter.ag", COUNTER_APP, "build/signed_counter")?;
     let builder = TxBuilder::new(&artifact)?;
 
-    let initial = state! { count: 2 };
-    let next = state! { count: 5 };
+    let owner = demo_keypair(1);
+    let owner_public_key = owner.x_only_public_key().0.serialize().to_vec();
+    let initial = state! { owner: owner_public_key.clone(), count: 2 };
+    let next = state! { owner: owner_public_key, count: 5 };
     let input_value = 1_000;
     let covenant_id = Hash::from_bytes([0x42; 32]);
 
     let input_utxo = builder.covenant_utxo("Counter", initial.clone(), input_value, 0, false, Some(covenant_id))?;
     let built = builder
         .transition("Counter", "bump")
-        .args(args![3])
         .input(demo_outpoint(0x11, 0), input_utxo, initial)
         .expect(next)
         .preserve_value()
+        // The signature argument is built after the transaction outputs exist.
+        .args_with(|tx, input_idx| args![sign_input(tx, input_idx, &owner), 3])
         .build()?;
     let tx = built.transaction;
 
-    println!("built Counter::bump tx");
+    println!("built signed Counter::bump tx");
     println!("inputs: {}", tx.inputs.len());
     println!("outputs: {}", tx.outputs.len());
-    println!("artifact: build/counter/artifact.json");
+    println!("artifact: build/signed_counter/artifact.json");
     Ok(())
 }
