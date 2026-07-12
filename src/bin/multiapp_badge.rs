@@ -1,8 +1,6 @@
-use std::collections::BTreeMap;
-
 use argent::build_file;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{ArtifactBundle, ObservedCovenantContext, TxBuilder, args, execute_input_with_covenants, state};
+use argent_runtime::{ArtifactBundle, TxBuilder, args, execute_input_with_covenants, state};
 use kaspa_consensus_core::tx::GenesisCovenantGroup;
 
 const ASSET_SOURCE: &str = "ag/multiapp_badge/badge_asset.ag";
@@ -51,39 +49,16 @@ fn main() -> PlaygroundResult<()> {
         balance: 10 + amount,
     };
 
-    // The controller entry observes a Badge input/output pair under the local
-    // observe name `asset`; the context says which attached app implements it.
-    let observed = BTreeMap::from([(
-        "asset".to_string(),
-        ObservedCovenantContext::from_app("badge_asset")
-            .input("badge", "Badge", badge_root.utxo.clone(), badge_initial.clone())
-            .output("badge", "Badge", badge_next.clone()),
-    )]);
+    // This demo chooses the complete 2:2 transaction layout. Input 0 recreates
+    // the controller; input 1 recreates the badge.
+    let outputs = vec![
+        builder.covenant_output("Controller", controller_next, controller_value, 0, controller_root.covenant_id)?,
+        builder.covenant_output_in_app("badge_asset", "Badge", badge_next, badge_value, 1, badge_root.covenant_id)?,
+    ];
 
-    let mut outputs =
-        vec![builder.covenant_output("Controller", controller_next, controller_value, 0, controller_root.covenant_id)?];
-    outputs.extend(builder.observed_outputs(
-        "Controller",
-        "mint",
-        "asset",
-        observed.get("asset").expect("asset observe context exists"),
-        BTreeMap::from([("badge".to_string(), badge_value)]),
-        1,
-        badge_root.covenant_id,
-    )?);
-
-    // Badge::apply is the observed covenant's own spend. It only checks that
-    // the stored controller id is co-spent; Controller::mint checks the amount.
-    let badge_sigscript =
-        builder.p2sh_signature_script_in_app("badge_asset", "Badge", "apply", badge_initial.clone(), args![10 + amount])?;
-    let controller_sigscript = builder.p2sh_signature_script_with_observed_covenants(
-        "Controller",
-        "mint",
-        controller_initial,
-        args![badge_root.covenant_id, amount],
-        &observed,
-    )?;
-
+    let controller_sigscript =
+        builder.p2sh_signature_script("Controller", "mint", controller_initial, args![badge_root.covenant_id, amount])?;
+    let badge_sigscript = builder.p2sh_signature_script_in_app("badge_asset", "Badge", "apply", badge_initial, args![10 + amount])?;
     let tx = TxBuilder::transaction(
         vec![
             TxBuilder::transaction_input(controller_root.outpoint, controller_sigscript),
@@ -92,6 +67,7 @@ fn main() -> PlaygroundResult<()> {
         outputs,
     );
     let entries = vec![controller_root.utxo.clone(), badge_root.utxo.clone()];
+
     execute_input_with_covenants(&tx, entries.clone(), 0)?;
     execute_input_with_covenants(&tx, entries, 1)?;
 
