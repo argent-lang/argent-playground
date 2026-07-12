@@ -40,6 +40,11 @@ src/bin/multiapp_badge.rs
   builds `build/multiapp_badge`
   genesis-launches both covenants and executes an observed co-spend
 
+src/bin/open_icc_agent.rs
+  file-backed Cell/Forager `.ag` apps under `ag/open_icc_agent`
+  builds `build/open_icc_agent`
+  binds a concrete observed actor through explicit runtime context
+
 build/
   generated artifacts and Silverscript output
 ```
@@ -51,4 +56,5 @@ cargo run --bin basic_counter
 cargo run --bin two_actor_exchange
 cargo run --bin dynamic_actor_choice
 cargo run --bin multiapp_badge
+cargo run --bin open_icc_agent
 ```

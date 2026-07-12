@@ -1,0 +1,46 @@
+state AgentCapsule {
+    int energy;
+}
+
+state CellState {
+    covid agent_covid;
+    int ticks;
+}
+
+actor Cell owns CellState {
+    entry advance()
+    observes remote by self.agent_covid {
+        inputs {
+            agent: actor_type<AgentCapsule> as observed_agent;
+        }
+
+        outputs {
+            agent: observed_agent;
+        }
+    }
+    emits {
+        cell: Cell;
+    } {
+        AgentCapsule previous = remote.inputs.agent.state;
+        require(previous.energy > 0);
+
+        AgentCapsule next_agent = {
+            energy: previous.energy - 1,
+        };
+
+        require remote.outputs become {
+            agent <- observed_agent(next_agent);
+        };
+
+        CellState next_cell = {
+            agent_covid: agent_covid,
+            ticks: ticks + 1,
+        };
+
+        become cell <- Cell(next_cell);
+    }
+}
+
+app CellCore {
+    actor Cell;
+}
