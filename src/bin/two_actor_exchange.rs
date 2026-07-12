@@ -67,8 +67,8 @@ fn main() -> PlaygroundResult<()> {
 
     execute_input_with_covenants(&close_tx, vec![pong_utxo], 0)?;
 
-    println!("built Ping::send tx: {} -> {}", "Ping", "Pong");
-    println!("built Pong::reply tx: {} -> {}", "Pong", "Ping");
+    println!("built Ping::send tx: Ping -> Pong");
+    println!("built Pong::reply tx: Pong -> Ping");
     println!("artifact: build/ping_pong/artifact.json");
     Ok(())
 }

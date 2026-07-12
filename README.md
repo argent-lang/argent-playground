@@ -58,3 +58,9 @@ cargo run --bin dynamic_actor_choice
 cargo run --bin multiapp_badge
 cargo run --bin open_icc_agent
 ```
+
+Run the complete local check, including every demo binary:
+
+```bash
+./check.sh
+```

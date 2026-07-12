@@ -80,8 +80,8 @@ fn main() -> PlaygroundResult<()> {
         TxBuilder::transaction(vec![TxBuilder::transaction_input(demo_outpoint(0x32, 0), beta_sigscript)], vec![beta_output]);
     execute_input_with_covenants(&beta_tx, vec![router_utxo], 0)?;
 
-    println!("built Router::choose tx: {} -> {}", "Router", "Alpha");
-    println!("built Router::choose tx: {} -> {}", "Router", "Beta");
+    println!("built Router::choose tx: Router -> Alpha");
+    println!("built Router::choose tx: Router -> Beta");
     println!("artifact: build/dynamic_actor_choice/artifact.json");
     Ok(())
 }

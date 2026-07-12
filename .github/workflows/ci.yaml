@@ -1,0 +1,38 @@
+name: Quality Control
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: argent-playground
+    steps:
+      - name: Checkout playground
+        uses: actions/checkout@v6
+        with:
+          path: argent-playground
+
+      - name: Checkout Argent
+        uses: actions/checkout@v6
+        with:
+          repository: michaelsutton/argent
+          ref: e9663c05d56ed4a0916a88c016f8bed8ba4da937
+          path: argent
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.0
+          components: rustfmt, clippy
+
+      - name: Run checks
+        run: ./check.sh
+
+      - name: Verify working tree
+        run: git diff --exit-code
