@@ -1,0 +1,75 @@
+import "./capsule.ag";
+
+state FungiblePolicy {
+    byte[32] asset_id;
+    int sequence;
+}
+
+state FungibleAssetState expands AssetCapsule {
+    policy: FungiblePolicy;
+}
+
+actor ReserveAsset owns FungibleAssetState {
+    entry settle(next_units: int) emits one ReserveAsset {
+        require(owner_kind == OWNER_RESERVE);
+        require(reserve_owner.co_spent());
+
+        FungibleAssetState next_asset = {
+            owner_kind: owner_kind,
+            owner_key: owner_key,
+            reserve_owner: reserve_owner,
+            policy: FungiblePolicy {
+                asset_id: policy.asset_id,
+                sequence: policy.sequence + 1,
+            },
+            units: next_units,
+        };
+
+        become ReserveAsset(next_asset);
+    }
+
+    // This route is not used by the DEX flow. Its presence makes the concrete
+    // asset app commit to WalletAsset as fixed route context.
+    entry withdraw(next_owner: pubkey, next_units: int) emits one WalletAsset {
+        require(owner_kind == OWNER_RESERVE);
+        require(reserve_owner.co_spent());
+
+        FungibleAssetState next_asset = {
+            owner_kind: OWNER_KEY,
+            owner_key: next_owner,
+            reserve_owner: reserve_owner,
+            policy: FungiblePolicy {
+                asset_id: policy.asset_id,
+                sequence: policy.sequence + 1,
+            },
+            units: next_units,
+        };
+
+        become WalletAsset(next_asset);
+    }
+}
+
+actor WalletAsset owns FungibleAssetState {
+    entry transfer(next_owner: pubkey, owner_sig: sig) emits one WalletAsset {
+        require(owner_kind == OWNER_KEY);
+        require(checkSig(owner_sig, owner_key));
+
+        FungibleAssetState next_asset = {
+            owner_kind: owner_kind,
+            owner_key: next_owner,
+            reserve_owner: reserve_owner,
+            policy: FungiblePolicy {
+                asset_id: policy.asset_id,
+                sequence: policy.sequence + 1,
+            },
+            units: units,
+        };
+
+        become WalletAsset(next_asset);
+    }
+}
+
+app Asset {
+    actor ReserveAsset;
+    actor WalletAsset;
+}

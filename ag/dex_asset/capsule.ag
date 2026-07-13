@@ -1,0 +1,10 @@
+const int OWNER_KEY = 0;
+const int OWNER_RESERVE = 1;
+
+state AssetCapsule {
+    int owner_kind;
+    pubkey owner_key;
+    covid reserve_owner;
+    virtual policy;
+    int units;
+}

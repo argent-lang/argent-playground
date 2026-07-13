@@ -1,0 +1,87 @@
+import "./capsule.ag";
+
+state DexState {
+    covid reserve_covid;
+    actor_type<AssetCapsule> reserve_type;
+    int traded;
+}
+
+actor Dex owns DexState {
+    entry bind(asset_covid: covid, asset_type: actor_type<AssetCapsule>)
+    observes reserve by asset_covid {
+        inputs {
+            asset: asset_type;
+        }
+
+        outputs {
+            asset: asset_type;
+        }
+    }
+    emits one Dex {
+        AssetCapsule prev_asset = reserve.inputs.asset.state;
+
+        require(prev_asset.owner_kind == OWNER_RESERVE);
+        require(prev_asset.reserve_owner == self.covenant_id);
+
+        AssetCapsule next_asset = {
+            owner_kind: prev_asset.owner_kind,
+            owner_key: prev_asset.owner_key,
+            reserve_owner: prev_asset.reserve_owner,
+            units: prev_asset.units,
+        };
+
+        require reserve.outputs become {
+            asset <- asset_type(next_asset);
+        };
+
+        DexState next_dex = {
+            reserve_covid: asset_covid,
+            reserve_type: asset_type,
+            traded: traded,
+        };
+
+        become Dex(next_dex);
+    }
+
+    entry trade(amount: int)
+    observes reserve by self.reserve_covid {
+        inputs {
+            asset: self.reserve_type;
+        }
+
+        outputs {
+            asset: self.reserve_type;
+        }
+    }
+    emits one Dex {
+        require(amount > 0);
+
+        AssetCapsule prev_asset = reserve.inputs.asset.state;
+        require(prev_asset.owner_kind == OWNER_RESERVE);
+        require(prev_asset.reserve_owner == self.covenant_id);
+        require(prev_asset.units >= amount);
+
+        AssetCapsule next_asset = {
+            owner_kind: prev_asset.owner_kind,
+            owner_key: prev_asset.owner_key,
+            reserve_owner: prev_asset.reserve_owner,
+            units: prev_asset.units - amount,
+        };
+
+        require reserve.outputs become {
+            asset <- self.reserve_type(next_asset);
+        };
+
+        DexState next_dex = {
+            reserve_covid: reserve_covid,
+            reserve_type: reserve_type,
+            traded: traded + amount,
+        };
+
+        become Dex(next_dex);
+    }
+}
+
+app DexApp {
+    actor Dex;
+}
