@@ -1,6 +1,6 @@
 use argent::build_file;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{ArtifactBundle, TxBuilder, args, execute_input_with_covenants, state};
+use argent_runtime::{ArtifactBundle, TxBuilder, args, state};
 use kaspa_consensus_core::tx::GenesisCovenantGroup;
 
 const ASSET_SOURCE: &str = "ag/multiapp_badge/badge_asset.ag";
@@ -49,33 +49,34 @@ fn main() -> PlaygroundResult<()> {
         balance: 10 + amount,
     };
 
-    // This demo chooses the complete 2:2 transaction layout. Input 0 recreates
-    // the controller; input 1 recreates the badge.
-    let outputs = vec![
-        builder.covenant_output("Controller", controller_next, controller_value, 0, controller_root.covenant_id)?,
-        builder.covenant_output_in_app("badge_asset", "Badge", badge_next, badge_value, 1, badge_root.covenant_id)?,
-    ];
-
-    let controller_sigscript =
-        builder.p2sh_signature_script("Controller", "mint", controller_initial, args![badge_root.covenant_id, amount])?;
-    let badge_sigscript = builder.p2sh_signature_script_in_app("badge_asset", "Badge", "apply", badge_initial, args![10 + amount])?;
-    let tx = TxBuilder::transaction(
-        vec![
-            TxBuilder::transaction_input(controller_root.outpoint, controller_sigscript),
-            TxBuilder::transaction_input(badge_root.outpoint, badge_sigscript),
-        ],
-        outputs,
-    );
-    let entries = vec![controller_root.utxo.clone(), badge_root.utxo.clone()];
-
-    execute_input_with_covenants(&tx, entries.clone(), 0)?;
-    execute_input_with_covenants(&tx, entries, 1)?;
+    // The attached asset app fixes the closed ICC implementation, so no
+    // observed-covenant context is needed at runtime.
+    let tx = builder
+        .transition("Controller", "mint")
+        .args(args![badge_root.covenant_id, amount])
+        .input(controller_root.outpoint, controller_root.utxo.clone(), controller_initial)
+        .output("controller", controller_next, controller_value)
+        .co_spend_in_app(
+            "badge_asset",
+            "Badge",
+            "apply",
+            badge_root.outpoint,
+            badge_root.utxo.clone(),
+            badge_initial,
+            args![10 + amount],
+            badge_next,
+            badge_value,
+        )
+        .build()?
+        .transaction;
 
     println!("controller genesis tx: {}", controller_genesis_tx.id());
     println!("controller covenant id: {}", controller_root.covenant_id);
     println!("badge genesis tx: {}", badge_genesis_tx.id());
     println!("badge covenant id: {}", badge_root.covenant_id);
     println!("built Controller::mint + Badge::apply co-spend");
+    println!("inputs: {}", tx.inputs.len());
+    println!("outputs: {}", tx.outputs.len());
     println!("artifacts: build/multiapp_badge/{{controller,asset}}/artifact.json");
     Ok(())
 }
