@@ -33,6 +33,7 @@ fn main() -> PlaygroundResult<()> {
 
     let owner = demo_keypair(1);
     let owner_public_key = owner.x_only_public_key().0.serialize().to_vec();
+
     let initial = state! { owner: owner_public_key.clone(), count: 2 };
     let next = state! { owner: owner_public_key, count: 5 };
     let input_value = 1_000;

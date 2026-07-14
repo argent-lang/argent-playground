@@ -1,0 +1,94 @@
+import "./capsule.ag";
+
+state MintablePolicy {
+    byte[32] asset_id;
+    int max_supply;
+}
+
+state MintableTokenState expands AssetCapsule {
+    policy: MintablePolicy;
+}
+
+// The minter carries the unissued supply in `amount`. Minting preserves the
+// minter and creates a circulating token under the same asset covenant.
+// This real Minter -> Minter + MintableToken route is why this asset app needs
+// route-template context even though the DEX only uses MintableToken::transfer.
+actor Minter owns MintableTokenState {
+    entry mint(
+        recipient: byte[32],
+        recipient_kind: byte,
+        mint_amount: int,
+        minter_sig: sig
+    ) emits {
+        minter: Minter;
+        token: MintableToken;
+    } {
+        require(owner_kind == OWNER_KEY);
+        require(checkSig(minter_sig, owner));
+        require(recipient_kind == OWNER_KEY || recipient_kind == OWNER_COVID);
+        require(mint_amount > 0);
+        require(amount >= mint_amount);
+        require(policy.max_supply >= amount);
+
+        MintableTokenState next_minter = {
+            owner: owner,
+            owner_kind: owner_kind,
+            policy: MintablePolicy {
+                asset_id: policy.asset_id,
+                max_supply: policy.max_supply,
+            },
+            amount: amount - mint_amount,
+        };
+
+        MintableTokenState next_token = {
+            owner: recipient,
+            owner_kind: recipient_kind,
+            policy: MintablePolicy {
+                asset_id: policy.asset_id,
+                max_supply: policy.max_supply,
+            },
+            amount: mint_amount,
+        };
+
+        become {
+            minter <- Minter(next_minter);
+            token <- MintableToken(next_token);
+        };
+    }
+}
+
+actor MintableToken owns MintableTokenState {
+    entry transfer(
+        next_owner: byte[32],
+        next_owner_kind: byte,
+        owner_sig: sig
+    ) emits one MintableToken {
+        if (owner_kind == OWNER_KEY) {
+            require(checkSig(owner_sig, owner));
+        } else if (owner_kind == OWNER_COVID) {
+            require(covid(owner).co_spent());
+        } else {
+            require(false);
+        }
+
+        require(next_owner_kind == OWNER_KEY || next_owner_kind == OWNER_COVID);
+        require(amount > 0);
+
+        MintableTokenState next_token = {
+            owner: next_owner,
+            owner_kind: next_owner_kind,
+            policy: MintablePolicy {
+                asset_id: policy.asset_id,
+                max_supply: policy.max_supply,
+            },
+            amount: amount,
+        };
+
+        become MintableToken(next_token);
+    }
+}
+
+app MintableAsset {
+    actor Minter;
+    actor MintableToken;
+}

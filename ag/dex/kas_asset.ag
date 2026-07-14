@@ -1,0 +1,57 @@
+import "./capsule.ag";
+
+// A canonical deployment fixes the network marker and covenant id used to
+// represent native KAS through the generic AssetCapsule interface.
+state KasPolicy {
+    byte network;
+}
+
+state KasTokenState expands AssetCapsule {
+    policy: KasPolicy;
+}
+
+actor KasToken owns KasTokenState {
+    entry transfer(
+        next_owner: byte[32],
+        next_owner_kind: byte,
+        next_amount: int,
+        owner_sig: sig
+    ) emits one KasToken {
+        if (owner_kind == OWNER_KEY) {
+            require(checkSig(owner_sig, owner));
+        } else if (owner_kind == OWNER_COVID) {
+            require(covid(owner).co_spent());
+        } else {
+            require(false);
+        }
+
+        require(next_owner_kind == OWNER_KEY || next_owner_kind == OWNER_COVID);
+        require(amount > 0);
+        require(next_amount > 0);
+
+        // This is the representation invariant: state units are native sompi,
+        // backed exactly by the value of the same covenant UTXO.
+        require(self.value == amount);
+        require(next.value == next_amount);
+
+        // A reduction may contribute value to transaction fees or other
+        // owner-authorized outputs. The demo pre-funds KAS reserves and does
+        // not yet model canonical deposit and withdrawal entrypoints.
+        require(next_amount <= amount);
+
+        KasTokenState next_token = {
+            owner: next_owner,
+            owner_kind: next_owner_kind,
+            policy: KasPolicy {
+                network: policy.network,
+            },
+            amount: next_amount,
+        };
+
+        become KasToken(next_token);
+    }
+}
+
+app KasAsset {
+    actor KasToken;
+}

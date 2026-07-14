@@ -1,0 +1,5 @@
+import "./dex_contracts.ag";
+
+app DexPairApp {
+    actor DexPair;
+}

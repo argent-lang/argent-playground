@@ -50,9 +50,9 @@ src/bin/open_icc_agent.rs
   binds a concrete observed actor through explicit runtime context
 
 src/bin/dex_asset.rs
-  file-backed DEX/asset apps under `ag/dex_asset`
-  genesis-launches the DEX and reserve, binds them through open ICC, then trades
-  exposes an expanded asset capsule while retaining private route context
+  file-backed Core, Pair and asset apps under `ag/dex`
+  registers a Pair, mints a quote lot, funds its KAS reserve and executes a swap
+  exercises signed open-ICC co-spends and expanded asset capsule handles
 
 build/
   generated artifacts and Silverscript output
