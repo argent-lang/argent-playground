@@ -10,6 +10,11 @@ state DexCoreCapsule {
     pubkey governor;
     actor_type<DexCoreCapsule> core_type;
     actor_type<DexPairState> pair_type;
+
+    // Pair apps bind to a stable, fixed-size Core handle instead of carrying
+    // the full registry bytes in that handle. The capsule exposes only this
+    // digest; DexCoreState expands it into the typed registry used by Core.
+    // Reserve moves still understand and prove its current preimage.
     virtual pairs;
 }
 

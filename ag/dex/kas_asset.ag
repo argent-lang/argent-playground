@@ -52,6 +52,6 @@ actor KasToken owns KasTokenState {
     }
 }
 
-app KasAsset {
+app KAsset {
     actor KasToken;
 }

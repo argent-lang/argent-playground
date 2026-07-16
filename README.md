@@ -51,7 +51,8 @@ src/bin/open_icc_agent.rs
 
 src/bin/dex_asset.rs
   file-backed Core, Pair and asset apps under `ag/dex`
-  registers a Pair, mints a quote lot, funds its KAS reserve and executes a swap
+  registers A/B and A/C pairs, mints A, funds B and executes an A/B swap
+  moves the resulting A reserve to A/C under an observed Core registry proof
   exercises signed open-ICC co-spends and expanded asset capsule handles
 
 build/
