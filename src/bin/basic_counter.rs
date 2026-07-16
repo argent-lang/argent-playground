@@ -1,7 +1,7 @@
 use argent::build_inline;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{TxBuilder, args, state};
-use kaspa_consensus_core::Hash;
+use argent_runtime::{EntryCall, TxBuilder, TxContext, args, state};
+use kaspa_consensus_core::{Hash, tx::CovenantBinding};
 
 const COUNTER_APP: &str = r#"
 state CounterState {
@@ -33,14 +33,10 @@ fn main() -> PlaygroundResult<()> {
     let covenant_id = Hash::from_bytes([0x42; 32]);
 
     let input_utxo = builder.covenant_utxo("Counter", initial.clone(), input_value, 0, false, Some(covenant_id))?;
-    let built = builder
-        .transition("Counter", "bump")
-        .args(args![3])
-        .input(demo_outpoint(0x11, 0), input_utxo, initial)
-        .expect(next)
-        .preserve_value()
-        .build()?;
-    let tx = built.transaction;
+    let context = TxContext::new()
+        .argent_input("Counter", initial, EntryCall::new("bump").args(args![3]), demo_outpoint(0x11, 0), input_utxo)
+        .argent_output("Counter", next, CovenantBinding::new(0, covenant_id), input_value);
+    let tx = builder.build(&context)?;
 
     println!("built Counter::bump tx");
     println!("inputs: {}", tx.inputs.len());
