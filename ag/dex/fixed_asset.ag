@@ -1,0 +1,45 @@
+import "./capsule.ag";
+
+state FixedPolicy {
+    byte[32] asset_id;
+}
+
+state FixedTokenState expands AssetCapsule {
+    policy: FixedPolicy;
+}
+
+// A fixed-supply asset needs only one circulating token actor. Transfers move
+// the complete UTXO amount; this demo intentionally has no split or merge path.
+actor FixedToken owns FixedTokenState {
+    entry transfer(
+        next_owner: byte[32],
+        next_owner_kind: byte,
+        owner_sig: sig
+    ) emits one FixedToken {
+        if (owner_kind == OWNER_KEY) {
+            require(checkSig(owner_sig, owner));
+        } else if (owner_kind == OWNER_COVID) {
+            require(covid(owner).co_spent());
+        } else {
+            require(false);
+        }
+
+        require(next_owner_kind == OWNER_KEY || next_owner_kind == OWNER_COVID);
+        require(amount > 0);
+
+        FixedTokenState next_token = {
+            owner: next_owner,
+            owner_kind: next_owner_kind,
+            policy: FixedPolicy {
+                asset_id: policy.asset_id,
+            },
+            amount: amount,
+        };
+
+        become FixedToken(next_token);
+    }
+}
+
+app FixedAsset {
+    actor FixedToken;
+}

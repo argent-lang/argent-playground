@@ -1,0 +1,11 @@
+const byte OWNER_KEY = 0x00;
+const byte OWNER_COVID = 0x01;
+
+// The DEX understands this stable asset view. Concrete asset apps may attach
+// private policy state to `policy` without exposing it to the DEX.
+state AssetCapsule {
+    byte[32] owner;
+    byte owner_kind;
+    virtual policy;
+    int amount;
+}

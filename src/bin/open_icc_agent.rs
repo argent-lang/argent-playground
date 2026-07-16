@@ -1,9 +1,7 @@
-use std::collections::BTreeMap;
-
 use argent::build_file;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{ArtifactBundle, ObservedCovenantContext, TxBuilder, args, execute_input_with_covenants, state};
-use kaspa_consensus_core::tx::GenesisCovenantGroup;
+use argent_runtime::{ArtifactBundle, EntryCall, TxBuilder, TxContext, args, state};
+use kaspa_consensus_core::tx::{CovenantBinding, GenesisCovenantGroup};
 
 const CORE_SOURCE: &str = "ag/open_icc_agent/core.ag";
 const AGENT_SOURCE: &str = "ag/open_icc_agent/forager.ag";
@@ -11,7 +9,7 @@ const AGENT_SOURCE: &str = "ag/open_icc_agent/forager.ag";
 fn main() -> PlaygroundResult<()> {
     let core_artifact = build_file(CORE_SOURCE, "build/open_icc_agent/core")?;
     let agent_artifact = build_file(AGENT_SOURCE, "build/open_icc_agent/agent")?;
-    let bundle = ArtifactBundle::new(&core_artifact)?.with_app("open_agents", &agent_artifact)?;
+    let bundle = ArtifactBundle::named("core", &core_artifact)?.with_app("agents", &agent_artifact)?;
     let builder = TxBuilder::from_bundle(&bundle)?;
 
     let cell_value = 4_000;
@@ -21,7 +19,7 @@ fn main() -> PlaygroundResult<()> {
     let agent_initial = state! { energy: 5 };
     let mut agent_genesis_tx = TxBuilder::transaction(
         vec![TxBuilder::transaction_input(demo_outpoint(0x81, 0), Vec::new())],
-        vec![builder.genesis_output_in_app("open_agents", "Forager", agent_initial.clone(), agent_value)?],
+        vec![builder.genesis_output("agents::Forager", agent_initial.clone(), agent_value)?],
     );
     let agent_genesis = TxBuilder::populate_genesis_covenants(&mut agent_genesis_tx, &[GenesisCovenantGroup::new(0, vec![0])])?;
     let agent_root = agent_genesis.output(0)?;
@@ -32,7 +30,7 @@ fn main() -> PlaygroundResult<()> {
     };
     let mut cell_genesis_tx = TxBuilder::transaction(
         vec![TxBuilder::transaction_input(demo_outpoint(0x82, 0), Vec::new())],
-        vec![builder.genesis_output("Cell", cell_initial.clone(), cell_value)?],
+        vec![builder.genesis_output("core::Cell", cell_initial.clone(), cell_value)?],
     );
     let cell_genesis = TxBuilder::populate_genesis_covenants(&mut cell_genesis_tx, &[GenesisCovenantGroup::new(0, vec![0])])?;
     let cell_root = cell_genesis.output(0)?;
@@ -43,35 +41,24 @@ fn main() -> PlaygroundResult<()> {
         ticks: 1,
     };
 
-    let outputs = vec![
-        builder.covenant_output("Cell", cell_next, cell_value, 0, cell_root.covenant_id)?,
-        builder.covenant_output_in_app("open_agents", "Forager", agent_next.clone(), agent_value, 1, agent_root.covenant_id)?,
-    ];
-
-    // `observed_agent` is runtime-bound, so the context identifies its concrete
-    // app, actor, input UTXO, and before/after states.
-    let observed = BTreeMap::from([(
-        "remote".to_string(),
-        ObservedCovenantContext::from_app("open_agents")
-            .input("agent", "Forager", agent_root.utxo.clone(), agent_initial.clone())
-            .output("agent", "Forager", agent_next),
-    )]);
-
-    let cell_sigscript = builder.p2sh_signature_script_with_observed_covenants("Cell", "advance", cell_initial, args![], &observed)?;
-    let agent_sigscript = builder.p2sh_signature_script_in_app("open_agents", "Forager", "step", agent_initial, args![4])?;
-    let tx = TxBuilder::transaction(
-        vec![
-            TxBuilder::transaction_input(cell_root.outpoint, cell_sigscript),
-            TxBuilder::transaction_input(agent_root.outpoint, agent_sigscript),
-        ],
-        outputs,
-    );
-    let entries = vec![cell_root.utxo.clone(), agent_root.utxo.clone()];
-
-    execute_input_with_covenants(&tx, entries.clone(), 0)?;
-    execute_input_with_covenants(&tx, entries, 1)?;
+    // The complete typed transaction identifies the concrete actor behind the
+    // open `actor_type<AgentCapsule>` handle.
+    let context = TxContext::new()
+        .argent_input("core::Cell", cell_initial, "advance", cell_root.outpoint, cell_root.utxo.clone())
+        .argent_input(
+            "agents::Forager",
+            agent_initial,
+            EntryCall::new("step").args(args![4]),
+            agent_root.outpoint,
+            agent_root.utxo.clone(),
+        )
+        .argent_output("core::Cell", cell_next, CovenantBinding::new(0, cell_root.covenant_id), cell_value)
+        .argent_output("agents::Forager", agent_next, CovenantBinding::new(1, agent_root.covenant_id), agent_value);
+    let tx = builder.build(&context)?;
 
     println!("built Cell::advance + Forager::step open ICC co-spend");
+    println!("inputs: {}", tx.inputs.len());
+    println!("outputs: {}", tx.outputs.len());
     println!("artifacts: build/open_icc_agent/{{core,agent}}/artifact.json");
     Ok(())
 }

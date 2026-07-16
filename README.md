@@ -49,6 +49,11 @@ src/bin/open_icc_agent.rs
   builds `build/open_icc_agent`
   binds a concrete observed actor through explicit runtime context
 
+src/bin/dex_asset.rs
+  file-backed Core, Pair and asset apps under `ag/dex`
+  registers a Pair, mints a quote lot, funds its KAS reserve and executes a swap
+  exercises signed open-ICC co-spends and expanded asset capsule handles
+
 build/
   generated artifacts and Silverscript output
 ```
@@ -62,6 +67,7 @@ cargo run --bin two_actor_exchange
 cargo run --bin dynamic_actor_choice
 cargo run --bin multiapp_badge
 cargo run --bin open_icc_agent
+cargo run --bin dex_asset
 ```
 
 Run the complete local check, including every demo binary:

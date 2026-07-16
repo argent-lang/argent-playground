@@ -1,7 +1,7 @@
 use argent::build_inline;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{TxBuilder, actor, args, execute_input_with_covenants, state};
-use kaspa_consensus_core::Hash;
+use argent_runtime::{EntryCall, TxBuilder, TxContext, actor, args, state};
+use kaspa_consensus_core::{Hash, tx::CovenantBinding};
 
 // Router can become either actor in the enum. The builder names the chosen
 // actor, and the runtime lowers it through the artifact.
@@ -64,21 +64,25 @@ fn main() -> PlaygroundResult<()> {
 
     // Choose Alpha.
     let router_utxo = builder.covenant_utxo("Router", router_state.clone(), value, 0, false, Some(covenant_id))?;
-    let alpha_output = builder.covenant_output("Alpha", routed_state.clone(), value, 0, covenant_id)?;
     // `choose` takes `target: Target` in the Argent source, so the user arg is
     // the actor variant name from that enum.
-    let alpha_sigscript = builder.p2sh_signature_script("Router", "choose", router_state.clone(), args![actor("Alpha")])?;
-    let alpha_tx =
-        TxBuilder::transaction(vec![TxBuilder::transaction_input(demo_outpoint(0x31, 0), alpha_sigscript)], vec![alpha_output]);
-    execute_input_with_covenants(&alpha_tx, vec![router_utxo], 0)?;
+    let alpha_context = TxContext::new()
+        .argent_input(
+            "Router",
+            router_state.clone(),
+            EntryCall::new("choose").args(args![actor("Alpha")]),
+            demo_outpoint(0x31, 0),
+            router_utxo,
+        )
+        .argent_output("Alpha", routed_state.clone(), CovenantBinding::new(0, covenant_id), value);
+    builder.build(&alpha_context)?;
 
     // Same entry, same state transition, different actor choice.
     let router_utxo = builder.covenant_utxo("Router", router_state.clone(), value, 0, false, Some(covenant_id))?;
-    let beta_output = builder.covenant_output("Beta", routed_state, value, 0, covenant_id)?;
-    let beta_sigscript = builder.p2sh_signature_script("Router", "choose", router_state, args![actor("Beta")])?;
-    let beta_tx =
-        TxBuilder::transaction(vec![TxBuilder::transaction_input(demo_outpoint(0x32, 0), beta_sigscript)], vec![beta_output]);
-    execute_input_with_covenants(&beta_tx, vec![router_utxo], 0)?;
+    let beta_context = TxContext::new()
+        .argent_input("Router", router_state, EntryCall::new("choose").args(args![actor("Beta")]), demo_outpoint(0x32, 0), router_utxo)
+        .argent_output("Beta", routed_state, CovenantBinding::new(0, covenant_id), value);
+    builder.build(&beta_context)?;
 
     println!("built Router::choose tx: Router -> Alpha");
     println!("built Router::choose tx: Router -> Beta");

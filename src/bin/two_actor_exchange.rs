@@ -1,7 +1,7 @@
 use argent::build_inline;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{TxBuilder, args, execute_input_with_covenants, state};
-use kaspa_consensus_core::Hash;
+use argent_runtime::{TxBuilder, TxContext, state};
+use kaspa_consensus_core::{Hash, tx::CovenantBinding};
 
 // The Argent source only names the actor transitions. The route/template
 // plumbing is generated and kept out of the Rust builder calls too.
@@ -51,21 +51,23 @@ fn main() -> PlaygroundResult<()> {
 
     // Spend Ping and require the next output to become Pong.
     let ping_utxo = builder.covenant_utxo("Ping", ping_0.clone(), value, 0, false, Some(covenant_id))?;
-    let pong_output = builder.covenant_output("Pong", pong_1.clone(), value, 0, covenant_id)?;
-    let send_sigscript = builder.p2sh_signature_script("Ping", "send", ping_0, args![])?;
-    let open_tx =
-        TxBuilder::transaction(vec![TxBuilder::transaction_input(demo_outpoint(0x21, 0), send_sigscript)], vec![pong_output]);
-
-    execute_input_with_covenants(&open_tx, vec![ping_utxo], 0)?;
+    let open_context = TxContext::new().argent_input("Ping", ping_0, "send", demo_outpoint(0x21, 0), ping_utxo).argent_output(
+        "Pong",
+        pong_1.clone(),
+        CovenantBinding::new(0, covenant_id),
+        value,
+    );
+    builder.build(&open_context)?;
 
     // Spend Pong back into Ping using the same covenant id.
     let pong_utxo = builder.covenant_utxo("Pong", pong_1.clone(), value, 0, false, Some(covenant_id))?;
-    let ping_output = builder.covenant_output("Ping", ping_2, value, 0, covenant_id)?;
-    let reply_sigscript = builder.p2sh_signature_script("Pong", "reply", pong_1, args![])?;
-    let close_tx =
-        TxBuilder::transaction(vec![TxBuilder::transaction_input(demo_outpoint(0x22, 0), reply_sigscript)], vec![ping_output]);
-
-    execute_input_with_covenants(&close_tx, vec![pong_utxo], 0)?;
+    let close_context = TxContext::new().argent_input("Pong", pong_1, "reply", demo_outpoint(0x22, 0), pong_utxo).argent_output(
+        "Ping",
+        ping_2,
+        CovenantBinding::new(0, covenant_id),
+        value,
+    );
+    builder.build(&close_context)?;
 
     println!("built Ping::send tx: Ping -> Pong");
     println!("built Pong::reply tx: Pong -> Ping");

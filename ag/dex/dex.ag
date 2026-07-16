@@ -1,0 +1,385 @@
+import "./capsule.ag";
+import "./dex_registry.ag";
+
+// Core and Pair share source types while compiling as independent apps and
+// launching under independent covenant ids.
+
+// The core commits to one Pair implementation through authored capsule state.
+// Each registered Pair is a separately launched covenant using that handle.
+state DexCoreCapsule {
+    pubkey governor;
+    actor_type<DexCoreCapsule> core_type;
+    actor_type<DexPairState> pair_type;
+    virtual pairs;
+}
+
+state DexCoreState expands DexCoreCapsule {
+    pairs: PairRegistry;
+}
+
+state DexPairState {
+    pubkey initializer;
+    bool initialized;
+
+    covid core_id;
+    actor_type<DexCoreCapsule> core_type;
+
+    covid quote_id;
+    actor_type<AssetCapsule> quote_type;
+    covid base_id;
+    actor_type<AssetCapsule> base_type;
+
+    int quote_per_base_num;
+    int quote_per_base_den;
+    int swaps;
+    int reserve_moves;
+}
+
+// DexCore is touched only for pair registration and reserve migration. Normal
+// swaps do not contend on this actor.
+actor DexCore owns DexCoreState {
+    // The Pair covenant is launched independently in an uninitialized state.
+    // Registration consumes it, verifies its complete configuration through
+    // `pair_type`, and activates it atomically with the registry update.
+    // Until genesis observations land, the governor also audits that the Pair
+    // launch group contains no other authority-bearing outputs.
+    entry register_pair(pair_id: covid, governor_sig: sig)
+    observes candidate by pair_id {
+        inputs {
+            pair: self.pair_type;
+        }
+        outputs {
+            pair: self.pair_type;
+        }
+    }
+    emits one DexCore {
+        DexPairState pair = candidate.inputs.pair.state;
+
+        require(checkSig(governor_sig, governor));
+        require(pair.initialized == false);
+        require(pair.core_id == self.covenant_id);
+        require(pair.core_type == core_type);
+        require(pair.quote_id != pair.base_id);
+        require(pair.quote_per_base_num > 0);
+        require(pair.quote_per_base_den > 0);
+        require(pair.swaps == 0);
+        require(pair.reserve_moves == 0);
+        require(pairs.count >= 0);
+        require(pairs.count < MAX_PAIRS);
+        require(!registry_contains_pair(pairs.records, pairs.count, pair_id));
+
+        int offset = pairs.count * PAIR_RECORD_BYTES;
+        byte[384] next_records = byte[384](
+            pairs.records.slice(0, offset)
+                + byte[](pair_id)
+                + byte[](pair.quote_id)
+                + byte[](pair.base_id)
+                + pairs.records.slice(offset + PAIR_RECORD_BYTES, PAIR_RECORDS_BYTES)
+        );
+
+        DexPairState next_pair = {
+            initializer: pair.initializer,
+            initialized: true,
+            core_id: pair.core_id,
+            core_type: pair.core_type,
+            quote_id: pair.quote_id,
+            quote_type: pair.quote_type,
+            base_id: pair.base_id,
+            base_type: pair.base_type,
+            quote_per_base_num: pair.quote_per_base_num,
+            quote_per_base_den: pair.quote_per_base_den,
+            swaps: pair.swaps,
+            reserve_moves: pair.reserve_moves,
+        };
+
+        require candidate.outputs become {
+            pair <- self.pair_type(next_pair);
+        };
+
+        DexCoreState next_core = {
+            governor: governor,
+            core_type: core_type,
+            pair_type: pair_type,
+            pairs: PairRegistry {
+                records: next_records,
+                count: pairs.count + 1,
+            },
+        };
+
+        require(next.value == self.value);
+        become DexCore(next_core);
+    }
+
+    // Reserve migration reads the current registry through this unchanged core
+    // input/output pair. The linear preimage is supplied to the migrating Pair.
+    entry witness_registry() emits one DexCore {
+        require(next.value == self.value);
+        become DexCore(self.state);
+    }
+}
+
+actor DexPair owns DexPairState {
+    // The Pair input independently agrees to registration. DexCore::register_pair
+    // checks the same successor state and adds this covenant id to the registry.
+    entry activate(initializer_sig: sig) emits one DexPair {
+        require(initialized == false);
+        require(checkSig(initializer_sig, initializer));
+        require(core_id.co_spent());
+        require(quote_id != base_id);
+        require(quote_per_base_num > 0);
+        require(quote_per_base_den > 0);
+
+        DexPairState next_pair = {
+            initializer: initializer,
+            initialized: true,
+            core_id: core_id,
+            core_type: core_type,
+            quote_id: quote_id,
+            quote_type: quote_type,
+            base_id: base_id,
+            base_type: base_type,
+            quote_per_base_num: quote_per_base_num,
+            quote_per_base_den: quote_per_base_den,
+            swaps: swaps,
+            reserve_moves: reserve_moves,
+        };
+
+        require(next.value == self.value);
+        become DexPair(next_pair);
+    }
+
+    // A swap consumes Pair + quote payment + base reserve and creates
+    // Pair + quote reserve + base payout. Local names describe those roles;
+    // base/quote remain the persistent pair identity.
+    entry swap()
+    observes quote by self.quote_id {
+        inputs {
+            payment: self.quote_type;
+        }
+        outputs {
+            reserve: self.quote_type;
+        }
+    }
+    observes base by self.base_id {
+        inputs {
+            reserve: self.base_type;
+        }
+        outputs {
+            payout: self.base_type;
+        }
+    }
+    emits one DexPair {
+        require(initialized);
+
+        AssetCapsule quote_payment = quote.inputs.payment.state;
+        AssetCapsule base_reserve = base.inputs.reserve.state;
+
+        require(quote_payment.owner_kind == OWNER_KEY);
+        require(base_reserve.owner_kind == OWNER_COVID);
+        require(base_reserve.owner == byte[32](self.covenant_id));
+        require(quote_payment.amount > 0);
+        require(base_reserve.amount > 0);
+
+        // One base unit costs quote_per_base_num / quote_per_base_den quote
+        // units. Whole-lot transfers avoid rounding in this first DEX model.
+        require(
+            quote_payment.amount * quote_per_base_den
+                == base_reserve.amount * quote_per_base_num
+        );
+
+        AssetCapsule quote_reserve = {
+            owner: byte[32](self.covenant_id),
+            owner_kind: OWNER_COVID,
+            policy: quote_payment.policy,
+            amount: quote_payment.amount,
+        };
+
+        AssetCapsule base_payout = {
+            owner: quote_payment.owner,
+            owner_kind: OWNER_KEY,
+            policy: base_reserve.policy,
+            amount: base_reserve.amount,
+        };
+
+        require quote.outputs become {
+            reserve <- self.quote_type(quote_reserve);
+        };
+        require base.outputs become {
+            payout <- self.base_type(base_payout);
+        };
+
+        DexPairState next_pair = {
+            initializer: initializer,
+            initialized: initialized,
+            core_id: core_id,
+            core_type: core_type,
+            quote_id: quote_id,
+            quote_type: quote_type,
+            base_id: base_id,
+            base_type: base_type,
+            quote_per_base_num: quote_per_base_num,
+            quote_per_base_den: quote_per_base_den,
+            swaps: swaps + 1,
+            reserve_moves: reserve_moves,
+        };
+
+        // KAS fees, partial fills, change lots, and slippage are outside this
+        // demo. The asset and ownership invariants do not depend on them.
+        require(next.value == self.value);
+        become DexPair(next_pair);
+    }
+
+    // Moving the quote reserve to another Pair requires a current Core registry
+    // proof that the target Pair is registered for this asset.
+    entry move_quote_reserve(
+        target_pair_id: covid,
+        target_pair_index: int,
+        registry_preimage: byte[392]
+    )
+    observes registry by self.core_id {
+        inputs {
+            core: self.core_type;
+        }
+        outputs {
+            core: self.core_type;
+        }
+    }
+    observes moved_quote by self.quote_id {
+        inputs {
+            reserve: self.quote_type;
+        }
+        outputs {
+            reserve: self.quote_type;
+        }
+    }
+    emits one DexPair {
+        require(initialized);
+        require(target_pair_id != self.covenant_id);
+
+        DexCoreCapsule core = registry.inputs.core.state;
+        require(blake2b(registry_preimage) == core.pairs);
+        require(registry_authorizes_asset(
+            registry_preimage,
+            target_pair_index,
+            target_pair_id,
+            quote_id
+        ));
+
+        AssetCapsule quote_reserve = moved_quote.inputs.reserve.state;
+        require(quote_reserve.owner_kind == OWNER_COVID);
+        require(quote_reserve.owner == byte[32](self.covenant_id));
+
+        AssetCapsule moved_reserve = {
+            owner: byte[32](target_pair_id),
+            owner_kind: OWNER_COVID,
+            policy: quote_reserve.policy,
+            amount: quote_reserve.amount,
+        };
+
+        require registry.outputs become {
+            core <- self.core_type(core);
+        };
+        require moved_quote.outputs become {
+            reserve <- self.quote_type(moved_reserve);
+        };
+
+        DexPairState next_pair = {
+            initializer: initializer,
+            initialized: initialized,
+            core_id: core_id,
+            core_type: core_type,
+            quote_id: quote_id,
+            quote_type: quote_type,
+            base_id: base_id,
+            base_type: base_type,
+            quote_per_base_num: quote_per_base_num,
+            quote_per_base_den: quote_per_base_den,
+            swaps: swaps,
+            reserve_moves: reserve_moves + 1,
+        };
+
+        require(next.value == self.value);
+        become DexPair(next_pair);
+    }
+
+    // The base path is symmetric, but proves that the target is registered for
+    // the base asset rather than merely registered by covenant id.
+    entry move_base_reserve(
+        target_pair_id: covid,
+        target_pair_index: int,
+        registry_preimage: byte[392]
+    )
+    observes registry by self.core_id {
+        inputs {
+            core: self.core_type;
+        }
+        outputs {
+            core: self.core_type;
+        }
+    }
+    observes moved_base by self.base_id {
+        inputs {
+            reserve: self.base_type;
+        }
+        outputs {
+            reserve: self.base_type;
+        }
+    }
+    emits one DexPair {
+        require(initialized);
+        require(target_pair_id != self.covenant_id);
+
+        DexCoreCapsule core = registry.inputs.core.state;
+        require(blake2b(registry_preimage) == core.pairs);
+        require(registry_authorizes_asset(
+            registry_preimage,
+            target_pair_index,
+            target_pair_id,
+            base_id
+        ));
+
+        AssetCapsule base_reserve = moved_base.inputs.reserve.state;
+        require(base_reserve.owner_kind == OWNER_COVID);
+        require(base_reserve.owner == byte[32](self.covenant_id));
+
+        AssetCapsule moved_reserve = {
+            owner: byte[32](target_pair_id),
+            owner_kind: OWNER_COVID,
+            policy: base_reserve.policy,
+            amount: base_reserve.amount,
+        };
+
+        require registry.outputs become {
+            core <- self.core_type(core);
+        };
+        require moved_base.outputs become {
+            reserve <- self.base_type(moved_reserve);
+        };
+
+        DexPairState next_pair = {
+            initializer: initializer,
+            initialized: initialized,
+            core_id: core_id,
+            core_type: core_type,
+            quote_id: quote_id,
+            quote_type: quote_type,
+            base_id: base_id,
+            base_type: base_type,
+            quote_per_base_num: quote_per_base_num,
+            quote_per_base_den: quote_per_base_den,
+            swaps: swaps,
+            reserve_moves: reserve_moves + 1,
+        };
+
+        require(next.value == self.value);
+        become DexPair(next_pair);
+    }
+}
+
+app Dexc {
+    actor DexCore;
+}
+
+app Dexp {
+    actor DexPair;
+}

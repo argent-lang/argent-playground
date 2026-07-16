@@ -1,0 +1,71 @@
+const int MAX_PAIRS = 4;
+const int PAIR_RECORD_BYTES = 96;
+const int PAIR_RECORDS_BYTES = 384;
+const int PAIR_REGISTRY_BYTES = 392;
+
+// Pair records are packed linearly as:
+//
+//     pair covenant id | quote asset covenant id | base asset covenant id
+//
+// Four fixed slots keep this demo bounded. Replacing the linear digest with a
+// Merkle root later changes registry proofs, not the pair or swap protocol.
+state PairRegistry {
+    byte[384] records;
+    int count;
+}
+
+fn pair_record_id(records: byte[384], index: int) -> covid {
+    require(index >= 0);
+    require(index < MAX_PAIRS);
+    int offset = index * PAIR_RECORD_BYTES;
+    return byte[32](records.slice(offset, offset + 32));
+}
+
+fn pair_record_quote_id(records: byte[384], index: int) -> covid {
+    require(index >= 0);
+    require(index < MAX_PAIRS);
+    int offset = index * PAIR_RECORD_BYTES + 32;
+    return byte[32](records.slice(offset, offset + 32));
+}
+
+fn pair_record_base_id(records: byte[384], index: int) -> covid {
+    require(index >= 0);
+    require(index < MAX_PAIRS);
+    int offset = index * PAIR_RECORD_BYTES + 64;
+    return byte[32](records.slice(offset, offset + 32));
+}
+
+fn registry_contains_pair(
+    records: byte[384],
+    count: int,
+    pair_id: covid
+) -> bool {
+    bool found = false;
+    for(i, 0, count, MAX_PAIRS) {
+        if (pair_record_id(records, i) == pair_id) {
+            found = true;
+        }
+    }
+    return found;
+}
+
+fn registry_authorizes_asset(
+    registry: byte[392],
+    index: int,
+    pair_id: covid,
+    asset_id: covid
+) -> bool {
+    byte[384] records = byte[384](registry.slice(0, PAIR_RECORDS_BYTES));
+    int count = OpBin2Num(registry.slice(PAIR_RECORDS_BYTES, PAIR_REGISTRY_BYTES));
+
+    require(count >= 0);
+    require(count <= MAX_PAIRS);
+    require(index >= 0);
+    require(index < count);
+
+    return pair_record_id(records, index) == pair_id
+        && (
+            pair_record_quote_id(records, index) == asset_id
+            || pair_record_base_id(records, index) == asset_id
+        );
+}
