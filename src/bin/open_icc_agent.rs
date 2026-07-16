@@ -19,7 +19,7 @@ fn main() -> PlaygroundResult<()> {
     let agent_initial = state! { energy: 5 };
     let mut agent_genesis_tx = TxBuilder::transaction(
         vec![TxBuilder::transaction_input(demo_outpoint(0x81, 0), Vec::new())],
-        vec![builder.genesis_output_in_app("open_agents", "Forager", agent_initial.clone(), agent_value)?],
+        vec![builder.genesis_output("open_agents::Forager", agent_initial.clone(), agent_value)?],
     );
     let agent_genesis = TxBuilder::populate_genesis_covenants(&mut agent_genesis_tx, &[GenesisCovenantGroup::new(0, vec![0])])?;
     let agent_root = agent_genesis.output(0)?;

@@ -95,9 +95,8 @@ fn main() -> PlaygroundResult<()> {
         );
     let mint = builder.build(&mint_context)?;
     let quote_payment_outpoint = output_outpoint(&mint, 1);
-    let quote_payment_utxo = builder.covenant_utxo_in_app(
-        "mintable_asset",
-        "MintableToken",
+    let quote_payment_utxo = builder.covenant_utxo(
+        "mintable_asset::MintableToken",
         quote_payment.clone(),
         QUOTE_VALUE,
         0,
@@ -153,15 +152,8 @@ fn main() -> PlaygroundResult<()> {
         .argent_output("dex_pair_app::DexPair", pair_active.clone(), CovenantBinding::new(1, pair_root.covenant_id), PAIR_VALUE);
     let register = builder.build(&register_context)?;
     let pair_active_outpoint = output_outpoint(&register, 1);
-    let pair_active_utxo = builder.covenant_utxo_in_app(
-        "dex_pair_app",
-        "DexPair",
-        pair_active.clone(),
-        PAIR_VALUE,
-        0,
-        false,
-        Some(pair_root.covenant_id),
-    )?;
+    let pair_active_utxo =
+        builder.covenant_utxo("dex_pair_app::DexPair", pair_active.clone(), PAIR_VALUE, 0, false, Some(pair_root.covenant_id))?;
 
     // Fund the Pair's KAS reserve through the normal asset transfer entry.
     let pair_owner = pair_root.covenant_id.as_bytes().to_vec();
@@ -183,9 +175,8 @@ fn main() -> PlaygroundResult<()> {
         );
     let fund_reserve = builder.build(&fund_reserve_context)?;
     let base_reserve_outpoint = output_outpoint(&fund_reserve, 0);
-    let base_reserve_utxo = builder.covenant_utxo_in_app(
-        "kas_asset",
-        "KasToken",
+    let base_reserve_utxo = builder.covenant_utxo(
+        "kas_asset::KasToken",
         base_reserve.clone(),
         BASE_AMOUNT as u64,
         0,
@@ -242,10 +233,7 @@ fn launch_actor(
     funding_byte: u8,
 ) -> PlaygroundResult<LaunchedActor> {
     let actor = actor.into();
-    let output = match &actor.app {
-        Some(app) => builder.genesis_output_in_app(app, &actor.actor, state, value)?,
-        None => builder.genesis_output(&actor.actor, state, value)?,
-    };
+    let output = builder.genesis_output(actor, state, value)?;
     let mut tx = TxBuilder::transaction(vec![TxBuilder::transaction_input(demo_outpoint(funding_byte, 0), Vec::new())], vec![output]);
     let genesis = TxBuilder::populate_genesis_covenants(&mut tx, &[GenesisCovenantGroup::new(0, vec![0])])?;
     let output = genesis.output(0)?;

@@ -37,7 +37,7 @@ fn main() -> PlaygroundResult<()> {
     };
     let mut badge_genesis_tx = TxBuilder::transaction(
         vec![TxBuilder::transaction_input(demo_outpoint(0x71, 0), Vec::new())],
-        vec![builder.genesis_output_in_app("badge_asset", "Badge", badge_initial.clone(), badge_value)?],
+        vec![builder.genesis_output("badge_asset::Badge", badge_initial.clone(), badge_value)?],
     );
     let badge_genesis = TxBuilder::populate_genesis_covenants(&mut badge_genesis_tx, &[GenesisCovenantGroup::new(0, vec![0])])?;
     let badge_root = badge_genesis.output(0)?;
