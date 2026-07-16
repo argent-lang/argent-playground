@@ -376,10 +376,10 @@ actor DexPair owns DexPairState {
     }
 }
 
-app DexCoreApp {
+app Dexc {
     actor DexCore;
 }
 
-app DexPairApp {
+app Dexp {
     actor DexPair;
 }

@@ -40,13 +40,13 @@ struct PairConfig {
 }
 
 fn main() -> PlaygroundResult<()> {
-    let core_artifact = build_file_app(DEX_SOURCE, "DexCoreApp", "build/dex/core")?;
-    let pair_artifact = build_file_app(DEX_SOURCE, "DexPairApp", "build/dex/pair")?;
+    let core_artifact = build_file_app(DEX_SOURCE, "Dexc", "build/dex/core")?;
+    let pair_artifact = build_file_app(DEX_SOURCE, "Dexp", "build/dex/pair")?;
     let quote_artifact = build_file(QUOTE_SOURCE, "build/dex/mintable_asset")?;
     let base_artifact = build_file(BASE_SOURCE, "build/dex/kas_asset")?;
 
-    let bundle = ArtifactBundle::named("dex_core_app", &core_artifact)?
-        .with_app("dex_pair_app", &pair_artifact)?
+    let bundle = ArtifactBundle::named("dexc", &core_artifact)?
+        .with_app("dexp", &pair_artifact)?
         .with_app("mintable_asset", &quote_artifact)?
         .with_app("kas_asset", &base_artifact)?;
     let builder = TxBuilder::from_bundle(&bundle)?;
@@ -60,15 +60,15 @@ fn main() -> PlaygroundResult<()> {
     let issuer_key = issuer.x_only_public_key().0.serialize().to_vec();
     let trader_key = trader.x_only_public_key().0.serialize().to_vec();
 
-    let core_type = builder.actor_type_handle("DexCore", "DexCoreCapsule")?;
-    let pair_type = builder.actor_type_handle("dex_pair_app::DexPair", "DexPairState")?;
+    let core_type = builder.actor_type_handle("dexc::DexCore", "DexCoreCapsule")?;
+    let pair_type = builder.actor_type_handle("dexp::DexPair", "DexPairState")?;
     let quote_type = builder.actor_type_handle("mintable_asset::MintableToken", "AssetCapsule")?;
     let base_type = builder.actor_type_handle("kas_asset::KasToken", "AssetCapsule")?;
 
     // Core starts with an empty four-slot registry. Its virtual `pairs` field
     // stores the digest while Rust supplies the typed PairRegistry preimage.
     let core_initial = core_state(&governor_key, &core_type, &pair_type, vec![0; 384], 0);
-    let core_root = launch_actor(&builder, "DexCore", core_initial.clone(), CORE_VALUE, 0xa0)?;
+    let core_root = launch_actor(&builder, "dexc::DexCore", core_initial.clone(), CORE_VALUE, 0xa0)?;
 
     // MintableToken is the quote asset. Its Minter route gives the token's
     // external AssetCapsule handle real route-template context.
@@ -120,7 +120,7 @@ fn main() -> PlaygroundResult<()> {
         base_type,
     };
     let pair_initial = pair_state(&pair_config, false, 0, 0);
-    let pair_root = launch_actor(&builder, "dex_pair_app::DexPair", pair_initial.clone(), PAIR_VALUE, 0xa3)?;
+    let pair_root = launch_actor(&builder, "dexp::DexPair", pair_initial.clone(), PAIR_VALUE, 0xa3)?;
 
     // Registration is a 2:2 ICC transition. Core verifies the full Pair state
     // through pair_type, while DexPair::activate independently signs the same
@@ -134,7 +134,7 @@ fn main() -> PlaygroundResult<()> {
     let core_registered = core_state(&governor_key, &core_type, &pair_type, registry_records, 1);
     let register_context = TxContext::new()
         .argent_input(
-            "DexCore",
+            "dexc::DexCore",
             core_initial,
             EntryCall::new("register_pair")
                 .args_with(|tx, input_idx| args![pair_root.covenant_id, sign_input(tx, input_idx, &governor)]),
@@ -142,18 +142,18 @@ fn main() -> PlaygroundResult<()> {
             core_root.utxo.clone(),
         )
         .argent_input(
-            "dex_pair_app::DexPair",
+            "dexp::DexPair",
             pair_initial,
             EntryCall::new("activate").args_with(|tx, input_idx| args![sign_input(tx, input_idx, &pair_initializer)]),
             pair_root.outpoint,
             pair_root.utxo.clone(),
         )
-        .argent_output("DexCore", core_registered, CovenantBinding::new(0, core_root.covenant_id), CORE_VALUE)
-        .argent_output("dex_pair_app::DexPair", pair_active.clone(), CovenantBinding::new(1, pair_root.covenant_id), PAIR_VALUE);
+        .argent_output("dexc::DexCore", core_registered, CovenantBinding::new(0, core_root.covenant_id), CORE_VALUE)
+        .argent_output("dexp::DexPair", pair_active.clone(), CovenantBinding::new(1, pair_root.covenant_id), PAIR_VALUE);
     let register = builder.build(&register_context)?;
     let pair_active_outpoint = output_outpoint(&register, 1);
     let pair_active_utxo =
-        builder.covenant_utxo("dex_pair_app::DexPair", pair_active.clone(), PAIR_VALUE, 0, false, Some(pair_root.covenant_id))?;
+        builder.covenant_utxo("dexp::DexPair", pair_active.clone(), PAIR_VALUE, 0, false, Some(pair_root.covenant_id))?;
 
     // Fund the Pair's KAS reserve through the normal asset transfer entry.
     let pair_owner = pair_root.covenant_id.as_bytes().to_vec();
@@ -191,7 +191,7 @@ fn main() -> PlaygroundResult<()> {
     let base_payout = kas_state(&trader_key, OWNER_KEY, BASE_AMOUNT);
     let pair_after_swap = pair_state(&pair_config, true, 1, 0);
     let swap_context = TxContext::new()
-        .argent_input("dex_pair_app::DexPair", pair_active, "swap", pair_active_outpoint, pair_active_utxo)
+        .argent_input("dexp::DexPair", pair_active, "swap", pair_active_outpoint, pair_active_utxo)
         .argent_input(
             "mintable_asset::MintableToken",
             quote_payment,
@@ -207,7 +207,7 @@ fn main() -> PlaygroundResult<()> {
             base_reserve_outpoint,
             base_reserve_utxo,
         )
-        .argent_output("dex_pair_app::DexPair", pair_after_swap, CovenantBinding::new(0, pair_root.covenant_id), PAIR_VALUE)
+        .argent_output("dexp::DexPair", pair_after_swap, CovenantBinding::new(0, pair_root.covenant_id), PAIR_VALUE)
         .argent_output("mintable_asset::MintableToken", quote_reserve, CovenantBinding::new(1, minter_root.covenant_id), QUOTE_VALUE)
         .argent_output("kas_asset::KasToken", base_payout, CovenantBinding::new(2, base_root.covenant_id), BASE_AMOUNT as u64);
     let swap = builder.build(&swap_context)?;

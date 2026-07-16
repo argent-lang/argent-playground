@@ -41,6 +41,6 @@ actor Cell owns CellState {
     }
 }
 
-app CellCore {
+app Core {
     actor Cell;
 }

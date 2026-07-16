@@ -12,7 +12,7 @@ fn main() -> PlaygroundResult<()> {
     // observed asset app.
     let asset_artifact = build_file(ASSET_SOURCE, "build/multiapp_badge/asset")?;
     let controller_artifact = build_file(CONTROLLER_SOURCE, "build/multiapp_badge/controller")?;
-    let bundle = ArtifactBundle::new(&controller_artifact)?.with_app("badge_asset", &asset_artifact)?;
+    let bundle = ArtifactBundle::named("badge_controller", &controller_artifact)?.with_app("badge_asset", &asset_artifact)?;
     let builder = TxBuilder::from_bundle(&bundle)?;
 
     let controller_value = 4_000;
@@ -23,7 +23,7 @@ fn main() -> PlaygroundResult<()> {
     let controller_initial = state! { minted: 0 };
     let mut controller_genesis_tx = TxBuilder::transaction(
         vec![TxBuilder::transaction_input(demo_outpoint(0x70, 0), Vec::new())],
-        vec![builder.genesis_output("Controller", controller_initial.clone(), controller_value)?],
+        vec![builder.genesis_output("badge_controller::Controller", controller_initial.clone(), controller_value)?],
     );
     let controller_genesis =
         TxBuilder::populate_genesis_covenants(&mut controller_genesis_tx, &[GenesisCovenantGroup::new(0, vec![0])])?;
@@ -51,7 +51,7 @@ fn main() -> PlaygroundResult<()> {
 
     let context = TxContext::new()
         .argent_input(
-            "Controller",
+            "badge_controller::Controller",
             controller_initial,
             EntryCall::new("mint").args(args![badge_root.covenant_id, amount]),
             controller_root.outpoint,
@@ -64,7 +64,12 @@ fn main() -> PlaygroundResult<()> {
             badge_root.outpoint,
             badge_root.utxo.clone(),
         )
-        .argent_output("Controller", controller_next, CovenantBinding::new(0, controller_root.covenant_id), controller_value)
+        .argent_output(
+            "badge_controller::Controller",
+            controller_next,
+            CovenantBinding::new(0, controller_root.covenant_id),
+            controller_value,
+        )
         .argent_output("badge_asset::Badge", badge_next, CovenantBinding::new(1, badge_root.covenant_id), badge_value);
     let tx = builder.build(&context)?;
 
