@@ -1,7 +1,7 @@
 use argent::build_inline;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{TxBuilder, args, state};
-use kaspa_consensus_core::Hash;
+use argent_runtime::{EntryCall, TxBuilder, TxContext, args, state};
+use kaspa_consensus_core::{Hash, tx::CovenantBinding};
 
 const PAIR_APP: &str = r#"
 state BoxState {
@@ -68,15 +68,12 @@ fn main() -> PlaygroundResult<()> {
     let left_utxo = builder.covenant_utxo("Left", left_initial.clone(), left_value, 0, false, Some(covenant_id))?;
     let right_utxo = builder.covenant_utxo("Right", right_initial.clone(), right_value, 0, false, Some(covenant_id))?;
 
-    let tx = builder
-        .transition("Left", "shift")
-        .args(args![3])
-        .input(left_outpoint, left_utxo, left_initial)
-        .consume("peer", "accept_shift", right_outpoint, right_utxo, right_initial, args![])
-        .output("left_out", left_next, left_value)
-        .output("peer_out", right_next, right_value)
-        .build()?
-        .transaction;
+    let context = TxContext::new()
+        .argent_input("Left", left_initial, EntryCall::new("shift").args(args![3]), left_outpoint, left_utxo)
+        .argent_input("Right", right_initial, "accept_shift", right_outpoint, right_utxo)
+        .argent_output("Left", left_next, CovenantBinding::new(0, covenant_id), left_value)
+        .argent_output("Right", right_next, CovenantBinding::new(0, covenant_id), right_value);
+    let tx = builder.build(&context)?;
 
     println!("built Left::shift + Right::accept_shift 2:2 tx");
     println!("inputs: {}", tx.inputs.len());
