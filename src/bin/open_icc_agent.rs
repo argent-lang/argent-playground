@@ -1,7 +1,7 @@
 use argent::build_file;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{ArtifactBundle, ObservedCovenantContext, TxBuilder, args, state};
-use kaspa_consensus_core::tx::GenesisCovenantGroup;
+use argent_runtime::{ArtifactBundle, EntryCall, TxBuilder, TxContext, args, state};
+use kaspa_consensus_core::tx::{CovenantBinding, GenesisCovenantGroup};
 
 const CORE_SOURCE: &str = "ag/open_icc_agent/core.ag";
 const AGENT_SOURCE: &str = "ag/open_icc_agent/forager.ag";
@@ -41,20 +41,20 @@ fn main() -> PlaygroundResult<()> {
         ticks: 1,
     };
 
-    // `observed_agent` is runtime-bound, so the context identifies its concrete
-    // app, actor, input UTXO, and before/after states.
-    let observed = ObservedCovenantContext::from_app("open_agents")
-        .input("agent", "Forager", agent_root.utxo.clone(), agent_initial.clone())
-        .output("agent", "Forager", agent_next);
-
-    let tx = builder
-        .transition("Cell", "advance")
-        .input(cell_root.outpoint, cell_root.utxo.clone(), cell_initial)
-        .observe("remote", observed)
-        .output("cell", cell_next, cell_value)
-        .co_spend_observed("remote", "agent", "step", agent_root.outpoint, args![4], agent_value)
-        .build()?
-        .transaction;
+    // The complete typed transaction identifies the concrete actor behind the
+    // open `actor_type<AgentCapsule>` handle.
+    let context = TxContext::new()
+        .argent_input("Cell", cell_initial, "advance", cell_root.outpoint, cell_root.utxo.clone())
+        .argent_input(
+            "open_agents::Forager",
+            agent_initial,
+            EntryCall::new("step").args(args![4]),
+            agent_root.outpoint,
+            agent_root.utxo.clone(),
+        )
+        .argent_output("Cell", cell_next, CovenantBinding::new(0, cell_root.covenant_id), cell_value)
+        .argent_output("open_agents::Forager", agent_next, CovenantBinding::new(1, agent_root.covenant_id), agent_value);
+    let tx = builder.build(&context)?;
 
     println!("built Cell::advance + Forager::step open ICC co-spend");
     println!("inputs: {}", tx.inputs.len());

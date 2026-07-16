@@ -1,7 +1,7 @@
 use argent::build_file;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{ArtifactBundle, TxBuilder, args, state};
-use kaspa_consensus_core::tx::GenesisCovenantGroup;
+use argent_runtime::{ArtifactBundle, EntryCall, TxBuilder, TxContext, args, state};
+use kaspa_consensus_core::tx::{CovenantBinding, GenesisCovenantGroup};
 
 const ASSET_SOURCE: &str = "ag/multiapp_badge/badge_asset.ag";
 const CONTROLLER_SOURCE: &str = "ag/multiapp_badge/badge_controller.ag";
@@ -49,26 +49,24 @@ fn main() -> PlaygroundResult<()> {
         balance: 10 + amount,
     };
 
-    // The attached asset app fixes the closed ICC implementation, so no
-    // observed-covenant context is needed at runtime.
-    let tx = builder
-        .transition("Controller", "mint")
-        .args(args![badge_root.covenant_id, amount])
-        .input(controller_root.outpoint, controller_root.utxo.clone(), controller_initial)
-        .output("controller", controller_next, controller_value)
-        .co_spend_in_app(
-            "badge_asset",
-            "Badge",
-            "apply",
+    let context = TxContext::new()
+        .argent_input(
+            "Controller",
+            controller_initial,
+            EntryCall::new("mint").args(args![badge_root.covenant_id, amount]),
+            controller_root.outpoint,
+            controller_root.utxo.clone(),
+        )
+        .argent_input(
+            "badge_asset::Badge",
+            badge_initial,
+            EntryCall::new("apply").args(args![10 + amount]),
             badge_root.outpoint,
             badge_root.utxo.clone(),
-            badge_initial,
-            args![10 + amount],
-            badge_next,
-            badge_value,
         )
-        .build()?
-        .transaction;
+        .argent_output("Controller", controller_next, CovenantBinding::new(0, controller_root.covenant_id), controller_value)
+        .argent_output("badge_asset::Badge", badge_next, CovenantBinding::new(1, badge_root.covenant_id), badge_value);
+    let tx = builder.build(&context)?;
 
     println!("controller genesis tx: {}", controller_genesis_tx.id());
     println!("controller covenant id: {}", controller_root.covenant_id);
