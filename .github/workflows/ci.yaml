@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: michaelsutton/argent
-          ref: e9663c05d56ed4a0916a88c016f8bed8ba4da937
+          ref: master
           path: argent
 
       - name: Install Rust toolchain
