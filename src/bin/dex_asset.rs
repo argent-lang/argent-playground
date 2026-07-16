@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use argent::build_file;
+use argent::{build_file, build_file_app};
 use argent_playground::{PlaygroundResult, demo_keypair, demo_outpoint, sign_input};
 use argent_runtime::{ArtifactBundle, ArtifactValue, EntryCall, TxBuilder, TxContext, args, state};
 use kaspa_consensus_core::{
@@ -8,8 +8,7 @@ use kaspa_consensus_core::{
     tx::{CovenantBinding, GenesisCovenantGroup, Transaction, TransactionOutpoint, UtxoEntry},
 };
 
-const CORE_SOURCE: &str = "ag/dex/dex_core.ag";
-const PAIR_SOURCE: &str = "ag/dex/dex_pair.ag";
+const DEX_SOURCE: &str = "ag/dex/dex.ag";
 const QUOTE_SOURCE: &str = "ag/dex/mintable_asset.ag";
 const BASE_SOURCE: &str = "ag/dex/kas_asset.ag";
 
@@ -41,8 +40,8 @@ struct PairConfig {
 }
 
 fn main() -> PlaygroundResult<()> {
-    let core_artifact = build_file(CORE_SOURCE, "build/dex/core")?;
-    let pair_artifact = build_file(PAIR_SOURCE, "build/dex/pair")?;
+    let core_artifact = build_file_app(DEX_SOURCE, "DexCoreApp", "build/dex/core")?;
+    let pair_artifact = build_file_app(DEX_SOURCE, "DexPairApp", "build/dex/pair")?;
     let quote_artifact = build_file(QUOTE_SOURCE, "build/dex/mintable_asset")?;
     let base_artifact = build_file(BASE_SOURCE, "build/dex/kas_asset")?;
 

@@ -1,8 +1,8 @@
 import "./capsule.ag";
 import "./dex_registry.ag";
 
-// Two thin app roots import these definitions. Core and Pair therefore share
-// source types while compiling to independent apps and covenant ids.
+// Core and Pair share source types while compiling as independent apps and
+// launching under independent covenant ids.
 
 // The core commits to one Pair implementation through authored capsule state.
 // Each registered Pair is a separately launched covenant using that handle.
@@ -374,4 +374,12 @@ actor DexPair owns DexPairState {
         require(next.value == self.value);
         become DexPair(next_pair);
     }
+}
+
+app DexCoreApp {
+    actor DexCore;
+}
+
+app DexPairApp {
+    actor DexPair;
 }
