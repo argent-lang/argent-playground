@@ -45,9 +45,12 @@ struct PairConfig {
 DEX demo story
 ==============
 
-`MAsset` is one mintable-asset implementation instantiated under two covenant
-ids, A and C. `KAsset` represents native KAS as asset B. The two independently
-launched pair covenants are registered by one DexCore:
+`MAsset` is a mintable asset implementation used to launch two distinct assets,
+A and C, each with its own covenant id. `KAsset` is a separate implementation
+representing native KAS as asset B.
+
+Two pair covenants are then launched independently and registered under one
+`DexCore` registry:
 
     DexCore registry
         |
@@ -55,7 +58,7 @@ launched pair covenants are registered by one DexCore:
         |
         +-- A/C pair: MAsset A <-> MAsset C
 
-The demo executes these atomic transitions:
+The demo executes three atomic transitions:
 
     mint A
         Minter A
@@ -69,10 +72,10 @@ The demo executes these atomic transitions:
         Pair A/B + DexCore + A(Pair A/B)
             -> Pair A/B + DexCore + A(Pair A/C)
 
-The last transaction is why the Core registry matters. Pair A/B observes the
-unchanged Core state, proves that A/C is registered for asset A, and observes
-the A transfer. The asset independently authorizes the spend because its
-current owner, Pair A/B, is co-spent.
+The last tx uses DexCore to verify that A/C is a registered pair for asset A.
+Pair A/B observes both the unchanged Core state and the A reserve transfer. The
+asset independently authorizes the spend because its current owner, Pair A/B,
+is co-spent.
 */
 fn main() -> PlaygroundResult<()> {
     // 1. Compile every app and give each one the same short name used by actor
