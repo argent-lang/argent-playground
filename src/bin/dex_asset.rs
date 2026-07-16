@@ -85,6 +85,7 @@ fn main() -> PlaygroundResult<()> {
                 .args_with(|tx, input_idx| args![trader_key.clone(), OWNER_KEY, QUOTE_AMOUNT, sign_input(tx, input_idx, &issuer)]),
             minter_root.outpoint,
             minter_root.utxo.clone(),
+            0,
         )
         .argent_output("mintable_asset::Minter", minter_next, CovenantBinding::new(0, minter_root.covenant_id), MINTER_VALUE)
         .argent_output(
@@ -140,6 +141,7 @@ fn main() -> PlaygroundResult<()> {
                 .args_with(|tx, input_idx| args![pair_root.covenant_id, sign_input(tx, input_idx, &governor)]),
             core_root.outpoint,
             core_root.utxo.clone(),
+            0,
         )
         .argent_input(
             "dexp::DexPair",
@@ -147,6 +149,7 @@ fn main() -> PlaygroundResult<()> {
             EntryCall::new("activate").args_with(|tx, input_idx| args![sign_input(tx, input_idx, &pair_initializer)]),
             pair_root.outpoint,
             pair_root.utxo.clone(),
+            0,
         )
         .argent_output("dexc::DexCore", core_registered, CovenantBinding::new(0, core_root.covenant_id), CORE_VALUE)
         .argent_output("dexp::DexPair", pair_active.clone(), CovenantBinding::new(1, pair_root.covenant_id), PAIR_VALUE);
@@ -166,6 +169,7 @@ fn main() -> PlaygroundResult<()> {
                 .args_with(|tx, input_idx| args![pair_owner.clone(), OWNER_COVID, BASE_AMOUNT, sign_input(tx, input_idx, &trader)]),
             base_root.outpoint,
             base_root.utxo.clone(),
+            0,
         )
         .argent_output(
             "kas_asset::KasToken",
@@ -191,7 +195,7 @@ fn main() -> PlaygroundResult<()> {
     let base_payout = kas_state(&trader_key, OWNER_KEY, BASE_AMOUNT);
     let pair_after_swap = pair_state(&pair_config, true, 1, 0);
     let swap_context = TxContext::new()
-        .argent_input("dexp::DexPair", pair_active, "swap", pair_active_outpoint, pair_active_utxo)
+        .argent_input("dexp::DexPair", pair_active, "swap", pair_active_outpoint, pair_active_utxo, 0)
         .argent_input(
             "mintable_asset::MintableToken",
             quote_payment,
@@ -199,6 +203,7 @@ fn main() -> PlaygroundResult<()> {
                 .args_with(|tx, input_idx| args![pair_root.covenant_id, OWNER_COVID, sign_input(tx, input_idx, &trader)]),
             quote_payment_outpoint,
             quote_payment_utxo,
+            0,
         )
         .argent_input(
             "kas_asset::KasToken",
@@ -206,6 +211,7 @@ fn main() -> PlaygroundResult<()> {
             EntryCall::new("transfer").args(args![trader_key.clone(), OWNER_KEY, BASE_AMOUNT, vec![0; 65]]),
             base_reserve_outpoint,
             base_reserve_utxo,
+            0,
         )
         .argent_output("dexp::DexPair", pair_after_swap, CovenantBinding::new(0, pair_root.covenant_id), PAIR_VALUE)
         .argent_output("mintable_asset::MintableToken", quote_reserve, CovenantBinding::new(1, minter_root.covenant_id), QUOTE_VALUE)

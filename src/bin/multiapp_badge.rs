@@ -56,6 +56,7 @@ fn main() -> PlaygroundResult<()> {
             EntryCall::new("mint").args(args![badge_root.covenant_id, amount]),
             controller_root.outpoint,
             controller_root.utxo.clone(),
+            0,
         )
         .argent_input(
             "badge_asset::Badge",
@@ -63,6 +64,7 @@ fn main() -> PlaygroundResult<()> {
             EntryCall::new("apply").args(args![10 + amount]),
             badge_root.outpoint,
             badge_root.utxo.clone(),
+            0,
         )
         .argent_output(
             "badge_controller::Controller",

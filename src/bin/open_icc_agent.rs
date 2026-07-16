@@ -44,13 +44,14 @@ fn main() -> PlaygroundResult<()> {
     // The complete typed transaction identifies the concrete actor behind the
     // open `actor_type<AgentCapsule>` handle.
     let context = TxContext::new()
-        .argent_input("core::Cell", cell_initial, "advance", cell_root.outpoint, cell_root.utxo.clone())
+        .argent_input("core::Cell", cell_initial, "advance", cell_root.outpoint, cell_root.utxo.clone(), 0)
         .argent_input(
             "agents::Forager",
             agent_initial,
             EntryCall::new("step").args(args![4]),
             agent_root.outpoint,
             agent_root.utxo.clone(),
+            0,
         )
         .argent_output("core::Cell", cell_next, CovenantBinding::new(0, cell_root.covenant_id), cell_value)
         .argent_output("agents::Forager", agent_next, CovenantBinding::new(1, agent_root.covenant_id), agent_value);

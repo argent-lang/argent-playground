@@ -48,6 +48,7 @@ fn main() -> PlaygroundResult<()> {
             EntryCall::new("bump").args_with(|tx, input_idx| args![sign_input(tx, input_idx, &owner), 3]),
             demo_outpoint(0x11, 0),
             input_utxo,
+            0,
         )
         .argent_output("Counter", next, CovenantBinding::new(0, covenant_id), input_value);
     let tx = builder.build(&context)?;

@@ -69,8 +69,8 @@ fn main() -> PlaygroundResult<()> {
     let right_utxo = builder.covenant_utxo("Right", right_initial.clone(), right_value, 0, false, Some(covenant_id))?;
 
     let context = TxContext::new()
-        .argent_input("Left", left_initial, EntryCall::new("shift").args(args![3]), left_outpoint, left_utxo)
-        .argent_input("Right", right_initial, "accept_shift", right_outpoint, right_utxo)
+        .argent_input("Left", left_initial, EntryCall::new("shift").args(args![3]), left_outpoint, left_utxo, 0)
+        .argent_input("Right", right_initial, "accept_shift", right_outpoint, right_utxo, 0)
         .argent_output("Left", left_next, CovenantBinding::new(0, covenant_id), left_value)
         .argent_output("Right", right_next, CovenantBinding::new(0, covenant_id), right_value);
     let tx = builder.build(&context)?;

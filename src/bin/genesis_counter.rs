@@ -47,6 +47,7 @@ fn main() -> PlaygroundResult<()> {
             EntryCall::new("bump").args(args![3]),
             counter_genesis.outpoint,
             counter_genesis.utxo.clone(),
+            0,
         )
         .argent_output("Counter", next, CovenantBinding::new(0, counter_genesis.covenant_id), input_value);
     let tx = builder.build(&context)?;
