@@ -234,9 +234,10 @@ actor DexPair owns DexPairState {
         become DexPair(next_pair);
     }
 
-    // Moving the quote reserve to another Pair requires a current Core registry
-    // proof that the target Pair is registered for this asset.
-    entry move_quote_reserve(
+    // Moving either reserve to another Pair requires a current Core registry
+    // proof that the target Pair is registered for the selected asset.
+    entry move_reserve(
+        asset_id: covid,
         target_pair_id: covid,
         target_pair_index: int,
         registry_preimage: byte[392]
@@ -249,17 +250,21 @@ actor DexPair owns DexPairState {
             core: self.core_type;
         }
     }
-    observes moved_quote by self.quote_id {
+    observes moved_asset by asset_id {
         inputs {
-            reserve: self.quote_type;
+            reserve: actor_type<AssetCapsule> as asset_type;
         }
         outputs {
-            reserve: self.quote_type;
+            reserve: asset_type;
         }
     }
     emits one DexPair {
         require(initialized);
         require(target_pair_id != self.covenant_id);
+        require(
+            (asset_id == quote_id && asset_type == quote_type)
+                || (asset_id == base_id && asset_type == base_type)
+        );
 
         DexCoreCapsule core = registry.inputs.core.state;
         require(blake2b(registry_preimage) == core.pairs);
@@ -267,98 +272,25 @@ actor DexPair owns DexPairState {
             registry_preimage,
             target_pair_index,
             target_pair_id,
-            quote_id
+            asset_id
         ));
 
-        AssetCapsule quote_reserve = moved_quote.inputs.reserve.state;
-        require(quote_reserve.owner_kind == OWNER_COVID);
-        require(quote_reserve.owner == byte[32](self.covenant_id));
+        AssetCapsule reserve = moved_asset.inputs.reserve.state;
+        require(reserve.owner_kind == OWNER_COVID);
+        require(reserve.owner == byte[32](self.covenant_id));
 
         AssetCapsule moved_reserve = {
             owner: byte[32](target_pair_id),
             owner_kind: OWNER_COVID,
-            policy: quote_reserve.policy,
-            amount: quote_reserve.amount,
+            policy: reserve.policy,
+            amount: reserve.amount,
         };
 
         require registry.outputs become {
             core <- self.core_type(core);
         };
-        require moved_quote.outputs become {
-            reserve <- self.quote_type(moved_reserve);
-        };
-
-        DexPairState next_pair = {
-            initializer: initializer,
-            initialized: initialized,
-            core_id: core_id,
-            core_type: core_type,
-            quote_id: quote_id,
-            quote_type: quote_type,
-            base_id: base_id,
-            base_type: base_type,
-            quote_per_base_num: quote_per_base_num,
-            quote_per_base_den: quote_per_base_den,
-            swaps: swaps,
-            reserve_moves: reserve_moves + 1,
-        };
-
-        require(next.value == self.value);
-        become DexPair(next_pair);
-    }
-
-    // The base path is symmetric, but proves that the target is registered for
-    // the base asset rather than merely registered by covenant id.
-    entry move_base_reserve(
-        target_pair_id: covid,
-        target_pair_index: int,
-        registry_preimage: byte[392]
-    )
-    observes registry by self.core_id {
-        inputs {
-            core: self.core_type;
-        }
-        outputs {
-            core: self.core_type;
-        }
-    }
-    observes moved_base by self.base_id {
-        inputs {
-            reserve: self.base_type;
-        }
-        outputs {
-            reserve: self.base_type;
-        }
-    }
-    emits one DexPair {
-        require(initialized);
-        require(target_pair_id != self.covenant_id);
-
-        DexCoreCapsule core = registry.inputs.core.state;
-        require(blake2b(registry_preimage) == core.pairs);
-        require(registry_authorizes_asset(
-            registry_preimage,
-            target_pair_index,
-            target_pair_id,
-            base_id
-        ));
-
-        AssetCapsule base_reserve = moved_base.inputs.reserve.state;
-        require(base_reserve.owner_kind == OWNER_COVID);
-        require(base_reserve.owner == byte[32](self.covenant_id));
-
-        AssetCapsule moved_reserve = {
-            owner: byte[32](target_pair_id),
-            owner_kind: OWNER_COVID,
-            policy: base_reserve.policy,
-            amount: base_reserve.amount,
-        };
-
-        require registry.outputs become {
-            core <- self.core_type(core);
-        };
-        require moved_base.outputs become {
-            reserve <- self.base_type(moved_reserve);
+        require moved_asset.outputs become {
+            reserve <- asset_type(moved_reserve);
         };
 
         DexPairState next_pair = {

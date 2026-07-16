@@ -310,6 +310,8 @@ fn main() -> PlaygroundResult<()> {
     // 10. Move A from the A/B reserve to the registered A/C pair. The Pair
     // observes Core and the A transfer; Core itself remains unchanged. MAsset
     // separately sees its current A/B owner co-spent and permits the transfer.
+    // The asset covenant id selects the reserve side; the observed input binds
+    // the concrete asset implementation used by the unified move entry.
     let ab_after_swap_outpoint = output_outpoint(&swap, 0);
     let ab_after_swap_utxo =
         builder.covenant_utxo("dexp::DexPair", ab_after_swap.clone(), PAIR_VALUE, 0, false, Some(ab_root.covenant_id))?;
@@ -328,7 +330,12 @@ fn main() -> PlaygroundResult<()> {
         .argent_input(
             "dexp::DexPair",
             ab_after_swap,
-            EntryCall::new("move_quote_reserve").args(args![ac_root.covenant_id, 1, registry_preimage(&records, 2)]),
+            EntryCall::new("move_reserve").args(args![
+                asset_a_root.covenant_id,
+                ac_root.covenant_id,
+                1,
+                registry_preimage(&records, 2)
+            ]),
             ab_after_swap_outpoint,
             ab_after_swap_utxo,
             0,
