@@ -160,7 +160,7 @@ fn main() -> PlaygroundResult<()> {
     let minter_next = m_asset_state(&issuer_key, OWNER_KEY, &asset_a_id, QUOTE_AMOUNT, 0);
     let quote_payment = m_asset_state(&trader_key, OWNER_KEY, &asset_a_id, QUOTE_AMOUNT, QUOTE_AMOUNT);
     let mint_context = TxContext::new()
-        .argent_input(
+        .actor_input(
             "m_asset::Minter",
             minter_initial,
             EntryCall::new("mint")
@@ -169,8 +169,8 @@ fn main() -> PlaygroundResult<()> {
             asset_a_root.utxo().clone(),
             0,
         )
-        .argent_output("m_asset::Minter", minter_next, CovenantBinding::new(0, asset_a_root.covenant_id()), MINTER_VALUE)
-        .argent_output(
+        .actor_output("m_asset::Minter", minter_next, CovenantBinding::new(0, asset_a_root.covenant_id()), MINTER_VALUE)
+        .actor_output(
             "m_asset::MintableToken",
             quote_payment.clone(),
             CovenantBinding::new(0, asset_a_root.covenant_id()),
@@ -213,7 +213,7 @@ fn main() -> PlaygroundResult<()> {
     // the Pair id before resolving the Core continuation that records that id.
     let ab_active = pair_state(&ab_config, true, 0, 0);
     let register_ab_context = TxContext::new()
-        .argent_input(
+        .actor_input(
             "dexc::DexCore",
             core_initial,
             ab_config.register_call(&governor),
@@ -221,7 +221,7 @@ fn main() -> PlaygroundResult<()> {
             core_root.utxo().clone(),
             0,
         )
-        .argent_output(
+        .actor_output(
             "dexc::DexCore",
             state_with(|state_context| {
                 let pair_id = state_context.genesis_covenant_id(0, "spawn::new_pair").expect("passed as genesis group");
@@ -231,7 +231,7 @@ fn main() -> PlaygroundResult<()> {
             CovenantBinding::new(0, core_root.covenant_id()),
             CORE_VALUE,
         )
-        .argent_genesis_output(0, "spawn::new_pair", "dexp::DexPair", ab_active.clone(), PAIR_VALUE);
+        .actor_genesis_output(0, "spawn::new_pair", "dexp::DexPair", ab_active.clone(), PAIR_VALUE);
     let register_ab = builder.build(&register_ab_context)?;
     let ab_pair = CovenantOutput::from_tx(&register_ab, 1)?;
     let ab_pair_id = ab_pair.covenant_id;
@@ -243,8 +243,8 @@ fn main() -> PlaygroundResult<()> {
     // preimage now has two records and is the proof consumed by reserve movement.
     let ac_active = pair_state(&ac_config, true, 0, 0);
     let register_ac_context = TxContext::new()
-        .argent_input("dexc::DexCore", core_registered_once, ac_config.register_call(&governor), core_once.outpoint, core_once.utxo, 0)
-        .argent_output(
+        .actor_input("dexc::DexCore", core_registered_once, ac_config.register_call(&governor), core_once.outpoint, core_once.utxo, 0)
+        .actor_output(
             "dexc::DexCore",
             state_with(|state_context| {
                 let pair_id = state_context.genesis_covenant_id(0, "spawn::new_pair").expect("passed as genesis group");
@@ -254,7 +254,7 @@ fn main() -> PlaygroundResult<()> {
             CovenantBinding::new(0, core_root.covenant_id()),
             CORE_VALUE,
         )
-        .argent_genesis_output(0, "spawn::new_pair", "dexp::DexPair", ac_active, PAIR_VALUE);
+        .actor_genesis_output(0, "spawn::new_pair", "dexp::DexPair", ac_active, PAIR_VALUE);
     let register_ac = builder.build(&register_ac_context)?;
     let ac_pair_id = CovenantOutput::from_tx(&register_ac, 1)?.covenant_id;
     let records = registry_records(&[ab_config.record(ab_pair_id), ac_config.record(ac_pair_id)]);
@@ -266,7 +266,7 @@ fn main() -> PlaygroundResult<()> {
     let ab_owner = ab_pair_id.as_bytes().to_vec();
     let base_reserve = k_asset_state(&ab_owner, OWNER_COVID, BASE_AMOUNT);
     let fund_reserve_context = TxContext::new()
-        .argent_input(
+        .actor_input(
             "k_asset::KasToken",
             base_initial,
             EntryCall::new("transfer")
@@ -275,7 +275,7 @@ fn main() -> PlaygroundResult<()> {
             asset_b_root.utxo().clone(),
             0,
         )
-        .argent_output(
+        .actor_output(
             "k_asset::KasToken",
             base_reserve.clone(),
             CovenantBinding::new(0, asset_b_root.covenant_id()),
@@ -290,8 +290,8 @@ fn main() -> PlaygroundResult<()> {
     let base_payout = k_asset_state(&trader_key, OWNER_KEY, BASE_AMOUNT);
     let ab_after_swap = pair_state(&ab_config, true, 1, 0);
     let swap_context = TxContext::new()
-        .argent_input("dexp::DexPair", ab_active, "swap", ab_pair.outpoint, ab_pair.utxo, 0)
-        .argent_input(
+        .actor_input("dexp::DexPair", ab_active, "swap", ab_pair.outpoint, ab_pair.utxo, 0)
+        .actor_input(
             "m_asset::MintableToken",
             quote_payment,
             EntryCall::new("transfer").args_with(|tx, input_idx| args![ab_pair_id, OWNER_COVID, sign_input(tx, input_idx, &trader)]),
@@ -299,7 +299,7 @@ fn main() -> PlaygroundResult<()> {
             quote_payment_output.utxo,
             0,
         )
-        .argent_input(
+        .actor_input(
             "k_asset::KasToken",
             base_reserve,
             EntryCall::new("transfer").args(args![trader_key.clone(), OWNER_KEY, BASE_AMOUNT, vec![0; 65]]),
@@ -307,14 +307,14 @@ fn main() -> PlaygroundResult<()> {
             base_reserve_output.utxo,
             0,
         )
-        .argent_output("dexp::DexPair", ab_after_swap.clone(), CovenantBinding::new(0, ab_pair_id), PAIR_VALUE)
-        .argent_output(
+        .actor_output("dexp::DexPair", ab_after_swap.clone(), CovenantBinding::new(0, ab_pair_id), PAIR_VALUE)
+        .actor_output(
             "m_asset::MintableToken",
             quote_reserve.clone(),
             CovenantBinding::new(1, asset_a_root.covenant_id()),
             QUOTE_VALUE,
         )
-        .argent_output("k_asset::KasToken", base_payout, CovenantBinding::new(2, asset_b_root.covenant_id()), BASE_AMOUNT as u64);
+        .actor_output("k_asset::KasToken", base_payout, CovenantBinding::new(2, asset_b_root.covenant_id()), BASE_AMOUNT as u64);
     let swap = builder.build(&swap_context)?;
 
     // 10. Move A from the A/B reserve to the registered A/C pair. The Pair
@@ -327,7 +327,7 @@ fn main() -> PlaygroundResult<()> {
     let moved_quote = m_asset_state(&ac_pair_id.as_bytes(), OWNER_COVID, &asset_a_id, QUOTE_AMOUNT, QUOTE_AMOUNT);
     let ab_after_move = pair_state(&ab_config, true, 1, 1);
     let move_reserve_context = TxContext::new()
-        .argent_input(
+        .actor_input(
             "dexp::DexPair",
             ab_after_swap,
             EntryCall::new("move_reserve").args(args![asset_a_root.covenant_id(), ac_pair_id, 1, registry_preimage(&records, 2)]),
@@ -335,7 +335,7 @@ fn main() -> PlaygroundResult<()> {
             ab_after_swap_output.utxo,
             0,
         )
-        .argent_input(
+        .actor_input(
             "dexc::DexCore",
             core_registered.clone(),
             "witness_registry",
@@ -343,7 +343,7 @@ fn main() -> PlaygroundResult<()> {
             core_registered_output.utxo,
             0,
         )
-        .argent_input(
+        .actor_input(
             "m_asset::MintableToken",
             quote_reserve,
             EntryCall::new("transfer").args(args![ac_pair_id, OWNER_COVID, vec![0; 65]]),
@@ -351,9 +351,9 @@ fn main() -> PlaygroundResult<()> {
             quote_reserve_output.utxo,
             0,
         )
-        .argent_output("dexp::DexPair", ab_after_move, CovenantBinding::new(0, ab_pair_id), PAIR_VALUE)
-        .argent_output("dexc::DexCore", core_registered, CovenantBinding::new(1, core_root.covenant_id()), CORE_VALUE)
-        .argent_output("m_asset::MintableToken", moved_quote, CovenantBinding::new(2, asset_a_root.covenant_id()), QUOTE_VALUE);
+        .actor_output("dexp::DexPair", ab_after_move, CovenantBinding::new(0, ab_pair_id), PAIR_VALUE)
+        .actor_output("dexc::DexCore", core_registered, CovenantBinding::new(1, core_root.covenant_id()), CORE_VALUE)
+        .actor_output("m_asset::MintableToken", moved_quote, CovenantBinding::new(2, asset_a_root.covenant_id()), QUOTE_VALUE);
     let move_reserve = builder.build(&move_reserve_context)?;
 
     println!("core covenant id: {}", core_root.covenant_id());
@@ -383,7 +383,7 @@ fn launch_actor(
 ) -> PlaygroundResult<LaunchedActor> {
     let actor = actor.into();
     let funding_utxo = UtxoEntry::new(value, ScriptPublicKey::from_vec(0, vec![0x51]), 0, false, None);
-    let context = TxContext::new().input(demo_outpoint(funding_byte, 0), funding_utxo, Vec::new(), 0).argent_genesis_output(
+    let context = TxContext::new().input(demo_outpoint(funding_byte, 0), funding_utxo, Vec::new(), 0).actor_genesis_output(
         0,
         "launch::actor",
         actor,

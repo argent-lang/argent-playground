@@ -18,7 +18,7 @@ fn main() -> PlaygroundResult<()> {
     // Launch the concrete agent first so its covenant id can be stored by Cell.
     let agent_initial = state! { energy: 5 };
     let agent_funding = UtxoEntry::new(agent_value, ScriptPublicKey::from_vec(0, vec![0x51]), 0, false, None);
-    let agent_genesis_context = TxContext::new().input(demo_outpoint(0x81, 0), agent_funding, Vec::new(), 0).argent_genesis_output(
+    let agent_genesis_context = TxContext::new().input(demo_outpoint(0x81, 0), agent_funding, Vec::new(), 0).actor_genesis_output(
         0,
         "launch::forager",
         "agents::Forager",
@@ -33,7 +33,7 @@ fn main() -> PlaygroundResult<()> {
         ticks: 0,
     };
     let cell_funding = UtxoEntry::new(cell_value, ScriptPublicKey::from_vec(0, vec![0x51]), 0, false, None);
-    let cell_genesis_context = TxContext::new().input(demo_outpoint(0x82, 0), cell_funding, Vec::new(), 0).argent_genesis_output(
+    let cell_genesis_context = TxContext::new().input(demo_outpoint(0x82, 0), cell_funding, Vec::new(), 0).actor_genesis_output(
         0,
         "launch::cell",
         "core::Cell",
@@ -52,8 +52,8 @@ fn main() -> PlaygroundResult<()> {
     // The complete typed transaction identifies the concrete actor behind the
     // open `actor_type<AgentCapsule>` handle.
     let context = TxContext::new()
-        .argent_input("core::Cell", cell_initial, "advance", cell_root.outpoint, cell_root.utxo.clone(), 0)
-        .argent_input(
+        .actor_input("core::Cell", cell_initial, "advance", cell_root.outpoint, cell_root.utxo.clone(), 0)
+        .actor_input(
             "agents::Forager",
             agent_initial,
             EntryCall::new("step").args(args![4]),
@@ -61,8 +61,8 @@ fn main() -> PlaygroundResult<()> {
             agent_root.utxo.clone(),
             0,
         )
-        .argent_output("core::Cell", cell_next, CovenantBinding::new(0, cell_root.covenant_id), cell_value)
-        .argent_output("agents::Forager", agent_next, CovenantBinding::new(1, agent_root.covenant_id), agent_value);
+        .actor_output("core::Cell", cell_next, CovenantBinding::new(0, cell_root.covenant_id), cell_value)
+        .actor_output("agents::Forager", agent_next, CovenantBinding::new(1, agent_root.covenant_id), agent_value);
     let tx = builder.build(&context)?;
 
     println!("built Cell::advance + Forager::step open ICC co-spend");

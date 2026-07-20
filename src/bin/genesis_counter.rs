@@ -35,7 +35,7 @@ fn main() -> PlaygroundResult<()> {
 
     let funding_outpoint = demo_outpoint(0x10, 0);
     let funding_utxo = UtxoEntry::new(input_value, ScriptPublicKey::from_vec(0, vec![0x51]), 0, false, None);
-    let genesis_context = TxContext::new().input(funding_outpoint, funding_utxo, Vec::new(), 0).argent_genesis_output(
+    let genesis_context = TxContext::new().input(funding_outpoint, funding_utxo, Vec::new(), 0).actor_genesis_output(
         0,
         "launch::counter",
         "Counter",
@@ -46,8 +46,8 @@ fn main() -> PlaygroundResult<()> {
     let counter = CovenantOutput::from_tx(&genesis_tx, 0)?;
 
     let context = TxContext::new()
-        .argent_input("Counter", initial, EntryCall::new("bump").args(args![3]), counter.outpoint, counter.utxo.clone(), 0)
-        .argent_output("Counter", next, CovenantBinding::new(0, counter.covenant_id), input_value);
+        .actor_input("Counter", initial, EntryCall::new("bump").args(args![3]), counter.outpoint, counter.utxo.clone(), 0)
+        .actor_output("Counter", next, CovenantBinding::new(0, counter.covenant_id), input_value);
     let tx = builder.build(&context)?;
 
     println!("launched Counter covenant");
