@@ -1,0 +1,9 @@
+[workspace]
+members = ["chess-covenant"]
+resolver = "2"
+
+[workspace.dependencies]
+argent = { path = "../../argent" }
+argent-runtime = { path = "../../argent/crates/argent-runtime" }
+# Temporary executable baseline for the in-place Argent port.
+silverscript-lang = { path = "../../silverscript/silverscript-lang" }

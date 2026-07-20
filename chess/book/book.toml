@@ -1,0 +1,16 @@
+[book]
+title = "Chess Covenant Notes"
+authors = ["Michael Sutton"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "build"
+
+[preprocessor.mermaid]
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://example.invalid/chess"
+additional-js = ["mermaid.min.js", "mermaid-init.js"]

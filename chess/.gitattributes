@@ -1,0 +1,10 @@
+*.sil linguist-language=JavaScript
+*.ag linguist-language=Rust
+
+*.ag text eol=lf
+*.sil text eol=lf
+*.rs text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+
+build/** linguist-generated=true

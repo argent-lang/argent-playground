@@ -1,2 +1,6 @@
 build/
 target/
+
+# The standalone chess workspace pins its contract build outputs.
+!chess/build/
+!chess/build/**

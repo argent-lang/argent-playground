@@ -1,0 +1,34 @@
+
+
+Let's add a dedicated webinar chapter, so we don't have to worry about drifts. 
+
+we need the following pages 
+
+Agenda:
+
+- silverscript overview
+- covenants
+- covenant ids and related macros
+- ICC (inter cov communication)
+- MCF (multi contract flows)
+  - multiplexing (multi contract taproot/MAST-like design pattern for breaking a big fn like chess into workers)
+  - multi contract sys with multiple roles (league, player, game)
+- demos: native assets (ICC); mux, chess (MCF) 
+
+
+page explaining the basic mux pattern (based on examples/mux):
+
+- show the contract state machine diagram and how every state spot also holds the next transition function
+- explain and illustrate template injection via immutable state (see comments in mux sil files)
+- show that lack of commit+timeout can get this naive sys stalled 
+
+page about chess 
+
+- extend the state machine diagram to the full chess scheme
+- at first zoomout and only show league/player/game/settle 
+- then zoomin into game and show the full branching 
+- show a tx entity flow, illustrating the UTXO entry updates: 
+  - 1->2 league register player
+  - 2->3 [players] -> [players, game]
+  - 1->1 game steps, showing the player commit on mux exit, and timeout escape on workers 
+  - 3->2 game settle (show kaspa and rating settlement)      

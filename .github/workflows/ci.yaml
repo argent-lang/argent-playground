@@ -25,6 +25,13 @@ jobs:
           ref: master
           path: argent
 
+      - name: Checkout Silverscript
+        uses: actions/checkout@v6
+        with:
+          repository: michaelsutton/silverscript
+          ref: 513c62a04671aa2bba5558b70982dabdb2c18da0
+          path: silverscript
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -32,6 +39,10 @@ jobs:
           components: rustfmt, clippy
 
       - name: Run checks
+        run: ./check.sh
+
+      - name: Run chess checks
+        working-directory: argent-playground/chess
         run: ./check.sh
 
       - name: Verify working tree
