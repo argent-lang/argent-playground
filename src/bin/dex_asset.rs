@@ -2,12 +2,14 @@ use std::collections::BTreeMap;
 
 use argent::{build_file, build_file_app};
 use argent_playground::{PlaygroundResult, demo_keypair, demo_outpoint, sign_input};
-use argent_runtime::{ActorPath, ArtifactBundle, ArtifactValue, EntryCall, TxBuilder, TxContext, args, state};
+use argent_runtime::{
+    ActorPath, ArtifactBundle, ArtifactValue, CovenantOutput, EntryCall, TxBuilder, TxContext, args, state, state_with,
+};
 use kaspa_consensus_core::{
     Hash,
-    hashing::covenant_id::covenant_id,
     tx::{CovenantBinding, GenesisCovenantGroup, Transaction, TransactionOutpoint, UtxoEntry},
 };
+use secp256k1::Keypair;
 
 const DEX_SOURCE: &str = "ag/dex/dex.ag";
 const M_ASSET_SOURCE: &str = "ag/dex/mintable_asset.ag";
@@ -40,6 +42,29 @@ struct PairConfig {
     quote_type: Vec<u8>,
     base_id: Hash,
     base_type: Vec<u8>,
+}
+
+impl PairConfig {
+    /// Builds the signed `register_pair` call for this pair configuration.
+    fn register_call<'a>(&'a self, governor: &'a Keypair) -> EntryCall<'a> {
+        EntryCall::new("register_pair").args_with(move |tx, input_idx| {
+            args![
+                self.initializer.clone(),
+                self.quote_id,
+                self.quote_type.clone(),
+                self.base_id,
+                self.base_type.clone(),
+                2,
+                1,
+                sign_input(tx, input_idx, governor)
+            ]
+        })
+    }
+
+    /// Encodes this pair as the registry row `[pair_id, quote_id, base_id]`.
+    fn record(&self, pair_id: Hash) -> [Hash; 3] {
+        [pair_id, self.quote_id, self.base_id]
+    }
 }
 
 /*
@@ -140,15 +165,7 @@ fn main() -> PlaygroundResult<()> {
             QUOTE_VALUE,
         );
     let mint = builder.build(&mint_context)?;
-    let quote_payment_outpoint = output_outpoint(&mint, 1);
-    let quote_payment_utxo = builder.covenant_utxo(
-        "m_asset::MintableToken",
-        quote_payment.clone(),
-        QUOTE_VALUE,
-        0,
-        false,
-        Some(asset_a_root.covenant_id),
-    )?;
+    let quote_payment_output = CovenantOutput::from_tx(&mint, 1)?;
 
     // 4. Launch B as canonical KAS and C as a second MAsset deployment. A and
     // C share code and actor types but have distinct asset covenant ids.
@@ -179,79 +196,51 @@ fn main() -> PlaygroundResult<()> {
         base_type: m_asset_type,
     };
 
-    // 6. Register and birth A/B in one 1:2 transition. The Pair id commits to
-    // the Core input outpoint and Pair output at index 1, but not to the Core
-    // continuation at index 0. This avoids a hash cycle with the registry state.
+    // 6. Register and birth A/B in one 1:2 transition. The Pair output is the
+    // explicit `new_pair` spawn. Its state is static, so the builder can derive
+    // the Pair id before resolving the Core continuation that records that id.
     let ab_active = pair_state(&ab_config, true, 0, 0);
-    let ab_genesis_output = builder.genesis_output("dexp::DexPair", ab_active.clone(), PAIR_VALUE)?;
-    let ab_pair_id = covenant_id(core_root.outpoint, std::iter::once((1, &ab_genesis_output)));
-    let records_once = registry_records(&[[ab_pair_id, asset_a_root.covenant_id, asset_b_root.covenant_id]]);
-    let core_registered_once = core_state(&governor_key, &core_type, &pair_type, records_once, 1);
     let register_ab_context = TxContext::new()
-        .argent_input(
+        .argent_input("dexc::DexCore", core_initial, ab_config.register_call(&governor), core_root.outpoint, core_root.utxo.clone(), 0)
+        .argent_output(
             "dexc::DexCore",
-            core_initial,
-            EntryCall::new("register_pair").args_with(|tx, input_idx| {
-                args![
-                    ab_config.initializer.clone(),
-                    ab_config.quote_id,
-                    ab_config.quote_type.clone(),
-                    ab_config.base_id,
-                    ab_config.base_type.clone(),
-                    2,
-                    1,
-                    sign_input(tx, input_idx, &governor)
-                ]
+            state_with(|state_context| {
+                let pair_id = state_context.genesis_covenant_id(0, "spawn::new_pair").expect("passed as genesis group");
+                let records = registry_records(&[ab_config.record(pair_id)]);
+                core_state(&governor_key, &core_type, &pair_type, records, 1)
             }),
-            core_root.outpoint,
-            core_root.utxo.clone(),
-            0,
+            CovenantBinding::new(0, core_root.covenant_id),
+            CORE_VALUE,
         )
-        .argent_output("dexc::DexCore", core_registered_once.clone(), CovenantBinding::new(0, core_root.covenant_id), CORE_VALUE)
-        .argent_output("dexp::DexPair", ab_active.clone(), CovenantBinding::new(0, ab_pair_id), PAIR_VALUE);
+        .argent_genesis_output(0, "spawn::new_pair", "dexp::DexPair", ab_active.clone(), PAIR_VALUE);
     let register_ab = builder.build(&register_ab_context)?;
-    let core_once_outpoint = output_outpoint(&register_ab, 0);
-    let core_once_utxo =
-        builder.covenant_utxo("dexc::DexCore", core_registered_once.clone(), CORE_VALUE, 0, false, Some(core_root.covenant_id))?;
-    let ab_active_outpoint = output_outpoint(&register_ab, 1);
-    let ab_active_utxo = builder.covenant_utxo("dexp::DexPair", ab_active.clone(), PAIR_VALUE, 0, false, Some(ab_pair_id))?;
+    let ab_pair = CovenantOutput::from_tx(&register_ab, 1)?;
+    let ab_pair_id = ab_pair.covenant_id;
+    let records_once = registry_records(&[ab_config.record(ab_pair_id)]);
+    let core_registered_once = core_state(&governor_key, &core_type, &pair_type, records_once, 1);
+    let core_once = CovenantOutput::from_tx(&register_ab, 0)?;
 
     // 7. The successor Core births A/C the same way. The final registry
     // preimage now has two records and is the proof consumed by reserve movement.
     let ac_active = pair_state(&ac_config, true, 0, 0);
-    let ac_genesis_output = builder.genesis_output("dexp::DexPair", ac_active.clone(), PAIR_VALUE)?;
-    let ac_pair_id = covenant_id(core_once_outpoint, std::iter::once((1, &ac_genesis_output)));
-    let records = registry_records(&[
-        [ab_pair_id, asset_a_root.covenant_id, asset_b_root.covenant_id],
-        [ac_pair_id, asset_a_root.covenant_id, asset_c_root.covenant_id],
-    ]);
-    let core_registered = core_state(&governor_key, &core_type, &pair_type, records.clone(), 2);
     let register_ac_context = TxContext::new()
-        .argent_input(
+        .argent_input("dexc::DexCore", core_registered_once, ac_config.register_call(&governor), core_once.outpoint, core_once.utxo, 0)
+        .argent_output(
             "dexc::DexCore",
-            core_registered_once,
-            EntryCall::new("register_pair").args_with(|tx, input_idx| {
-                args![
-                    ac_config.initializer.clone(),
-                    ac_config.quote_id,
-                    ac_config.quote_type.clone(),
-                    ac_config.base_id,
-                    ac_config.base_type.clone(),
-                    2,
-                    1,
-                    sign_input(tx, input_idx, &governor)
-                ]
+            state_with(|state_context| {
+                let pair_id = state_context.genesis_covenant_id(0, "spawn::new_pair").expect("passed as genesis group");
+                let records = registry_records(&[ab_config.record(ab_pair_id), ac_config.record(pair_id)]);
+                core_state(&governor_key, &core_type, &pair_type, records, 2)
             }),
-            core_once_outpoint,
-            core_once_utxo,
-            0,
+            CovenantBinding::new(0, core_root.covenant_id),
+            CORE_VALUE,
         )
-        .argent_output("dexc::DexCore", core_registered.clone(), CovenantBinding::new(0, core_root.covenant_id), CORE_VALUE)
-        .argent_output("dexp::DexPair", ac_active, CovenantBinding::new(0, ac_pair_id), PAIR_VALUE);
+        .argent_genesis_output(0, "spawn::new_pair", "dexp::DexPair", ac_active, PAIR_VALUE);
     let register_ac = builder.build(&register_ac_context)?;
-    let core_registered_outpoint = output_outpoint(&register_ac, 0);
-    let core_registered_utxo =
-        builder.covenant_utxo("dexc::DexCore", core_registered.clone(), CORE_VALUE, 0, false, Some(core_root.covenant_id))?;
+    let ac_pair_id = CovenantOutput::from_tx(&register_ac, 1)?.covenant_id;
+    let records = registry_records(&[ab_config.record(ab_pair_id), ac_config.record(ac_pair_id)]);
+    let core_registered = core_state(&governor_key, &core_type, &pair_type, records.clone(), 2);
+    let core_registered_output = CovenantOutput::from_tx(&register_ac, 0)?;
 
     // 8. Fund A/B's KAS reserve through KAsset's normal transfer entry. The
     // complete lot becomes covenant-owned by the A/B pair.
@@ -274,15 +263,7 @@ fn main() -> PlaygroundResult<()> {
             BASE_AMOUNT as u64,
         );
     let fund_reserve = builder.build(&fund_reserve_context)?;
-    let base_reserve_outpoint = output_outpoint(&fund_reserve, 0);
-    let base_reserve_utxo = builder.covenant_utxo(
-        "k_asset::KasToken",
-        base_reserve.clone(),
-        BASE_AMOUNT as u64,
-        0,
-        false,
-        Some(asset_b_root.covenant_id),
-    )?;
+    let base_reserve_output = CovenantOutput::from_tx(&fund_reserve, 0)?;
 
     // 9. Swap the trader's A lot for the complete B reserve. DexPair constrains
     // the ratio and successor ownership; each asset input authorizes itself.
@@ -290,21 +271,21 @@ fn main() -> PlaygroundResult<()> {
     let base_payout = k_asset_state(&trader_key, OWNER_KEY, BASE_AMOUNT);
     let ab_after_swap = pair_state(&ab_config, true, 1, 0);
     let swap_context = TxContext::new()
-        .argent_input("dexp::DexPair", ab_active, "swap", ab_active_outpoint, ab_active_utxo, 0)
+        .argent_input("dexp::DexPair", ab_active, "swap", ab_pair.outpoint, ab_pair.utxo, 0)
         .argent_input(
             "m_asset::MintableToken",
             quote_payment,
             EntryCall::new("transfer").args_with(|tx, input_idx| args![ab_pair_id, OWNER_COVID, sign_input(tx, input_idx, &trader)]),
-            quote_payment_outpoint,
-            quote_payment_utxo,
+            quote_payment_output.outpoint,
+            quote_payment_output.utxo,
             0,
         )
         .argent_input(
             "k_asset::KasToken",
             base_reserve,
             EntryCall::new("transfer").args(args![trader_key.clone(), OWNER_KEY, BASE_AMOUNT, vec![0; 65]]),
-            base_reserve_outpoint,
-            base_reserve_utxo,
+            base_reserve_output.outpoint,
+            base_reserve_output.utxo,
             0,
         )
         .argent_output("dexp::DexPair", ab_after_swap.clone(), CovenantBinding::new(0, ab_pair_id), PAIR_VALUE)
@@ -317,17 +298,8 @@ fn main() -> PlaygroundResult<()> {
     // separately sees its current A/B owner co-spent and permits the transfer.
     // The asset covenant id selects the reserve side; the observed input binds
     // the concrete asset implementation used by the unified move entry.
-    let ab_after_swap_outpoint = output_outpoint(&swap, 0);
-    let ab_after_swap_utxo = builder.covenant_utxo("dexp::DexPair", ab_after_swap.clone(), PAIR_VALUE, 0, false, Some(ab_pair_id))?;
-    let quote_reserve_outpoint = output_outpoint(&swap, 1);
-    let quote_reserve_utxo = builder.covenant_utxo(
-        "m_asset::MintableToken",
-        quote_reserve.clone(),
-        QUOTE_VALUE,
-        0,
-        false,
-        Some(asset_a_root.covenant_id),
-    )?;
+    let ab_after_swap_output = CovenantOutput::from_tx(&swap, 0)?;
+    let quote_reserve_output = CovenantOutput::from_tx(&swap, 1)?;
     let moved_quote = m_asset_state(&ac_pair_id.as_bytes(), OWNER_COVID, &asset_a_id, QUOTE_AMOUNT, QUOTE_AMOUNT);
     let ab_after_move = pair_state(&ab_config, true, 1, 1);
     let move_reserve_context = TxContext::new()
@@ -335,17 +307,24 @@ fn main() -> PlaygroundResult<()> {
             "dexp::DexPair",
             ab_after_swap,
             EntryCall::new("move_reserve").args(args![asset_a_root.covenant_id, ac_pair_id, 1, registry_preimage(&records, 2)]),
-            ab_after_swap_outpoint,
-            ab_after_swap_utxo,
+            ab_after_swap_output.outpoint,
+            ab_after_swap_output.utxo,
             0,
         )
-        .argent_input("dexc::DexCore", core_registered.clone(), "witness_registry", core_registered_outpoint, core_registered_utxo, 0)
+        .argent_input(
+            "dexc::DexCore",
+            core_registered.clone(),
+            "witness_registry",
+            core_registered_output.outpoint,
+            core_registered_output.utxo,
+            0,
+        )
         .argent_input(
             "m_asset::MintableToken",
             quote_reserve,
             EntryCall::new("transfer").args(args![ac_pair_id, OWNER_COVID, vec![0; 65]]),
-            quote_reserve_outpoint,
-            quote_reserve_utxo,
+            quote_reserve_output.outpoint,
+            quote_reserve_output.utxo,
             0,
         )
         .argent_output("dexp::DexPair", ab_after_move, CovenantBinding::new(0, ab_pair_id), PAIR_VALUE)
@@ -384,10 +363,6 @@ fn launch_actor(
     let genesis = TxBuilder::populate_genesis_covenants(&mut tx, &[GenesisCovenantGroup::new(0, vec![0])])?;
     let output = genesis.output(0)?;
     Ok(LaunchedActor { outpoint: output.outpoint, utxo: output.utxo.clone(), covenant_id: output.covenant_id, tx })
-}
-
-fn output_outpoint(tx: &Transaction, index: u32) -> TransactionOutpoint {
-    TransactionOutpoint { transaction_id: tx.id(), index }
 }
 
 fn registry_records(records: &[[Hash; 3]]) -> Vec<u8> {
