@@ -34,8 +34,8 @@ fn main() -> PlaygroundResult<()> {
 
     let input_utxo = builder.covenant_utxo("Counter", initial.clone(), input_value, 0, false, Some(covenant_id))?;
     let context = TxContext::new()
-        .argent_input("Counter", initial, EntryCall::new("bump").args(args![3]), demo_outpoint(0x11, 0), input_utxo, 0)
-        .argent_output("Counter", next, CovenantBinding::new(0, covenant_id), input_value);
+        .actor_input("Counter", initial, EntryCall::new("bump").args(args![3]), demo_outpoint(0x11, 0), input_utxo, 0)
+        .actor_output("Counter", next, CovenantBinding::new(0, covenant_id), input_value);
     let tx = builder.build(&context)?;
 
     println!("built Counter::bump tx");

@@ -1,7 +1,7 @@
 use argent::build_inline;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{EntryCall, TxBuilder, TxContext, args, state};
-use kaspa_consensus_core::tx::{CovenantBinding, GenesisCovenantGroup};
+use argent_runtime::{CovenantOutput, EntryCall, TxBuilder, TxContext, args, state};
+use kaspa_consensus_core::tx::{CovenantBinding, ScriptPublicKey, UtxoEntry};
 
 // Same Counter app as `basic_counter`, but this demo also creates the genesis
 // covenant transaction so the first spend uses the real covenant id and UTXO.
@@ -33,28 +33,26 @@ fn main() -> PlaygroundResult<()> {
     let next = state! { count: 5 };
     let input_value = 1_000;
 
-    let mut genesis_tx = TxBuilder::transaction(
-        vec![TxBuilder::transaction_input(demo_outpoint(0x10, 0), Vec::new())],
-        vec![builder.genesis_output("Counter", initial.clone(), input_value)?],
+    let funding_outpoint = demo_outpoint(0x10, 0);
+    let funding_utxo = UtxoEntry::new(input_value, ScriptPublicKey::from_vec(0, vec![0x51]), 0, false, None);
+    let genesis_context = TxContext::new().input(funding_outpoint, funding_utxo, Vec::new(), 0).actor_genesis_output(
+        0,
+        "launch::counter",
+        "Counter",
+        initial.clone(),
+        input_value,
     );
-    let genesis = TxBuilder::populate_genesis_covenants(&mut genesis_tx, &[GenesisCovenantGroup::new(0, vec![0])])?;
-    let counter_genesis = genesis.output(0)?;
+    let genesis_tx = builder.build(&genesis_context)?;
+    let counter = CovenantOutput::from_tx(&genesis_tx, 0)?;
 
     let context = TxContext::new()
-        .argent_input(
-            "Counter",
-            initial,
-            EntryCall::new("bump").args(args![3]),
-            counter_genesis.outpoint,
-            counter_genesis.utxo.clone(),
-            0,
-        )
-        .argent_output("Counter", next, CovenantBinding::new(0, counter_genesis.covenant_id), input_value);
+        .actor_input("Counter", initial, EntryCall::new("bump").args(args![3]), counter.outpoint, counter.utxo.clone(), 0)
+        .actor_output("Counter", next, CovenantBinding::new(0, counter.covenant_id), input_value);
     let tx = builder.build(&context)?;
 
     println!("launched Counter covenant");
     println!("genesis tx: {}", genesis_tx.id());
-    println!("covenant id: {}", counter_genesis.covenant_id);
+    println!("covenant id: {}", counter.covenant_id);
     println!("built Counter::bump tx");
     println!("inputs: {}", tx.inputs.len());
     println!("outputs: {}", tx.outputs.len());

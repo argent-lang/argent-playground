@@ -67,7 +67,7 @@ fn main() -> PlaygroundResult<()> {
     // `choose` takes `target: Target` in the Argent source, so the user arg is
     // the actor variant name from that enum.
     let alpha_context = TxContext::new()
-        .argent_input(
+        .actor_input(
             "Router",
             router_state.clone(),
             EntryCall::new("choose").args(args![actor("Alpha")]),
@@ -75,13 +75,13 @@ fn main() -> PlaygroundResult<()> {
             router_utxo,
             0,
         )
-        .argent_output("Alpha", routed_state.clone(), CovenantBinding::new(0, covenant_id), value);
+        .actor_output("Alpha", routed_state.clone(), CovenantBinding::new(0, covenant_id), value);
     builder.build(&alpha_context)?;
 
     // Same entry, same state transition, different actor choice.
     let router_utxo = builder.covenant_utxo("Router", router_state.clone(), value, 0, false, Some(covenant_id))?;
     let beta_context = TxContext::new()
-        .argent_input(
+        .actor_input(
             "Router",
             router_state,
             EntryCall::new("choose").args(args![actor("Beta")]),
@@ -89,7 +89,7 @@ fn main() -> PlaygroundResult<()> {
             router_utxo,
             0,
         )
-        .argent_output("Beta", routed_state, CovenantBinding::new(0, covenant_id), value);
+        .actor_output("Beta", routed_state, CovenantBinding::new(0, covenant_id), value);
     builder.build(&beta_context)?;
 
     println!("built Router::choose tx: Router -> Alpha");

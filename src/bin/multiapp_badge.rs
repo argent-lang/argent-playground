@@ -1,7 +1,7 @@
 use argent::build_file;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{ArtifactBundle, EntryCall, TxBuilder, TxContext, args, state};
-use kaspa_consensus_core::tx::{CovenantBinding, GenesisCovenantGroup};
+use argent_runtime::{ArtifactBundle, CovenantOutput, EntryCall, TxBuilder, TxContext, args, state};
+use kaspa_consensus_core::tx::{CovenantBinding, ScriptPublicKey, UtxoEntry};
 
 const ASSET_SOURCE: &str = "ag/multiapp_badge/badge_asset.ag";
 const CONTROLLER_SOURCE: &str = "ag/multiapp_badge/badge_controller.ag";
@@ -21,13 +21,12 @@ fn main() -> PlaygroundResult<()> {
     // Launch the controller first. Its covenant id will become the authority
     // stored inside the badge covenant state.
     let controller_initial = state! { minted: 0 };
-    let mut controller_genesis_tx = TxBuilder::transaction(
-        vec![TxBuilder::transaction_input(demo_outpoint(0x70, 0), Vec::new())],
-        vec![builder.genesis_output("badge_controller::Controller", controller_initial.clone(), controller_value)?],
-    );
-    let controller_genesis =
-        TxBuilder::populate_genesis_covenants(&mut controller_genesis_tx, &[GenesisCovenantGroup::new(0, vec![0])])?;
-    let controller_root = controller_genesis.output(0)?;
+    let controller_funding = UtxoEntry::new(controller_value, ScriptPublicKey::from_vec(0, vec![0x51]), 0, false, None);
+    let controller_genesis_context = TxContext::new()
+        .input(demo_outpoint(0x70, 0), controller_funding, Vec::new(), 0)
+        .actor_genesis_output(0, "launch::controller", "badge_controller::Controller", controller_initial.clone(), controller_value);
+    let controller_genesis_tx = builder.build(&controller_genesis_context)?;
+    let controller_root = CovenantOutput::from_tx(&controller_genesis_tx, 0)?;
 
     // Launch the observed asset app second. The Badge state now commits to the
     // controller covenant id, so Badge::apply can require controller co-spend.
@@ -35,12 +34,16 @@ fn main() -> PlaygroundResult<()> {
         controller_id: controller_root.covenant_id,
         balance: 10,
     };
-    let mut badge_genesis_tx = TxBuilder::transaction(
-        vec![TxBuilder::transaction_input(demo_outpoint(0x71, 0), Vec::new())],
-        vec![builder.genesis_output("badge_asset::Badge", badge_initial.clone(), badge_value)?],
+    let badge_funding = UtxoEntry::new(badge_value, ScriptPublicKey::from_vec(0, vec![0x51]), 0, false, None);
+    let badge_genesis_context = TxContext::new().input(demo_outpoint(0x71, 0), badge_funding, Vec::new(), 0).actor_genesis_output(
+        0,
+        "launch::badge",
+        "badge_asset::Badge",
+        badge_initial.clone(),
+        badge_value,
     );
-    let badge_genesis = TxBuilder::populate_genesis_covenants(&mut badge_genesis_tx, &[GenesisCovenantGroup::new(0, vec![0])])?;
-    let badge_root = badge_genesis.output(0)?;
+    let badge_genesis_tx = builder.build(&badge_genesis_context)?;
+    let badge_root = CovenantOutput::from_tx(&badge_genesis_tx, 0)?;
 
     let amount = 7;
     let controller_next = state! { minted: amount };
@@ -50,7 +53,7 @@ fn main() -> PlaygroundResult<()> {
     };
 
     let context = TxContext::new()
-        .argent_input(
+        .actor_input(
             "badge_controller::Controller",
             controller_initial,
             EntryCall::new("mint").args(args![badge_root.covenant_id, amount]),
@@ -58,7 +61,7 @@ fn main() -> PlaygroundResult<()> {
             controller_root.utxo.clone(),
             0,
         )
-        .argent_input(
+        .actor_input(
             "badge_asset::Badge",
             badge_initial,
             EntryCall::new("apply").args(args![10 + amount]),
@@ -66,13 +69,13 @@ fn main() -> PlaygroundResult<()> {
             badge_root.utxo.clone(),
             0,
         )
-        .argent_output(
+        .actor_output(
             "badge_controller::Controller",
             controller_next,
             CovenantBinding::new(0, controller_root.covenant_id),
             controller_value,
         )
-        .argent_output("badge_asset::Badge", badge_next, CovenantBinding::new(1, badge_root.covenant_id), badge_value);
+        .actor_output("badge_asset::Badge", badge_next, CovenantBinding::new(1, badge_root.covenant_id), badge_value);
     let tx = builder.build(&context)?;
 
     println!("controller genesis tx: {}", controller_genesis_tx.id());

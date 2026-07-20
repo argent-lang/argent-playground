@@ -1,6 +1,6 @@
 use argent::build_inline;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{TxBuilder, TxContext, state};
+use argent_runtime::{CovenantOutput, TxBuilder, TxContext, state};
 use kaspa_consensus_core::{Hash, tx::CovenantBinding};
 
 // The Argent source only names the actor transitions. The route/template
@@ -51,17 +51,17 @@ fn main() -> PlaygroundResult<()> {
 
     // Spend Ping and require the next output to become Pong.
     let ping_utxo = builder.covenant_utxo("Ping", ping_0.clone(), value, 0, false, Some(covenant_id))?;
-    let open_context = TxContext::new().argent_input("Ping", ping_0, "send", demo_outpoint(0x21, 0), ping_utxo, 0).argent_output(
+    let open_context = TxContext::new().actor_input("Ping", ping_0, "send", demo_outpoint(0x21, 0), ping_utxo, 0).actor_output(
         "Pong",
         pong_1.clone(),
         CovenantBinding::new(0, covenant_id),
         value,
     );
-    builder.build(&open_context)?;
+    let open_tx = builder.build(&open_context)?;
+    let pong = CovenantOutput::from_tx(&open_tx, 0)?;
 
     // Spend Pong back into Ping using the same covenant id.
-    let pong_utxo = builder.covenant_utxo("Pong", pong_1.clone(), value, 0, false, Some(covenant_id))?;
-    let close_context = TxContext::new().argent_input("Pong", pong_1, "reply", demo_outpoint(0x22, 0), pong_utxo, 0).argent_output(
+    let close_context = TxContext::new().actor_input("Pong", pong_1, "reply", pong.outpoint, pong.utxo, 0).actor_output(
         "Ping",
         ping_2,
         CovenantBinding::new(0, covenant_id),
