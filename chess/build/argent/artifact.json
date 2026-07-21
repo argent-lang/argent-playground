@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "084fb6672eaf678a5373ad5dc09a21961644d479bc8c3a035b22e915712788fa",
+  "id": "13c582b4e4b1ef3207779f748b42f5ac863a0f5f5c67d806c57dd646e0e2c273",
   "generator": {
     "name": "argentc",
     "version": "0.1.0"
@@ -903,7 +903,7 @@
         {
           "id": "route_family/GameState/chess_mux",
           "state": "GameState",
-          "anchor_actor": "ChessMux",
+          "representative_actor": "ChessMux",
           "entry_actors": [
             "ChessMux"
           ],
