@@ -1,0 +1,270 @@
+import "./types.ag";
+
+import actor ChessMux from "./game.ag";
+
+actor League owns LeagueState {
+    entry register_player(owner_sig: sig, owner_pk: pubkey) emits {
+        league: League;
+        player: Player;
+    } {
+        require(checkSig(owner_sig, owner_pk));
+
+        PlayerState next_player = {
+            owner: blake2b(owner_pk),
+            player_id: unique("LeaguePlayerId", self.outpoint),
+            open_games: 0,
+            rating: base_rating,
+            games: 0,
+            wins: 0,
+            draws: 0,
+            losses: 0,
+        };
+
+        require(league.value == self.value);
+
+        become {
+            league <- League(self.state);
+            player <- Player(next_player);
+        };
+    }
+
+    entry rebalance(admin_sig: sig, admin_pk: pubkey) emits one League {
+        require(blake2b(admin_pk) == admin);
+        require(checkSig(admin_sig, admin_pk));
+        become League(self.state);
+    }
+
+    entry fork(admin_sig: sig, admin_pk: pubkey) emits {
+        left: League;
+        right: League;
+    } {
+        require(blake2b(admin_pk) == admin);
+        require(checkSig(admin_sig, admin_pk));
+        become {
+            left <- League(self.state);
+            right <- League(self.state);
+        };
+    }
+}
+
+actor Player owns PlayerState {
+    entry start_game(
+        owner_sig: sig,
+        owner_pk: pubkey,
+        self_side: int,
+        move_timeout: int
+    ) consumes {
+        other: Player;
+    } emits {
+        self_out: Player;
+        other_out: Player;
+        game: ChessMux;
+    } {
+        require(self_side == WHITE || self_side == BLACK);
+        require(move_timeout > 0);
+        require(blake2b(owner_pk) == owner);
+        require(checkSig(owner_sig, owner_pk));
+        require(other.player_id != player_id);
+
+        byte[32] self_ref = player_ref(owner, player_id);
+        byte[32] other_ref = player_ref(other.owner, other.player_id);
+        byte[32] white_player = self_ref;
+        byte[32] black_player = other_ref;
+        if (self_side == BLACK) {
+            white_player = other_ref;
+            black_player = self_ref;
+        }
+
+        PlayerState next_self = {
+            owner: owner,
+            player_id: player_id,
+            open_games: open_games + 1,
+            rating: rating,
+            games: games,
+            wins: wins,
+            draws: draws,
+            losses: losses,
+        };
+
+        PlayerState next_other = {
+            owner: other.owner,
+            player_id: other.player_id,
+            open_games: other.open_games + 1,
+            rating: other.rating,
+            games: other.games,
+            wins: other.wins,
+            draws: other.draws,
+            losses: other.losses,
+        };
+
+        GameState next_game = {
+            white_player: white_player,
+            black_player: black_player,
+            board: 0x04020305060302040101010101010101000000000000000000000000000000000000000000000000000000000000000009090909090909090c0a0b0d0e0b0a0c,
+            turn: WHITE,
+            status: LIVE,
+            move_timeout: move_timeout,
+            castle_rights: 0x01010101,
+            en_passant_idx: -1,
+            pending_src_idx: -1,
+            pending_dst_idx: -1,
+            pending_promo: CLEAR,
+            recent_castle: CLEAR,
+            draw_state: NORMAL,
+        };
+
+        become {
+            self_out <- Player(next_self);
+            other_out <- Player(next_other);
+            game <- ChessMux(next_game);
+        };
+    }
+
+    delegate delegate_start_game(
+        owner_sig: sig,
+        owner_pk: pubkey,
+        move_timeout: int
+    ) consumes {
+        leader: Player;
+    } {
+        require(move_timeout > 0);
+        require(blake2b(owner_pk) == owner);
+        require(checkSig(owner_sig, owner_pk));
+        require(leader.player_id != player_id);
+    }
+
+    delegate delegate_settle() consumes {
+        settlement: ChessSettle;
+    } {
+        require(settlement.status != LIVE);
+        byte[32] self_ref = player_ref(owner, player_id);
+        require(self_ref == settlement.white_player || self_ref == settlement.black_player);
+    }
+
+    entry rebalance(owner_sig: sig, owner_pk: pubkey) emits one Player {
+        require(blake2b(owner_pk) == owner);
+        require(checkSig(owner_sig, owner_pk));
+        become Player(self.state);
+    }
+
+    entry retire(owner_sig: sig, owner_pk: pubkey) emits none {
+        require(blake2b(owner_pk) == owner);
+        require(checkSig(owner_sig, owner_pk));
+        require(open_games == 0);
+    }
+}
+
+actor ChessSettle owns SettleState {
+    entry settle() consumes {
+        white_in: Player;
+        black_in: Player;
+    } emits {
+        white_out: Player;
+        black_out: Player;
+    } {
+        require(status != LIVE);
+        require(player_ref(white_in.owner, white_in.player_id) == white_player);
+        require(player_ref(black_in.owner, black_in.player_id) == black_player);
+
+        int white_output_value = white_in.value;
+        int black_output_value = black_in.value;
+
+        int white_wins = white_in.wins;
+        int white_draws = white_in.draws;
+        int white_losses = white_in.losses;
+        int black_wins = black_in.wins;
+        int black_draws = black_in.draws;
+        int black_losses = black_in.losses;
+        int white_actual = 0;
+        int black_actual = 0;
+        int white_expected = 500;
+        int black_expected = 500;
+
+        if (status == WWIN) {
+            white_wins = white_wins + 1;
+            black_losses = black_losses + 1;
+            white_actual = 1000;
+            white_output_value = white_output_value + self.value;
+        } else if (status == BWIN) {
+            black_wins = black_wins + 1;
+            white_losses = white_losses + 1;
+            black_actual = 1000;
+            black_output_value = black_output_value + self.value;
+        } else {
+            require(status == DRAW);
+            white_draws = white_draws + 1;
+            black_draws = black_draws + 1;
+            white_actual = 500;
+            black_actual = 500;
+            int white_share = self.value / 2;
+            int black_share = self.value - white_share;
+            white_output_value = white_output_value + white_share;
+            black_output_value = black_output_value + black_share;
+        }
+
+        int diff = black_in.rating - white_in.rating;
+        int abs_diff = abs_int(diff);
+        int favored_expected = 990;
+        if (abs_diff < 800) {
+            favored_expected = 970;
+            if (abs_diff < 600) {
+                favored_expected = 910;
+                if (abs_diff < 400) {
+                    favored_expected = 820;
+                    if (abs_diff < 250) {
+                        favored_expected = 700;
+                        if (abs_diff < 150) {
+                            favored_expected = 600;
+                            if (abs_diff < 75) {
+                                favored_expected = 500;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (diff < 0) {
+            white_expected = favored_expected;
+            black_expected = 1000 - favored_expected;
+        } else if (diff > 0) {
+            white_expected = 1000 - favored_expected;
+            black_expected = favored_expected;
+        }
+
+        int white_rating = white_in.rating + ((32 * (white_actual - white_expected)) / 1000);
+        int black_rating = black_in.rating + ((32 * (black_actual - black_expected)) / 1000);
+
+        require(white_in.open_games > 0);
+        require(black_in.open_games > 0);
+
+        PlayerState next_white = {
+            owner: white_in.owner,
+            player_id: white_in.player_id,
+            open_games: white_in.open_games - 1,
+            rating: white_rating,
+            games: white_in.games + 1,
+            wins: white_wins,
+            draws: white_draws,
+            losses: white_losses,
+        };
+
+        PlayerState next_black = {
+            owner: black_in.owner,
+            player_id: black_in.player_id,
+            open_games: black_in.open_games - 1,
+            rating: black_rating,
+            games: black_in.games + 1,
+            wins: black_wins,
+            draws: black_draws,
+            losses: black_losses,
+        };
+
+        require(white_out.value == white_output_value);
+        require(black_out.value == black_output_value);
+        become {
+            white_out <- Player(next_white);
+            black_out <- Player(next_black);
+        };
+    }
+}

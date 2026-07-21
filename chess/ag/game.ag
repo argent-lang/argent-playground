@@ -1,0 +1,1512 @@
+import "./types.ag";
+
+import actor ChessSettle from "./outer.ag";
+
+actor enum MoveActor {
+    ChessPawn;
+    ChessKnight;
+    ChessVert;
+    ChessHoriz;
+    ChessDiag;
+    ChessKing;
+    ChessCastle;
+    ChessCastleChallengePrep;
+}
+
+actor ChessMux owns GameState {
+    entry route(
+        target: MoveActor,
+        from_x: int,
+        from_y: int,
+        to_x: int,
+        to_y: int,
+        promo_piece: int,
+        termination_action: int,
+        s: sig,
+        pk: pubkey,
+        player_id: byte[32]
+    ) emits one MoveActor {
+        require(status == LIVE);
+
+        byte[32] actor_ref = player_ref(blake2b(pk), player_id);
+        if (turn == WHITE) {
+            require(actor_ref == white_player);
+        } else {
+            require(actor_ref == black_player);
+        }
+        require(checkSig(s, pk));
+
+        int selector = PAWN;
+        if (target == MoveActor::ChessPawn) {
+            selector = PAWN;
+        } else if (target == MoveActor::ChessKnight) {
+            selector = KNIGHT;
+        } else if (target == MoveActor::ChessVert) {
+            selector = VERT;
+        } else if (target == MoveActor::ChessHoriz) {
+            selector = HORIZ;
+        } else if (target == MoveActor::ChessDiag) {
+            selector = DIAG;
+        } else if (target == MoveActor::ChessKing) {
+            selector = KING;
+        } else if (target == MoveActor::ChessCastle) {
+            selector = CASTLE;
+        } else {
+            require(target == MoveActor::ChessCastleChallengePrep);
+            selector = PREP;
+        }
+
+        require(termination_action == CLEAR || termination_action == OFFER);
+
+        int next_draw_state = draw_state;
+        require(from_x >= 0 && from_x < 8 && from_y >= 0 && from_y < 8);
+        require(to_x >= 0 && to_x < 8 && to_y >= 0 && to_y < 8);
+        require(promo_piece == 0 || (selector == PAWN && promo_piece >= 2 && promo_piece <= 5));
+        require(draw_state >= NORMAL || selector <= KING);
+        require(termination_action == CLEAR || (selector <= CASTLE && draw_state >= NORMAL));
+
+        if (draw_state > NORMAL) {
+            next_draw_state = NORMAL;
+        }
+        if (termination_action == OFFER) {
+            next_draw_state = WOFFER + turn;
+        }
+
+        int next_recent_castle = CLEAR;
+        if (selector == PREP) {
+            require(recent_castle != CLEAR);
+            next_recent_castle = recent_castle;
+        }
+
+        GameState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            board: board,
+            turn: turn,
+            status: status,
+            move_timeout: move_timeout,
+            castle_rights: castle_rights,
+            en_passant_idx: en_passant_idx,
+            pending_src_idx: from_y * 8 + from_x,
+            pending_dst_idx: to_y * 8 + to_x,
+            pending_promo: promo_piece,
+            recent_castle: next_recent_castle,
+            draw_state: next_draw_state,
+        };
+
+        require(next.value == self.value);
+        become target(next_state);
+    }
+
+    entry terminate(
+        termination_action: int,
+        s: sig,
+        pk: pubkey,
+        player_id: byte[32]
+    ) emits one ChessMux {
+        require(status == LIVE);
+
+        byte[32] actor_ref = player_ref(blake2b(pk), player_id);
+        if (turn == WHITE) {
+            require(actor_ref == white_player);
+        } else {
+            require(actor_ref == black_player);
+        }
+        require(checkSig(s, pk));
+
+        int next_status = status;
+        int next_turn = turn;
+        int next_draw_state = draw_state;
+        if (termination_action == CLAIM) {
+            require(draw_state == NORMAL);
+            require(recent_castle == CLEAR);
+            next_turn = 1 - turn;
+            next_draw_state = CLAIMED;
+        } else if (termination_action == SURRENDER) {
+            next_status = BWIN - turn;
+            next_draw_state = NORMAL;
+        } else {
+            require(termination_action == ACCEPT);
+            require(draw_state + turn == BOFFER);
+            next_status = DRAW;
+            next_draw_state = NORMAL;
+        }
+
+        GameState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            board: board,
+            turn: next_turn,
+            status: next_status,
+            move_timeout: move_timeout,
+            castle_rights: castle_rights,
+            en_passant_idx: -1,
+            pending_src_idx: -1,
+            pending_dst_idx: -1,
+            pending_promo: CLEAR,
+            recent_castle: CLEAR,
+            draw_state: next_draw_state,
+        };
+
+        require(next.value == self.value);
+        become ChessMux(next_state);
+    }
+
+    entry timeout(
+        s: sig,
+        pk: pubkey,
+        player_id: byte[32]
+    ) emits one ChessSettle {
+        require(status == LIVE);
+
+        byte[32] actor_ref = player_ref(blake2b(pk), player_id);
+        if (turn == WHITE) {
+            require(actor_ref == black_player);
+        } else {
+            require(actor_ref == white_player);
+        }
+        require(checkSig(s, pk));
+        require(this.age >= move_timeout);
+
+        SettleState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            status: timeout_status(turn, draw_state),
+        };
+
+        require(next.value == self.value);
+        become ChessSettle(next_state);
+    }
+
+    entry settle() emits one ChessSettle {
+        require(status != LIVE);
+        SettleState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            status: status,
+        };
+
+        require(next.value == self.value);
+        become ChessSettle(next_state);
+    }
+}
+
+actor ChessPawn owns GameState {
+    entry apply() emits one ChessMux {
+        require(status == LIVE);
+
+        int from_idx = OpBin2Num(pending_src_idx);
+        int to_idx = OpBin2Num(pending_dst_idx);
+        int promo_piece = OpBin2Num(pending_promo);
+        require(turn == WHITE || turn == BLACK);
+
+        bool is_draw_claim_mode = draw_state < NORMAL;
+        int effective_turn = turn;
+        if (is_draw_claim_mode) {
+            effective_turn = 1 - turn;
+        }
+        require(from_idx != to_idx);
+
+        byte[64] prev_board = board;
+        byte moving_piece = prev_board[from_idx];
+        int moving_num = OpBin2Num(moving_piece);
+        int target_num = OpBin2Num(prev_board[to_idx]);
+        require(moving_num == 1 || moving_num == 9);
+
+        bool moving_is_white = moving_num == 1;
+        bool moving_is_black = moving_num == 9;
+        bool target_is_empty = target_num == 0;
+        bool target_is_white = target_num >= 1 && target_num <= 6;
+        bool target_is_black = target_num >= 9 && target_num <= 14;
+        if (effective_turn == WHITE) {
+            require(moving_is_white);
+            require(!target_is_white);
+        } else {
+            require(moving_is_black);
+            require(!target_is_black);
+        }
+
+        int ep_idx = OpBin2Num(en_passant_idx);
+        int from_y = from_idx / 8;
+        int from_x = from_idx % 8;
+        int to_y = to_idx / 8;
+        int to_x = to_idx % 8;
+        int dx = to_x - from_x;
+        int dy = to_y - from_y;
+
+        int dir = 1;
+        int start_rank = 1;
+        int ep_captured_piece = 9;
+        bool target_is_enemy = target_is_black;
+        if (moving_is_black) {
+            dir = -1;
+            start_rank = 6;
+            ep_captured_piece = 1;
+            target_is_enemy = target_is_white;
+        }
+
+        bool same_file = dx == 0;
+        bool side_adjacent = dx == 1 || dx == -1;
+        bool one_forward = dy == dir;
+        bool two_forward = dy == 2 * dir;
+        int en_passant_capture_idx = -1;
+        bool one_step = same_file && one_forward && target_is_empty;
+
+        bool two_step = false;
+        if (from_y == start_rank && same_file && two_forward && target_is_empty) {
+            int mid_idx = (from_y + dir) * 8 + from_x;
+            two_step = OpBin2Num(prev_board[mid_idx]) == 0;
+        }
+
+        bool capture = side_adjacent && one_forward && target_is_enemy;
+        bool en_passant = false;
+        if (side_adjacent && one_forward && target_is_empty && to_idx == ep_idx) {
+            en_passant_capture_idx = to_idx - dir * 8;
+            en_passant = OpBin2Num(prev_board[en_passant_capture_idx]) == ep_captured_piece;
+        }
+        require(one_step || two_step || capture || en_passant);
+
+        byte arrived_piece = moving_piece;
+        bool reaches_back_rank = to_y == 0 || to_y == 7;
+        if (recent_castle != CLEAR) {
+            require(promo_piece == 0);
+        } else if (reaches_back_rank) {
+            require(promo_piece != 0);
+            int arrived_num = promo_piece;
+            if (moving_is_black) {
+                arrived_num = arrived_num + 8;
+            }
+            arrived_piece = byte(arrived_num);
+        } else {
+            require(promo_piece == 0);
+        }
+
+        int next_status = status;
+        if (recent_castle != CLEAR) {
+            if (moving_is_white) {
+                require(target_num == 14);
+                next_status = WWIN;
+            } else {
+                require(target_num == 6);
+                next_status = BWIN;
+            }
+        } else if (is_draw_claim_mode) {
+            if (effective_turn == WHITE && target_num == 14) {
+                if (turn == WHITE) {
+                    next_status = WWIN;
+                } else {
+                    next_status = BWIN;
+                }
+            }
+            if (effective_turn == BLACK && target_num == 6) {
+                if (turn == WHITE) {
+                    next_status = WWIN;
+                } else {
+                    next_status = BWIN;
+                }
+            }
+        } else {
+            if (moving_is_white && target_num == 14) {
+                next_status = WWIN;
+            }
+            if (moving_is_black && target_num == 6) {
+                next_status = BWIN;
+            }
+        }
+
+        int next_draw_state = draw_state;
+        if (draw_state == CLAIMED) {
+            next_draw_state = DEFENSE;
+        } else if (draw_state == DEFENSE && next_status == LIVE) {
+            if (turn == WHITE) {
+                next_status = BWIN;
+            } else {
+                next_status = WWIN;
+            }
+        }
+
+        int next_en_passant_idx = -1;
+        if (two_step) {
+            next_en_passant_idx = from_idx + dir * 8;
+        }
+
+        byte[] prev_dyn = byte[](prev_board);
+        int a = from_idx;
+        byte va = byte(0x00);
+        int b = to_idx;
+        byte vb = arrived_piece;
+        if (a > b) {
+            a = to_idx;
+            va = arrived_piece;
+            b = from_idx;
+            vb = byte(0x00);
+        }
+
+        int k_idx = 0;
+        byte vk = prev_board[0];
+        if (a == 0) {
+            k_idx = 1;
+            vk = prev_board[1];
+            if (b == 1) {
+                k_idx = 2;
+                vk = prev_board[2];
+            }
+        }
+        if (en_passant) {
+            k_idx = en_passant_capture_idx;
+            vk = byte(0x00);
+        }
+
+        int x = a;
+        byte vx = va;
+        int y = b;
+        byte vy = vb;
+        int z = k_idx;
+        byte vz = vk;
+        if (k_idx < a) {
+            x = k_idx;
+            vx = vk;
+            y = a;
+            vy = va;
+            z = b;
+            vz = vb;
+        } else if (k_idx < b) {
+            y = k_idx;
+            vy = vk;
+            z = b;
+            vz = vb;
+        }
+
+        byte[] prefix = prev_dyn.slice(0, x);
+        byte[] middle_xy = prev_dyn.slice(x + 1, y);
+        byte[] middle_yz = prev_dyn.slice(y + 1, z);
+        byte[] suffix = prev_dyn.slice(z + 1, 64);
+        byte[64] next_board = prefix + byte[1](vx) + middle_xy + byte[1](vy) + middle_yz + byte[1](vz) + suffix;
+
+        GameState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            board: next_board,
+            turn: 1 - turn,
+            status: next_status,
+            move_timeout: move_timeout,
+            castle_rights: castle_rights,
+            en_passant_idx: next_en_passant_idx,
+            pending_src_idx: -1,
+            pending_dst_idx: -1,
+            pending_promo: CLEAR,
+            recent_castle: CLEAR,
+            draw_state: next_draw_state,
+        };
+
+        require(next.value == self.value);
+        become ChessMux(next_state);
+    }
+
+    entry timeout() emits one ChessSettle {
+        require(status == LIVE);
+        require(this.age >= move_timeout);
+        SettleState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            status: timeout_status(turn, draw_state),
+        };
+        require(next.value == self.value);
+        become ChessSettle(next_state);
+    }
+}
+
+actor ChessKnight owns GameState {
+    entry apply() emits one ChessMux {
+        require(status == LIVE);
+
+        int from_idx = OpBin2Num(pending_src_idx);
+        int to_idx = OpBin2Num(pending_dst_idx);
+        int from_y = from_idx / 8;
+        int from_x = from_idx % 8;
+        int to_y = to_idx / 8;
+        int to_x = to_idx % 8;
+
+        require(turn == WHITE || turn == BLACK);
+        bool is_draw_claim_mode = draw_state < NORMAL;
+        int effective_turn = turn;
+        if (is_draw_claim_mode) {
+            effective_turn = 1 - turn;
+        }
+        require(from_idx != to_idx);
+
+        byte[64] prev_board = board;
+        byte moving_piece = prev_board[from_idx];
+        int moving_num = OpBin2Num(moving_piece);
+        int target_num = OpBin2Num(prev_board[to_idx]);
+        require(moving_num == 2 || moving_num == 10);
+
+        bool target_is_white = target_num >= 1 && target_num <= 6;
+        bool target_is_black = target_num >= 9 && target_num <= 14;
+        if (effective_turn == WHITE) {
+            require(moving_num == 2);
+            require(!target_is_white);
+        } else {
+            require(moving_num == 10);
+            require(!target_is_black);
+        }
+
+        bool side_adjacent = to_x == from_x + 1 || to_x + 1 == from_x;
+        bool side_two = to_x == from_x + 2 || to_x + 2 == from_x;
+        bool vertical_one = to_y == from_y + 1 || to_y + 1 == from_y;
+        bool vertical_two = to_y == from_y + 2 || to_y + 2 == from_y;
+        require((side_adjacent && vertical_two) || (side_two && vertical_one));
+
+        int low_idx = from_idx;
+        int high_idx = to_idx;
+        byte first_slot = byte(0x00);
+        byte second_slot = moving_piece;
+        if (from_idx > to_idx) {
+            low_idx = to_idx;
+            high_idx = from_idx;
+            first_slot = moving_piece;
+            second_slot = byte(0x00);
+        }
+
+        byte[] prev_dyn = byte[](prev_board);
+        byte[] prefix = prev_dyn.slice(0, low_idx);
+        byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
+        byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
+        byte[64] next_board = prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix;
+
+        int next_status = status;
+        if (recent_castle != CLEAR) {
+            if (turn == WHITE) {
+                require(target_num == 14);
+                next_status = WWIN;
+            } else {
+                require(target_num == 6);
+                next_status = BWIN;
+            }
+        } else if (is_draw_claim_mode) {
+            if (effective_turn == WHITE && target_num == 14) {
+                if (turn == WHITE) {
+                    next_status = WWIN;
+                } else {
+                    next_status = BWIN;
+                }
+            }
+            if (effective_turn == BLACK && target_num == 6) {
+                if (turn == WHITE) {
+                    next_status = WWIN;
+                } else {
+                    next_status = BWIN;
+                }
+            }
+        } else {
+            if (turn == WHITE && target_num == 14) {
+                next_status = WWIN;
+            }
+            if (turn == BLACK && target_num == 6) {
+                next_status = BWIN;
+            }
+        }
+
+        int next_draw_state = draw_state;
+        if (draw_state == CLAIMED) {
+            next_draw_state = DEFENSE;
+        } else if (draw_state == DEFENSE && next_status == LIVE) {
+            if (turn == WHITE) {
+                next_status = BWIN;
+            } else {
+                next_status = WWIN;
+            }
+        }
+
+        GameState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            board: next_board,
+            turn: 1 - turn,
+            status: next_status,
+            move_timeout: move_timeout,
+            castle_rights: castle_rights,
+            en_passant_idx: -1,
+            pending_src_idx: -1,
+            pending_dst_idx: -1,
+            pending_promo: CLEAR,
+            recent_castle: CLEAR,
+            draw_state: next_draw_state,
+        };
+
+        require(next.value == self.value);
+        become ChessMux(next_state);
+    }
+
+    entry timeout() emits one ChessSettle {
+        require(status == LIVE);
+        require(this.age >= move_timeout);
+        SettleState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            status: timeout_status(turn, draw_state),
+        };
+        require(next.value == self.value);
+        become ChessSettle(next_state);
+    }
+}
+
+actor ChessVert owns GameState {
+    entry apply() emits one ChessMux {
+        require(status == LIVE);
+
+        int from_idx = OpBin2Num(pending_src_idx);
+        int to_idx = OpBin2Num(pending_dst_idx);
+        require(turn == WHITE || turn == BLACK);
+
+        bool is_draw_claim_mode = draw_state < NORMAL;
+        int effective_turn = turn;
+        if (is_draw_claim_mode) {
+            effective_turn = 1 - turn;
+        }
+        require(from_idx != to_idx);
+
+        byte[64] prev_board = board;
+        byte moving_piece = prev_board[from_idx];
+        int moving_num = OpBin2Num(moving_piece);
+        int target_num = OpBin2Num(prev_board[to_idx]);
+        require(moving_num == 4 || moving_num == 5 || moving_num == 12 || moving_num == 13);
+
+        bool target_is_white = target_num >= 1 && target_num <= 6;
+        bool target_is_black = target_num >= 9 && target_num <= 14;
+        if (effective_turn == WHITE) {
+            require(moving_num == 4 || moving_num == 5);
+            require(!target_is_white);
+        } else {
+            require(moving_num == 12 || moving_num == 13);
+            require(!target_is_black);
+        }
+
+        int from_y = from_idx / 8;
+        int from_x = from_idx % 8;
+        int to_y = to_idx / 8;
+        int to_x = to_idx % 8;
+        require(to_x == from_x && to_y != from_y);
+        int dy = to_y - from_y;
+        int dir = 1;
+        if (dy < 0) {
+            dir = -1;
+        }
+        int distance = abs_int(dy);
+
+        int clear = 1;
+        for (i, 0, 7, 7) {
+            if (i < distance + -1) {
+                int scan_y = from_y + dir * (i + 1);
+                int scan_idx = scan_y * 8 + from_x;
+                if (OpBin2Num(prev_board[scan_idx]) != 0) {
+                    clear = 0;
+                }
+            }
+        }
+        require(clear == 1);
+
+        int low_idx = from_idx;
+        int high_idx = to_idx;
+        byte first_slot = byte(0x00);
+        byte second_slot = moving_piece;
+        if (from_idx > to_idx) {
+            low_idx = to_idx;
+            high_idx = from_idx;
+            first_slot = moving_piece;
+            second_slot = byte(0x00);
+        }
+
+        byte[] prev_dyn = byte[](prev_board);
+        byte[] prefix = prev_dyn.slice(0, low_idx);
+        byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
+        byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
+        byte[64] next_board = prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix;
+
+        int next_status = status;
+        if (recent_castle != CLEAR) {
+            if (turn == WHITE) {
+                require(target_num == 14);
+                next_status = WWIN;
+            } else {
+                require(target_num == 6);
+                next_status = BWIN;
+            }
+        } else if (is_draw_claim_mode) {
+            if (effective_turn == WHITE && target_num == 14) {
+                if (turn == WHITE) {
+                    next_status = WWIN;
+                } else {
+                    next_status = BWIN;
+                }
+            }
+            if (effective_turn == BLACK && target_num == 6) {
+                if (turn == WHITE) {
+                    next_status = WWIN;
+                } else {
+                    next_status = BWIN;
+                }
+            }
+        } else {
+            if (turn == WHITE && target_num == 14) {
+                next_status = WWIN;
+            }
+            if (turn == BLACK && target_num == 6) {
+                next_status = BWIN;
+            }
+        }
+
+        int next_draw_state = draw_state;
+        if (draw_state == CLAIMED) {
+            next_draw_state = DEFENSE;
+        } else if (draw_state == DEFENSE && next_status == LIVE) {
+            if (turn == WHITE) {
+                next_status = BWIN;
+            } else {
+                next_status = WWIN;
+            }
+        }
+
+        byte next_white_can_castle_k = castle_rights[0];
+        byte next_white_can_castle_q = castle_rights[1];
+        byte next_black_can_castle_k = castle_rights[2];
+        byte next_black_can_castle_q = castle_rights[3];
+        if (from_idx == 0 || to_idx == 0) {
+            next_white_can_castle_q = byte(0x00);
+        }
+        if (from_idx == 7 || to_idx == 7) {
+            next_white_can_castle_k = byte(0x00);
+        }
+        if (from_idx == 56 || to_idx == 56) {
+            next_black_can_castle_q = byte(0x00);
+        }
+        if (from_idx == 63 || to_idx == 63) {
+            next_black_can_castle_k = byte(0x00);
+        }
+        byte[4] next_castle_rights = byte[1](next_white_can_castle_k)
+            + byte[1](next_white_can_castle_q)
+            + byte[1](next_black_can_castle_k)
+            + byte[1](next_black_can_castle_q);
+
+        GameState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            board: next_board,
+            turn: 1 - turn,
+            status: next_status,
+            move_timeout: move_timeout,
+            castle_rights: next_castle_rights,
+            en_passant_idx: -1,
+            pending_src_idx: -1,
+            pending_dst_idx: -1,
+            pending_promo: CLEAR,
+            recent_castle: CLEAR,
+            draw_state: next_draw_state,
+        };
+
+        require(next.value == self.value);
+        become ChessMux(next_state);
+    }
+
+    entry timeout() emits one ChessSettle {
+        require(status == LIVE);
+        require(this.age >= move_timeout);
+        SettleState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            status: timeout_status(turn, draw_state),
+        };
+        require(next.value == self.value);
+        become ChessSettle(next_state);
+    }
+}
+
+actor ChessHoriz owns GameState {
+    entry apply() emits one ChessMux {
+        require(status == LIVE);
+
+        int from_idx = OpBin2Num(pending_src_idx);
+        int to_idx = OpBin2Num(pending_dst_idx);
+        require(turn == WHITE || turn == BLACK);
+
+        bool is_draw_claim_mode = draw_state < NORMAL;
+        int effective_turn = turn;
+        if (is_draw_claim_mode) {
+            effective_turn = 1 - turn;
+        }
+        require(from_idx != to_idx);
+
+        byte[64] prev_board = board;
+        byte moving_piece = prev_board[from_idx];
+        int moving_num = OpBin2Num(moving_piece);
+        int target_num = OpBin2Num(prev_board[to_idx]);
+        require(moving_num == 4 || moving_num == 5 || moving_num == 12 || moving_num == 13);
+
+        bool target_is_white = target_num >= 1 && target_num <= 6;
+        bool target_is_black = target_num >= 9 && target_num <= 14;
+        if (effective_turn == WHITE) {
+            require(moving_num == 4 || moving_num == 5);
+            require(!target_is_white);
+        } else {
+            require(moving_num == 12 || moving_num == 13);
+            require(!target_is_black);
+        }
+
+        int from_y = from_idx / 8;
+        int from_x = from_idx % 8;
+        int to_y = to_idx / 8;
+        int to_x = to_idx % 8;
+        require(to_y == from_y && to_x != from_x);
+        int dx = to_x - from_x;
+        int dir = 1;
+        if (dx < 0) {
+            dir = -1;
+        }
+        int distance = abs_int(dx);
+
+        int clear = 1;
+        for (i, 0, 7, 7) {
+            if (i < distance + -1) {
+                int scan_x = from_x + dir * (i + 1);
+                int scan_idx = from_y * 8 + scan_x;
+                if (OpBin2Num(prev_board[scan_idx]) != 0) {
+                    clear = 0;
+                }
+            }
+        }
+        require(clear == 1);
+
+        int low_idx = from_idx;
+        int high_idx = to_idx;
+        byte first_slot = byte(0x00);
+        byte second_slot = moving_piece;
+        if (from_idx > to_idx) {
+            low_idx = to_idx;
+            high_idx = from_idx;
+            first_slot = moving_piece;
+            second_slot = byte(0x00);
+        }
+
+        byte[] prev_dyn = byte[](prev_board);
+        byte[] prefix = prev_dyn.slice(0, low_idx);
+        byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
+        byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
+        byte[64] next_board = prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix;
+
+        int next_status = status;
+        if (recent_castle != CLEAR) {
+            if (turn == WHITE) {
+                require(target_num == 14);
+                next_status = WWIN;
+            } else {
+                require(target_num == 6);
+                next_status = BWIN;
+            }
+        } else if (is_draw_claim_mode) {
+            if (effective_turn == WHITE && target_num == 14) {
+                if (turn == WHITE) {
+                    next_status = WWIN;
+                } else {
+                    next_status = BWIN;
+                }
+            }
+            if (effective_turn == BLACK && target_num == 6) {
+                if (turn == WHITE) {
+                    next_status = WWIN;
+                } else {
+                    next_status = BWIN;
+                }
+            }
+        } else {
+            if (turn == WHITE && target_num == 14) {
+                next_status = WWIN;
+            }
+            if (turn == BLACK && target_num == 6) {
+                next_status = BWIN;
+            }
+        }
+
+        int next_draw_state = draw_state;
+        if (draw_state == CLAIMED) {
+            next_draw_state = DEFENSE;
+        } else if (draw_state == DEFENSE && next_status == LIVE) {
+            if (turn == WHITE) {
+                next_status = BWIN;
+            } else {
+                next_status = WWIN;
+            }
+        }
+
+        byte next_white_can_castle_k = castle_rights[0];
+        byte next_white_can_castle_q = castle_rights[1];
+        byte next_black_can_castle_k = castle_rights[2];
+        byte next_black_can_castle_q = castle_rights[3];
+        if (from_idx == 0 || to_idx == 0) {
+            next_white_can_castle_q = byte(0x00);
+        }
+        if (from_idx == 7 || to_idx == 7) {
+            next_white_can_castle_k = byte(0x00);
+        }
+        if (from_idx == 56 || to_idx == 56) {
+            next_black_can_castle_q = byte(0x00);
+        }
+        if (from_idx == 63 || to_idx == 63) {
+            next_black_can_castle_k = byte(0x00);
+        }
+        byte[4] next_castle_rights = byte[1](next_white_can_castle_k)
+            + byte[1](next_white_can_castle_q)
+            + byte[1](next_black_can_castle_k)
+            + byte[1](next_black_can_castle_q);
+
+        GameState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            board: next_board,
+            turn: 1 - turn,
+            status: next_status,
+            move_timeout: move_timeout,
+            castle_rights: next_castle_rights,
+            en_passant_idx: -1,
+            pending_src_idx: -1,
+            pending_dst_idx: -1,
+            pending_promo: CLEAR,
+            recent_castle: CLEAR,
+            draw_state: next_draw_state,
+        };
+
+        require(next.value == self.value);
+        become ChessMux(next_state);
+    }
+
+    entry timeout() emits one ChessSettle {
+        require(status == LIVE);
+        require(this.age >= move_timeout);
+        SettleState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            status: timeout_status(turn, draw_state),
+        };
+        require(next.value == self.value);
+        become ChessSettle(next_state);
+    }
+}
+
+actor ChessDiag owns GameState {
+    entry apply() emits one ChessMux {
+        require(status == LIVE);
+        int from_idx = OpBin2Num(pending_src_idx);
+        int to_idx = OpBin2Num(pending_dst_idx);
+        require(turn == WHITE || turn == BLACK);
+
+        bool is_draw_claim_mode = draw_state < NORMAL;
+        int effective_turn = turn;
+        if (is_draw_claim_mode) {
+            effective_turn = 1 - turn;
+        }
+        require(from_idx != to_idx);
+
+        byte[64] prev_board = board;
+        byte moving_piece = prev_board[from_idx];
+        int moving_num = OpBin2Num(moving_piece);
+        int target_num = OpBin2Num(prev_board[to_idx]);
+        require(moving_num == 3 || moving_num == 5 || moving_num == 11 || moving_num == 13);
+
+        bool target_is_white = target_num >= 1 && target_num <= 6;
+        bool target_is_black = target_num >= 9 && target_num <= 14;
+        if (effective_turn == WHITE) {
+            require(moving_num == 3 || moving_num == 5);
+            require(!target_is_white);
+        } else {
+            require(moving_num == 11 || moving_num == 13);
+            require(!target_is_black);
+        }
+
+        int from_y = from_idx / 8;
+        int from_x = from_idx % 8;
+        int to_y = to_idx / 8;
+        int to_x = to_idx % 8;
+        int dx = to_x - from_x;
+        int dy = to_y - from_y;
+        int abs_dx = abs_int(dx);
+        int abs_dy = abs_int(dy);
+        require(dx != 0 && dy != 0 && abs_dx == abs_dy);
+        int step_x = 1;
+        if (dx < 0) {
+            step_x = -1;
+        }
+        int step_y = 1;
+        if (dy < 0) {
+            step_y = -1;
+        }
+
+        int clear = 1;
+        for (i, 0, 7, 7) {
+            if (i < abs_dx + -1) {
+                int scan_x = from_x + step_x * (i + 1);
+                int scan_y = from_y + step_y * (i + 1);
+                int scan_idx = scan_y * 8 + scan_x;
+                if (OpBin2Num(prev_board[scan_idx]) != 0) {
+                    clear = 0;
+                }
+            }
+        }
+        require(clear == 1);
+
+        int low_idx = from_idx;
+        int high_idx = to_idx;
+        byte first_slot = byte(0x00);
+        byte second_slot = moving_piece;
+        if (from_idx > to_idx) {
+            low_idx = to_idx;
+            high_idx = from_idx;
+            first_slot = moving_piece;
+            second_slot = byte(0x00);
+        }
+
+        byte[] prev_dyn = byte[](prev_board);
+        byte[] prefix = prev_dyn.slice(0, low_idx);
+        byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
+        byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
+        byte[64] next_board = prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix;
+
+        int next_status = status;
+        if (recent_castle != CLEAR) {
+            if (turn == WHITE) {
+                require(target_num == 14);
+                next_status = WWIN;
+            } else {
+                require(target_num == 6);
+                next_status = BWIN;
+            }
+        } else if (is_draw_claim_mode) {
+            if (effective_turn == WHITE && target_num == 14) {
+                if (turn == WHITE) {
+                    next_status = WWIN;
+                } else {
+                    next_status = BWIN;
+                }
+            }
+            if (effective_turn == BLACK && target_num == 6) {
+                if (turn == WHITE) {
+                    next_status = WWIN;
+                } else {
+                    next_status = BWIN;
+                }
+            }
+        } else {
+            if (turn == WHITE && target_num == 14) {
+                next_status = WWIN;
+            }
+            if (turn == BLACK && target_num == 6) {
+                next_status = BWIN;
+            }
+        }
+
+        int next_draw_state = draw_state;
+        if (draw_state == CLAIMED) {
+            next_draw_state = DEFENSE;
+        } else if (draw_state == DEFENSE && next_status == LIVE) {
+            if (turn == WHITE) {
+                next_status = BWIN;
+            } else {
+                next_status = WWIN;
+            }
+        }
+
+        GameState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            board: next_board,
+            turn: 1 - turn,
+            status: next_status,
+            move_timeout: move_timeout,
+            castle_rights: castle_rights,
+            en_passant_idx: -1,
+            pending_src_idx: -1,
+            pending_dst_idx: -1,
+            pending_promo: CLEAR,
+            recent_castle: CLEAR,
+            draw_state: next_draw_state,
+        };
+
+        require(next.value == self.value);
+        become ChessMux(next_state);
+    }
+
+    entry timeout() emits one ChessSettle {
+        require(status == LIVE);
+        require(this.age >= move_timeout);
+        SettleState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            status: timeout_status(turn, draw_state),
+        };
+        require(next.value == self.value);
+        become ChessSettle(next_state);
+    }
+}
+
+actor ChessKing owns GameState {
+    entry apply() emits one ChessMux {
+        require(status == LIVE);
+        int from_idx = OpBin2Num(pending_src_idx);
+        int to_idx = OpBin2Num(pending_dst_idx);
+        require(turn == WHITE || turn == BLACK);
+
+        bool is_draw_claim_mode = draw_state < NORMAL;
+        int effective_turn = turn;
+        if (is_draw_claim_mode) {
+            effective_turn = 1 - turn;
+        }
+        require(from_idx != to_idx);
+
+        byte[64] prev_board = board;
+        byte moving_piece = prev_board[from_idx];
+        int moving_num = OpBin2Num(moving_piece);
+        int target_num = OpBin2Num(prev_board[to_idx]);
+        require(moving_num == 6 || moving_num == 14);
+
+        bool moving_is_white = moving_num == 6;
+        bool moving_is_black = moving_num == 14;
+        bool target_is_white = target_num >= 1 && target_num <= 6;
+        bool target_is_black = target_num >= 9 && target_num <= 14;
+        if (effective_turn == WHITE) {
+            require(moving_is_white);
+            require(!target_is_white);
+        } else {
+            require(moving_is_black);
+            require(!target_is_black);
+        }
+
+        int from_y = from_idx / 8;
+        int from_x = from_idx % 8;
+        int to_y = to_idx / 8;
+        int to_x = to_idx % 8;
+        int abs_dx = abs_int(to_x - from_x);
+        int abs_dy = abs_int(to_y - from_y);
+        require(abs_dx <= 1 && abs_dy <= 1);
+
+        int low_idx = from_idx;
+        int high_idx = to_idx;
+        byte first_slot = byte(0x00);
+        byte second_slot = moving_piece;
+        if (from_idx > to_idx) {
+            low_idx = to_idx;
+            high_idx = from_idx;
+            first_slot = moving_piece;
+            second_slot = byte(0x00);
+        }
+
+        byte[] prev_dyn = byte[](prev_board);
+        byte[] prefix = prev_dyn.slice(0, low_idx);
+        byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
+        byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
+        byte[64] next_board = prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix;
+
+        int next_status = status;
+        if (recent_castle != CLEAR) {
+            if (turn == WHITE) {
+                require(target_num == 14);
+                next_status = WWIN;
+            } else {
+                require(target_num == 6);
+                next_status = BWIN;
+            }
+        } else if (is_draw_claim_mode) {
+            if (effective_turn == WHITE && target_num == 14) {
+                if (turn == WHITE) {
+                    next_status = WWIN;
+                } else {
+                    next_status = BWIN;
+                }
+            }
+            if (effective_turn == BLACK && target_num == 6) {
+                if (turn == WHITE) {
+                    next_status = WWIN;
+                } else {
+                    next_status = BWIN;
+                }
+            }
+        } else {
+            if (turn == WHITE && target_num == 14) {
+                next_status = WWIN;
+            }
+            if (turn == BLACK && target_num == 6) {
+                next_status = BWIN;
+            }
+        }
+
+        int next_draw_state = draw_state;
+        if (draw_state == CLAIMED) {
+            next_draw_state = DEFENSE;
+        } else if (draw_state == DEFENSE && next_status == LIVE) {
+            if (turn == WHITE) {
+                next_status = BWIN;
+            } else {
+                next_status = WWIN;
+            }
+        }
+
+        byte next_white_can_castle_k = castle_rights[0];
+        byte next_white_can_castle_q = castle_rights[1];
+        byte next_black_can_castle_k = castle_rights[2];
+        byte next_black_can_castle_q = castle_rights[3];
+        if (moving_is_white) {
+            next_white_can_castle_k = byte(0x00);
+            next_white_can_castle_q = byte(0x00);
+        } else {
+            next_black_can_castle_k = byte(0x00);
+            next_black_can_castle_q = byte(0x00);
+        }
+        byte[4] next_castle_rights = byte[1](next_white_can_castle_k)
+            + byte[1](next_white_can_castle_q)
+            + byte[1](next_black_can_castle_k)
+            + byte[1](next_black_can_castle_q);
+
+        GameState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            board: next_board,
+            turn: 1 - turn,
+            status: next_status,
+            move_timeout: move_timeout,
+            castle_rights: next_castle_rights,
+            en_passant_idx: -1,
+            pending_src_idx: -1,
+            pending_dst_idx: -1,
+            pending_promo: CLEAR,
+            recent_castle: CLEAR,
+            draw_state: next_draw_state,
+        };
+
+        require(next.value == self.value);
+        become ChessMux(next_state);
+    }
+
+    entry timeout() emits one ChessSettle {
+        require(status == LIVE);
+        require(this.age >= move_timeout);
+        SettleState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            status: timeout_status(turn, draw_state),
+        };
+        require(next.value == self.value);
+        become ChessSettle(next_state);
+    }
+}
+
+actor ChessCastle owns GameState {
+    entry apply() emits one ChessMux {
+        require(status == LIVE);
+        require(draw_state >= NORMAL);
+
+        int from_idx = OpBin2Num(pending_src_idx);
+        int to_idx = OpBin2Num(pending_dst_idx);
+        require(turn == WHITE || turn == BLACK);
+        require(from_idx != to_idx);
+
+        byte[64] prev_board = board;
+        byte moving_piece = prev_board[from_idx];
+        int moving_num = OpBin2Num(moving_piece);
+        int target_num = OpBin2Num(prev_board[to_idx]);
+        require(moving_num == 6 || moving_num == 14);
+
+        bool moving_is_white = moving_num == 6;
+        bool moving_is_black = moving_num == 14;
+        if (turn == WHITE) {
+            require(moving_is_white);
+        } else {
+            require(moving_is_black);
+        }
+
+        int home_rank = 0;
+        int rook_num = 4;
+        byte king_side_right = castle_rights[0];
+        byte queen_side_right = castle_rights[1];
+        if (moving_is_black) {
+            home_rank = 7;
+            rook_num = 12;
+            king_side_right = castle_rights[2];
+            queen_side_right = castle_rights[3];
+        }
+
+        int from_y = from_idx / 8;
+        int from_x = from_idx % 8;
+        int to_y = to_idx / 8;
+        int to_x = to_idx % 8;
+        require(from_x == 4 && from_y == home_rank && to_y == home_rank && (to_x == 6 || to_x == 2));
+        bool is_king_side = to_x == 6;
+        if (is_king_side) {
+            require(king_side_right == 1);
+        } else {
+            require(queen_side_right == 1);
+        }
+        require(target_num == 0);
+
+        int row_base = home_rank * 8;
+        int rook_from_idx = row_base;
+        if (is_king_side) {
+            rook_from_idx = row_base + 7;
+        }
+        require(OpBin2Num(prev_board[rook_from_idx]) == rook_num);
+        if (is_king_side) {
+            require(OpBin2Num(prev_board[row_base + 5]) == 0);
+            require(OpBin2Num(prev_board[row_base + 6]) == 0);
+        } else {
+            require(OpBin2Num(prev_board[row_base + 1]) == 0);
+            require(OpBin2Num(prev_board[row_base + 2]) == 0);
+            require(OpBin2Num(prev_board[row_base + 3]) == 0);
+        }
+
+        byte rook_piece = prev_board[rook_from_idx];
+        byte empty_piece = byte(0x00);
+        int a = row_base;
+        int b = row_base + 2;
+        byte vb = moving_piece;
+        byte vc = rook_piece;
+        int d = row_base + 4;
+        if (is_king_side) {
+            a = row_base + 4;
+            b = row_base + 5;
+            vb = rook_piece;
+            vc = moving_piece;
+            d = row_base + 7;
+        }
+
+        byte[] prefix = prev_board.slice(0, a);
+        byte[] middle = prev_board.slice(a + 1, b);
+        byte[] suffix = prev_board.slice(d + 1, 64);
+        byte[64] next_board = prefix
+            + byte[1](empty_piece)
+            + middle
+            + byte[1](vb)
+            + byte[1](vc)
+            + byte[1](empty_piece)
+            + suffix;
+
+        byte next_white_can_castle_k = castle_rights[0];
+        byte next_white_can_castle_q = castle_rights[1];
+        byte next_black_can_castle_k = castle_rights[2];
+        byte next_black_can_castle_q = castle_rights[3];
+        if (moving_is_white) {
+            next_white_can_castle_k = byte(0x00);
+            next_white_can_castle_q = byte(0x00);
+        } else {
+            next_black_can_castle_k = byte(0x00);
+            next_black_can_castle_q = byte(0x00);
+        }
+        byte[4] next_castle_rights = byte[1](next_white_can_castle_k)
+            + byte[1](next_white_can_castle_q)
+            + byte[1](next_black_can_castle_k)
+            + byte[1](next_black_can_castle_q);
+
+        int next_recent_castle = 1;
+        if (!is_king_side) {
+            next_recent_castle = 2;
+        }
+        if (moving_is_black) {
+            next_recent_castle = next_recent_castle + 2;
+        }
+
+        GameState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            board: next_board,
+            turn: 1 - turn,
+            status: status,
+            move_timeout: move_timeout,
+            castle_rights: next_castle_rights,
+            en_passant_idx: -1,
+            pending_src_idx: -1,
+            pending_dst_idx: -1,
+            pending_promo: CLEAR,
+            recent_castle: next_recent_castle,
+            draw_state: draw_state,
+        };
+
+        require(next.value == self.value);
+        become ChessMux(next_state);
+    }
+
+    entry timeout() emits one ChessSettle {
+        require(status == LIVE);
+        require(this.age >= move_timeout);
+        SettleState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            status: timeout_status(turn, draw_state),
+        };
+        require(next.value == self.value);
+        become ChessSettle(next_state);
+    }
+}
+
+actor ChessCastleChallengePrep owns GameState {
+    entry apply(target: MoveActor) emits one MoveActor {
+        require(status == LIVE);
+        require(draw_state == NORMAL);
+        require(recent_castle >= 1 && recent_castle <= 4);
+
+        int from_idx = OpBin2Num(pending_src_idx);
+        int to_idx = OpBin2Num(pending_dst_idx);
+        require(from_idx != to_idx);
+        byte[64] prev_board = board;
+
+        bool is_white_castle = recent_castle == 1 || recent_castle == 2;
+        bool is_king_side = recent_castle == 1 || recent_castle == 3;
+        int row_base = 0;
+        byte king_piece = byte(0x06);
+        byte rook_piece = byte(0x04);
+        if (!is_white_castle) {
+            row_base = 56;
+            king_piece = byte(0x0e);
+            rook_piece = byte(0x0c);
+        }
+
+        int start_idx = row_base + 4;
+        int transit_idx = row_base + 3;
+        int dest_idx = row_base + 2;
+        if (is_king_side) {
+            transit_idx = row_base + 5;
+            dest_idx = row_base + 6;
+        }
+
+        int phase = 0;
+        if (to_idx == start_idx) {
+            phase = 1;
+        } else if (to_idx == transit_idx) {
+            phase = 2;
+        } else if (to_idx == dest_idx) {
+            phase = 3;
+        }
+        require(phase != 0);
+
+        byte empty_piece = byte(0x00);
+        int a = row_base;
+        int b = row_base + 2;
+        int c = row_base + 3;
+        int d = row_base + 4;
+        byte va = empty_piece;
+        byte vb = king_piece;
+        byte vc = rook_piece;
+        byte vd = empty_piece;
+
+        if (is_king_side) {
+            a = row_base + 4;
+            b = row_base + 5;
+            c = row_base + 6;
+            d = row_base + 7;
+            va = empty_piece;
+            vb = rook_piece;
+            vc = king_piece;
+            vd = empty_piece;
+            if (phase == 1) {
+                va = king_piece;
+                vb = empty_piece;
+                vc = empty_piece;
+                vd = rook_piece;
+            } else if (phase == 2) {
+                va = empty_piece;
+                vb = king_piece;
+                vc = empty_piece;
+                vd = rook_piece;
+            }
+        } else if (phase == 1) {
+            va = rook_piece;
+            vb = empty_piece;
+            vc = empty_piece;
+            vd = king_piece;
+        } else if (phase == 2) {
+            va = rook_piece;
+            vb = empty_piece;
+            vc = king_piece;
+            vd = empty_piece;
+        }
+
+        byte[] prev_dyn = byte[](prev_board);
+        byte[] prefix = prev_dyn.slice(0, a);
+        byte[] mid_ab = prev_dyn.slice(a + 1, b);
+        byte[] mid_bc = prev_dyn.slice(b + 1, c);
+        byte[] mid_cd = prev_dyn.slice(c + 1, d);
+        byte[] suffix = prev_dyn.slice(d + 1, 64);
+        byte[64] proof_board = prefix
+            + byte[1](va)
+            + mid_ab
+            + byte[1](vb)
+            + mid_bc
+            + byte[1](vc)
+            + mid_cd
+            + byte[1](vd)
+            + suffix;
+
+        int from_y = from_idx / 8;
+        int from_x = from_idx % 8;
+        int to_y = to_idx / 8;
+        int to_x = to_idx % 8;
+        int dx = to_x - from_x;
+        int dy = to_y - from_y;
+        int abs_dx = abs_int(dx);
+        int abs_dy = abs_int(dy);
+        int moving_num = OpBin2Num(proof_board[from_idx]);
+
+        if (moving_num == 1 || moving_num == 9) {
+            require(target == MoveActor::ChessPawn);
+        } else if (moving_num == 2 || moving_num == 10) {
+            require(target == MoveActor::ChessKnight);
+        } else if (moving_num == 3 || moving_num == 11) {
+            require(abs_dx == abs_dy && abs_dx != 0);
+            require(target == MoveActor::ChessDiag);
+        } else if (moving_num == 4 || moving_num == 12) {
+            if (dx == 0 && dy != 0) {
+                require(target == MoveActor::ChessVert);
+            } else {
+                require(dy == 0 && dx != 0);
+                require(target == MoveActor::ChessHoriz);
+            }
+        } else if (moving_num == 5 || moving_num == 13) {
+            if (dx == 0 && dy != 0) {
+                require(target == MoveActor::ChessVert);
+            } else if (dy == 0 && dx != 0) {
+                require(target == MoveActor::ChessHoriz);
+            } else {
+                require(abs_dx == abs_dy && abs_dx != 0);
+                require(target == MoveActor::ChessDiag);
+            }
+        } else {
+            require(moving_num == 6 || moving_num == 14);
+            require(target == MoveActor::ChessKing);
+        }
+
+        GameState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            board: proof_board,
+            turn: turn,
+            status: status,
+            move_timeout: move_timeout,
+            castle_rights: castle_rights,
+            en_passant_idx: -1,
+            pending_src_idx: pending_src_idx,
+            pending_dst_idx: pending_dst_idx,
+            pending_promo: CLEAR,
+            recent_castle: recent_castle,
+            draw_state: draw_state,
+        };
+
+        require(next.value == self.value);
+        become target(next_state);
+    }
+
+    entry timeout() emits one ChessSettle {
+        require(status == LIVE);
+        require(this.age >= move_timeout);
+        SettleState next_state = {
+            white_player: white_player,
+            black_player: black_player,
+            status: timeout_status(turn, draw_state),
+        };
+        require(next.value == self.value);
+        become ChessSettle(next_state);
+    }
+}

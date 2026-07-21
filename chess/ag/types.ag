@@ -1,0 +1,93 @@
+// Shared constants, state layouts, and helpers for the chess app.
+
+const int WHITE = 0;
+const int BLACK = 1;
+
+const int LIVE = 0;
+const int WWIN = 1;
+const int BWIN = 2;
+const int DRAW = 3;
+
+const int CLEAR = 0;
+const int OFFER = 1;
+const int CLAIM = 2;
+const int SURRENDER = 3;
+const int ACCEPT = 4;
+
+const int PAWN = 0;
+const int KNIGHT = 1;
+const int VERT = 2;
+const int HORIZ = 3;
+const int DIAG = 4;
+const int KING = 5;
+const int CASTLE = 6;
+const int PREP = 7;
+const int MUX = 8;
+
+const int CLAIMED = 1;
+const int DEFENSE = 2;
+const int NORMAL = 3;
+const int WOFFER = 4;
+const int BOFFER = 5;
+
+state LeagueState {
+    int base_rating;
+    byte[32] admin;
+}
+
+state PlayerState {
+    byte[32] owner;
+    byte[32] player_id;
+    int open_games;
+    int rating;
+    int games;
+    int wins;
+    int draws;
+    int losses;
+}
+
+// Mux and every move worker share this exact durable game-state layout.
+state GameState {
+    byte[32] white_player;
+    byte[32] black_player;
+    byte[64] board;
+    int turn;
+    int status;
+    int move_timeout;
+    byte[4] castle_rights;
+    int en_passant_idx;
+    int pending_src_idx;
+    int pending_dst_idx;
+    int pending_promo;
+    int recent_castle;
+    int draw_state;
+}
+
+state SettleState {
+    byte[32] white_player;
+    byte[32] black_player;
+    int status;
+}
+
+fn player_ref(owner: byte[32], player_id: byte[32]) -> byte[32] {
+    return blake2b(owner + player_id);
+}
+
+fn abs_int(value: int) -> int {
+    int result = value;
+    if (value < 0) {
+        result = 0 - value;
+    }
+    return result;
+}
+
+fn timeout_status(turn: int, draw_state: int) -> int {
+    int status = WWIN;
+    if (turn == WHITE) {
+        status = BWIN;
+    }
+    if (draw_state == CLAIMED) {
+        status = DRAW;
+    }
+    return status;
+}
