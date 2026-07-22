@@ -55,6 +55,14 @@ src/bin/dex_asset.rs
   moves the resulting A reserve to A/C under an observed Core registry proof
   exercises signed open-ICC co-spends and expanded asset capsule handles
 
+src/bin/name_service.rs
+  file-backed Registry and transferable Name app under `ag/name_service`
+  commits registered labels to a 128-level sparse Merkle tree using fixed-size
+  4,096-byte proofs containing every sibling hash in root-to-leaf order
+  uses separate keyed-BLAKE3 domains for name keys, leaves and internal nodes
+  mints two names, rejects a duplicate through the Kaspa script engine and
+  transfers a Name output without spending the shared Registry UTXO
+
 build/
   generated artifacts and Silverscript output
 ```
@@ -69,6 +77,7 @@ cargo run --bin dynamic_actor_choice
 cargo run --bin multiapp_badge
 cargo run --bin open_icc_agent
 cargo run --bin dex_asset
+cargo run --bin name_service
 ```
 
 Run the complete local check, including every demo binary:

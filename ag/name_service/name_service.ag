@@ -1,0 +1,9 @@
+import "./const.ag";
+import "./smt.ag";
+import "./registry.ag";
+import "./name.ag";
+
+app NameService {
+    actor Registry;
+    actor Name;
+}

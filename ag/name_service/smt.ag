@@ -1,0 +1,68 @@
+import "./const.ag";
+
+fn label_is_valid(label: byte[63], label_len: int) -> bool {
+    require(label_len > 0);
+    require(label_len <= NAME_BYTES);
+
+    bool valid = true;
+    for (i, 0, NAME_BYTES, NAME_BYTES) {
+        int character = OpBin2Num(label.slice(i, i + 1) + 0x00);
+        if (i < label_len) {
+            bool letter = character >= 97 && character <= 122;
+            bool digit = character >= 48 && character <= 57;
+            bool hyphen = character == 45;
+            valid = valid && (letter || digit || hyphen);
+        } else {
+            valid = valid && character == 0;
+        }
+    }
+
+    return(
+        valid
+        // not starting or ending with hyphen
+        && byte[1](label.slice(0, 1)) != 0x2d
+        && byte[1](label.slice(label_len - 1, label_len)) != 0x2d
+    );
+}
+
+// registry_covenant_id || label_len || label[0; label_len]
+fn name_key(registry_id: byte[32], label: byte[63], label_len: int) -> byte[32] {
+    return(blake3WithKey(registry_id + bytes(label_len, 8) + label.slice(0, label_len), NAME_KEY_DOMAIN));
+}
+
+fn smt_node(left: byte[32], right: byte[32]) -> byte[32] {
+    byte[32] zero = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    byte[32] result = zero;
+    if (left != zero || right != zero) {
+        result = blake3WithKey(left + right, SMT_NODE_DOMAIN);
+    }
+    return(result);
+}
+
+fn inserted_root(old_root: byte[32], key: byte[32]) -> byte[32] {
+    byte[32] zero = 0x0000000000000000000000000000000000000000000000000000000000000000;
+    require(OpTxPayloadLen() == SMT_DEPTH * 32);
+
+    int[8] high_bit_first = [128, 64, 32, 16, 8, 4, 2, 1];
+    byte[32] old_current = zero;
+    byte[32] new_current = blake3WithKey(key, SMT_LEAF_DOMAIN);
+
+    for (i, 0, SMT_DEPTH, SMT_DEPTH) {
+        int depth = SMT_DEPTH - 1 - i;
+        int start = depth * 32;
+        byte[32] sibling = byte[32](OpTxPayloadSubstr(start, start + 32));
+
+        int key_byte = OpBin2Num(key.slice(depth / 8, depth / 8 + 1) + 0x00);
+        bool key_goes_right = (key_byte / high_bit_first[depth % 8]) % 2 == 1;
+        if (key_goes_right) {
+            old_current = smt_node(sibling, old_current);
+            new_current = blake3WithKey(sibling + new_current, SMT_NODE_DOMAIN);
+        } else {
+            old_current = smt_node(old_current, sibling);
+            new_current = blake3WithKey(new_current + sibling, SMT_NODE_DOMAIN);
+        }
+    }
+
+    require(old_current == old_root);
+    return(new_current);
+}
