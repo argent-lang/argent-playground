@@ -50,6 +50,15 @@ struct PlayerStateData {
     losses: i64,
 }
 
+struct StartedGame {
+    leader_state: PlayerStateData,
+    leader_output: CovenantOutput,
+    other_state: PlayerStateData,
+    other_output: CovenantOutput,
+    game_state: GameStateData,
+    game_output: CovenantOutput,
+}
+
 impl PlayerStateData {
     fn registered(player: &TestPlayer) -> Self {
         Self {
@@ -272,11 +281,34 @@ fn route_to_worker_with_action(
 ) -> (GameStateData, CovenantOutput) {
     let covenant_id = Hash::from_bytes([fixture_tag; 32]);
     let mux_state = initial.source_state();
-    let worker_state = initial.committed_route(worker, mv, termination_action);
     let mux_outpoint = TransactionOutpoint::new(TransactionId::from_bytes([fixture_tag.wrapping_add(1); 32]), 0);
     let mux_utxo = builder
         .covenant_utxo("ChessMux", mux_state.clone(), GAME_VALUE, 0, false, Some(covenant_id))
         .unwrap_or_else(|err| panic!("{worker} mux UTXO must build: {err}"));
+    route_mux_output_to_worker(
+        builder,
+        player,
+        worker,
+        initial,
+        CovenantOutput { index: 0, outpoint: mux_outpoint, utxo: mux_utxo, covenant_id },
+        mv,
+        termination_action,
+    )
+}
+
+fn route_mux_output_to_worker(
+    builder: &TxBuilder<'_>,
+    player: &TestPlayer,
+    worker: &str,
+    initial: &GameStateData,
+    mux_output: CovenantOutput,
+    mv: MoveSpec,
+    termination_action: i64,
+) -> (GameStateData, CovenantOutput) {
+    let covenant_id = mux_output.covenant_id;
+    let output_value = mux_output.utxo.amount;
+    let mux_state = initial.source_state();
+    let worker_state = initial.committed_route(worker, mv, termination_action);
     let selected_worker = worker.to_string();
     let keypair = player.keypair;
     let public_key = player.public_key.clone();
@@ -300,11 +332,11 @@ fn route_to_worker_with_action(
                     player_id,
                 ]
             }),
-            mux_outpoint,
-            mux_utxo,
+            mux_output.outpoint,
+            mux_output.utxo,
             0,
         )
-        .actor_output(worker, worker_state.source_state(), CovenantBinding::new(0, covenant_id), GAME_VALUE);
+        .actor_output(worker, worker_state.source_state(), CovenantBinding::new(0, covenant_id), output_value);
     let route_tx = builder.build(&route_context).unwrap_or_else(|err| panic!("mux must route a signed move to {worker}: {err}"));
     let worker_output = CovenantOutput::from_tx(&route_tx, 0).expect("route output is a covenant UTXO");
     (worker_state, worker_output)
@@ -445,6 +477,65 @@ fn execute_signed_rebalance(
         .actor_output(actor, state, CovenantBinding::new(0, covenant_id), value);
     let tx = builder.build(&context).unwrap_or_else(|err| panic!("{actor} rebalance must execute: {err}"));
     CovenantOutput::from_tx(&tx, 0).expect("rebalance output is a covenant UTXO")
+}
+
+fn start_game(
+    builder: &TxBuilder<'_>,
+    leader: (&TestPlayer, &PlayerStateData, CovenantOutput),
+    other: (&TestPlayer, &PlayerStateData, CovenantOutput),
+    self_side: i64,
+) -> StartedGame {
+    let (leader_owner, leader_state, leader_output) = leader;
+    let (other_owner, other_state, other_output) = other;
+    let covenant_id = leader_output.covenant_id;
+    assert_eq!(other_output.covenant_id, covenant_id, "both players must belong to the same league");
+
+    let mut next_leader = leader_state.clone();
+    next_leader.open_games += 1;
+    let mut next_other = other_state.clone();
+    next_other.open_games += 1;
+    let (white_player, black_player) = if self_side == WHITE {
+        (leader_owner.player_ref, other_owner.player_ref)
+    } else {
+        (other_owner.player_ref, leader_owner.player_ref)
+    };
+    let game_state = GameStateData::live(white_player, black_player, opening_board());
+    let leader_value = leader_output.utxo.amount;
+    let other_value = other_output.utxo.amount;
+    let leader_keypair = leader_owner.keypair;
+    let leader_public_key = leader_owner.public_key.clone();
+    let other_keypair = other_owner.keypair;
+    let other_public_key = other_owner.public_key.clone();
+
+    let context = TxContext::new()
+        .actor_input(
+            "Player",
+            leader_state.source_state(),
+            EntryCall::new("start_game").args_with(move |tx, input_index| {
+                args![sign_input(tx, input_index, &leader_keypair), leader_public_key.clone(), self_side, MOVE_TIMEOUT,]
+            }),
+            leader_output.outpoint,
+            leader_output.utxo,
+            0,
+        )
+        .actor_input(
+            "Player",
+            other_state.source_state(),
+            EntryCall::new("delegate_start_game").args_with(move |tx, input_index| {
+                args![sign_input(tx, input_index, &other_keypair), other_public_key.clone(), MOVE_TIMEOUT]
+            }),
+            other_output.outpoint,
+            other_output.utxo,
+            0,
+        )
+        .actor_output("Player", next_leader.source_state(), CovenantBinding::new(0, covenant_id), leader_value)
+        .actor_output("Player", next_other.source_state(), CovenantBinding::new(0, covenant_id), other_value)
+        .actor_output("ChessMux", game_state.source_state(), CovenantBinding::new(0, covenant_id), GAME_VALUE);
+    let tx = builder.build(&context).expect("two registered players start a signed game");
+    let leader_output = CovenantOutput::from_tx(&tx, 0).expect("leader continuation is a covenant UTXO");
+    let other_output = CovenantOutput::from_tx(&tx, 1).expect("other continuation is a covenant UTXO");
+    let game_output = CovenantOutput::from_tx(&tx, 2).expect("new game is a covenant UTXO");
+    StartedGame { leader_state: next_leader, leader_output, other_state: next_other, other_output, game_state, game_output }
 }
 
 fn execute_to_settle<'a>(
@@ -730,4 +821,28 @@ fn argent_league_registers_a_spendable_player() {
 
     execute_signed_rebalance(&builder, "League", league_values, league, &admin);
     execute_signed_rebalance(&builder, "Player", player_state.source_state(), player_output, &owner);
+}
+
+#[test]
+fn argent_registered_players_start_a_spendable_game() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x73);
+    let league_values = league_state(admin.owner);
+    let league = launch_league(&builder, league_values.clone(), 5_000);
+    let (league, white, white_state, white_output) = register_player(&builder, league_values.clone(), league, 0x74, 2_000);
+    let (_league, black, black_state, black_output) = register_player(&builder, league_values, league, 0x75, 2_000);
+
+    let started = start_game(&builder, (&white, &white_state, white_output), (&black, &black_state, black_output), WHITE);
+    assert_eq!(started.leader_state.open_games, 1);
+    assert_eq!(started.other_state.open_games, 1);
+    execute_signed_rebalance(&builder, "Player", started.leader_state.source_state(), started.leader_output, &white);
+    execute_signed_rebalance(&builder, "Player", started.other_state.source_state(), started.other_output, &black);
+
+    let move_spec = MoveSpec::new(4, 1, 4, 3);
+    let (pawn_state, pawn_output) =
+        route_mux_output_to_worker(&builder, &white, "ChessPawn", &started.game_state, started.game_output, move_spec, CLEAR);
+    let mut expected = started.game_state.completed_move(move_spec);
+    expected.en_passant_idx = 20;
+    execute_actor_transition(&builder, "ChessPawn", &pawn_state, "apply", pawn_output, "ChessMux", &expected);
 }
