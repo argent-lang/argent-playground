@@ -59,6 +59,13 @@ struct StartedGame {
     game_output: CovenantOutput,
 }
 
+struct SettledGame {
+    white_state: PlayerStateData,
+    white_output: CovenantOutput,
+    black_state: PlayerStateData,
+    black_output: CovenantOutput,
+}
+
 impl PlayerStateData {
     fn registered(player: &TestPlayer) -> Self {
         Self {
@@ -372,6 +379,27 @@ fn execute_mux_terminate(
     let utxo = builder
         .covenant_utxo("ChessMux", mux_state.clone(), GAME_VALUE, 0, false, Some(covenant_id))
         .expect("mux UTXO builds from source state");
+    terminate_mux_output(
+        builder,
+        player,
+        initial,
+        termination_action,
+        expected,
+        CovenantOutput { index: 0, covenant_id, outpoint, utxo },
+    );
+}
+
+fn terminate_mux_output(
+    builder: &TxBuilder<'_>,
+    player: &TestPlayer,
+    initial: &GameStateData,
+    termination_action: i64,
+    expected: &GameStateData,
+    mux_output: CovenantOutput,
+) -> CovenantOutput {
+    let covenant_id = mux_output.covenant_id;
+    let output_value = mux_output.utxo.amount;
+    let mux_state = initial.source_state();
     let keypair = player.keypair;
     let public_key = player.public_key.clone();
     let player_id = player.player_id;
@@ -382,12 +410,13 @@ fn execute_mux_terminate(
             EntryCall::new("terminate").args_with(move |tx, input_index| {
                 args![termination_action, sign_input(tx, input_index, &keypair), public_key.clone(), player_id]
             }),
-            outpoint,
-            utxo,
+            mux_output.outpoint,
+            mux_output.utxo,
             0,
         )
-        .actor_output("ChessMux", expected.source_state(), CovenantBinding::new(0, covenant_id), GAME_VALUE);
-    builder.build(&context).unwrap_or_else(|err| panic!("mux terminate action {termination_action} must execute: {err}"));
+        .actor_output("ChessMux", expected.source_state(), CovenantBinding::new(0, covenant_id), output_value);
+    let tx = builder.build(&context).unwrap_or_else(|err| panic!("mux terminate action {termination_action} must execute: {err}"));
+    CovenantOutput::from_tx(&tx, 0).expect("mux termination output is a covenant UTXO")
 }
 
 fn settle_state(white_player: [u8; 32], black_player: [u8; 32], status: i64) -> BTreeMap<String, ArtifactValue> {
@@ -536,6 +565,60 @@ fn start_game(
     let other_output = CovenantOutput::from_tx(&tx, 1).expect("other continuation is a covenant UTXO");
     let game_output = CovenantOutput::from_tx(&tx, 2).expect("new game is a covenant UTXO");
     StartedGame { leader_state: next_leader, leader_output, other_state: next_other, other_output, game_state, game_output }
+}
+
+fn route_game_to_settle(builder: &TxBuilder<'_>, game_state: &GameStateData, game_output: CovenantOutput) -> CovenantOutput {
+    let covenant_id = game_output.covenant_id;
+    let game_value = game_output.utxo.amount;
+    let context = TxContext::new()
+        .actor_input("ChessMux", game_state.source_state(), "settle", game_output.outpoint, game_output.utxo, 0)
+        .actor_output(
+            "ChessSettle",
+            settle_state(game_state.white_player, game_state.black_player, game_state.status),
+            CovenantBinding::new(0, covenant_id),
+            game_value,
+        );
+    let tx = builder.build(&context).expect("terminal game routes to settlement");
+    CovenantOutput::from_tx(&tx, 0).expect("settlement output is a covenant UTXO")
+}
+
+fn settle_black_win(
+    builder: &TxBuilder<'_>,
+    settlement: CovenantOutput,
+    white: (&PlayerStateData, CovenantOutput),
+    black: (&PlayerStateData, CovenantOutput),
+) -> SettledGame {
+    let (white_state, white_output) = white;
+    let (black_state, black_output) = black;
+    assert_eq!(white_state.rating, black_state.rating, "this fixture expects equal initial ratings");
+    let covenant_id = settlement.covenant_id;
+    let mut next_white = white_state.clone();
+    next_white.open_games -= 1;
+    next_white.rating -= 16;
+    next_white.games += 1;
+    next_white.losses += 1;
+    let mut next_black = black_state.clone();
+    next_black.open_games -= 1;
+    next_black.rating += 16;
+    next_black.games += 1;
+    next_black.wins += 1;
+    let white_value = white_output.utxo.amount;
+    let black_value = black_output.utxo.amount + settlement.utxo.amount;
+    let settlement_state = settle_state(
+        blake2b32(&[white_state.owner.as_slice(), white_state.player_id.as_slice()].concat()),
+        blake2b32(&[black_state.owner.as_slice(), black_state.player_id.as_slice()].concat()),
+        BWIN,
+    );
+    let context = TxContext::new()
+        .actor_input("ChessSettle", settlement_state, "settle", settlement.outpoint, settlement.utxo, 0)
+        .actor_input("Player", white_state.source_state(), "delegate_settle", white_output.outpoint, white_output.utxo, 0)
+        .actor_input("Player", black_state.source_state(), "delegate_settle", black_output.outpoint, black_output.utxo, 0)
+        .actor_output("Player", next_white.source_state(), CovenantBinding::new(0, covenant_id), white_value)
+        .actor_output("Player", next_black.source_state(), CovenantBinding::new(0, covenant_id), black_value);
+    let tx = builder.build(&context).expect("settlement updates both delegated players");
+    let white_output = CovenantOutput::from_tx(&tx, 0).expect("settled white player is a covenant UTXO");
+    let black_output = CovenantOutput::from_tx(&tx, 1).expect("settled black player is a covenant UTXO");
+    SettledGame { white_state: next_white, white_output, black_state: next_black, black_output }
 }
 
 fn execute_to_settle<'a>(
@@ -845,4 +928,36 @@ fn argent_registered_players_start_a_spendable_game() {
     let mut expected = started.game_state.completed_move(move_spec);
     expected.en_passant_idx = 20;
     execute_actor_transition(&builder, "ChessPawn", &pawn_state, "apply", pawn_output, "ChessMux", &expected);
+}
+
+#[test]
+fn argent_game_settles_back_into_spendable_players() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x76);
+    let league_values = league_state(admin.owner);
+    let league = launch_league(&builder, league_values.clone(), 5_000);
+    let (league, white, white_state, white_output) = register_player(&builder, league_values.clone(), league, 0x77, 2_000);
+    let (_league, black, black_state, black_output) = register_player(&builder, league_values, league, 0x78, 2_000);
+    let started = start_game(&builder, (&white, &white_state, white_output), (&black, &black_state, black_output), WHITE);
+
+    let mut terminal_state = started.game_state.clone();
+    terminal_state.status = BWIN;
+    let terminal_output = terminate_mux_output(&builder, &white, &started.game_state, SURRENDER, &terminal_state, started.game_output);
+    let settlement = route_game_to_settle(&builder, &terminal_state, terminal_output);
+    let settled = settle_black_win(
+        &builder,
+        settlement,
+        (&started.leader_state, started.leader_output),
+        (&started.other_state, started.other_output),
+    );
+
+    assert_eq!((settled.white_state.open_games, settled.white_state.rating), (0, BASE_RATING - 16));
+    assert_eq!((settled.white_state.games, settled.white_state.losses), (1, 1));
+    assert_eq!((settled.black_state.open_games, settled.black_state.rating), (0, BASE_RATING + 16));
+    assert_eq!((settled.black_state.games, settled.black_state.wins), (1, 1));
+    assert_eq!(settled.white_output.utxo.amount, 2_000);
+    assert_eq!(settled.black_output.utxo.amount, 3_000);
+    execute_signed_rebalance(&builder, "Player", settled.white_state.source_state(), settled.white_output, &white);
+    execute_signed_rebalance(&builder, "Player", settled.black_state.source_state(), settled.black_output, &black);
 }
