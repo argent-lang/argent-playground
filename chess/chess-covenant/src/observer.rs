@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use argent_artifact::Artifact;
 use blake2b_simd::Params as Blake2bParams;
 use kaspa_consensus_core::tx::Transaction;
 use kaspa_consensus_core::Hash;
@@ -83,6 +84,7 @@ pub struct PlayerState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameState {
     pub mux_template: Hash,
+    pub player_template: Hash,
     pub route_templates: Vec<u8>,
     pub white_player: Hash,
     pub black_player: Hash,
@@ -174,6 +176,7 @@ struct ObserverTemplates {
     king: ContractTemplate,
     castle: ContractTemplate,
     castle_challenge: ContractTemplate,
+    argent: Vec<(ChessInputKind, ContractTemplate)>,
 }
 
 #[derive(Debug, Clone)]
@@ -224,13 +227,22 @@ impl ChessEventEmitter {
                     }
                     let owner_pk = hash_arg(&decoded.call, "owner_pk")?;
                     let owner = blake2b(&owner_pk.as_bytes());
+                    let source_outpoint = tx.inputs[decoded.index].previous_outpoint;
+                    let player_id = blake2b(
+                        &[
+                            b"LeaguePlayerId".as_slice(),
+                            source_outpoint.transaction_id.as_bytes().as_slice(),
+                            &source_outpoint.index.to_le_bytes(),
+                        ]
+                        .concat(),
+                    );
                     let player = PlayerState {
                         league_template: state.league_template,
                         player_template: state.player_template,
                         mux_template: state.mux_template,
                         routes_commitment: state.routes_commitment,
                         owner,
-                        player_id: owner_pk,
+                        player_id,
                         open_games: 0,
                         rating: state.base_rating,
                         games: 0,
@@ -247,7 +259,7 @@ impl ChessEventEmitter {
                         lane_output_index: output_indexes[0],
                         player_output_index: output_indexes[1],
                         player_ref,
-                        player_id: owner_pk,
+                        player_id,
                         rating: state.base_rating,
                     });
                     outputs
@@ -299,7 +311,7 @@ impl ChessEventEmitter {
                     }
 
                     let self_side = int_arg(&decoded.call, "self_side")?;
-                    let route_templates = bytes_arg(&decoded.call, "route_templates")?;
+                    let route_templates = bytes_arg_any(&decoded.call, &["route_templates", "gen__chess_mux_routes"])?;
                     let move_timeout = int_arg(&decoded.call, "move_timeout")?;
 
                     let self_ref = player_ref(self_state.owner, self_state.player_id);
@@ -310,6 +322,7 @@ impl ChessEventEmitter {
                     let next_other = PlayerState { open_games: other_state.open_games + 1, ..other_state.clone() };
                     let opening_game = GameState {
                         mux_template: self_state.mux_template,
+                        player_template: self_state.player_template,
                         route_templates,
                         white_player,
                         black_player,
@@ -364,7 +377,7 @@ impl ChessEventEmitter {
                             output_indexes.len()
                         )));
                     }
-                    let selector = int_arg(&decoded.call, "selector")?;
+                    let selector = int_arg_any(&decoded.call, &["selector", "target"])?;
                     let from_x = int_arg(&decoded.call, "from_x")?;
                     let from_y = int_arg(&decoded.call, "from_y")?;
                     let to_x = int_arg(&decoded.call, "to_x")?;
@@ -377,6 +390,22 @@ impl ChessEventEmitter {
                     events.push(ChessEvent::MoveRouted { selector, termination_action, output_index: output_indexes[0] });
                     outputs
                 }
+                (ChessInputKind::Mux, "terminate") => {
+                    let state = expect_game(&decoded.state)?;
+                    let output_indexes = outputs_by_input.get(&decoded.index).cloned().unwrap_or_default();
+                    if output_indexes.len() != 1 {
+                        return Err(ObserverError(format!(
+                            "mux terminate expected 1 authored output for input {}, got {}",
+                            decoded.index,
+                            output_indexes.len()
+                        )));
+                    }
+                    let termination_action = int_arg(&decoded.call, "termination_action")?;
+                    let next = route_game_state(state, MUX, -1, -1, -1, -1, 0, termination_action)?;
+                    let outputs = vec![ObservedOutput { output_index: output_indexes[0], state: ChessState::Game(next) }];
+                    events.push(ChessEvent::MoveRouted { selector: MUX, termination_action, output_index: output_indexes[0] });
+                    outputs
+                }
                 (ChessInputKind::Mux, "timeout") => {
                     let state = expect_game(&decoded.state)?;
                     let output_indexes = outputs_by_input.get(&decoded.index).cloned().unwrap_or_default();
@@ -387,7 +416,7 @@ impl ChessEventEmitter {
                             output_indexes.len()
                         )));
                     }
-                    let player_template = hash_arg(&decoded.call, "player_template")?;
+                    let player_template = optional_hash_arg(&decoded.call, "player_template")?.unwrap_or(state.player_template);
                     let next = SettleState {
                         player_template,
                         white_player: state.white_player,
@@ -412,7 +441,7 @@ impl ChessEventEmitter {
                             output_indexes.len()
                         )));
                     }
-                    let player_template = hash_arg(&decoded.call, "player_template")?;
+                    let player_template = optional_hash_arg(&decoded.call, "player_template")?.unwrap_or(state.player_template);
                     let next = SettleState {
                         player_template,
                         white_player: state.white_player,
@@ -453,7 +482,7 @@ impl ChessEventEmitter {
                             output_indexes.len()
                         )));
                     }
-                    let player_template = hash_arg(&decoded.call, "player_template")?;
+                    let player_template = optional_hash_arg(&decoded.call, "player_template")?.unwrap_or(state.player_template);
                     let next = SettleState {
                         player_template,
                         white_player: state.white_player,
@@ -566,7 +595,10 @@ impl ChessEventEmitter {
             (ChessInputKind::Worker(WorkerKind::Castle), &self.templates.castle),
             (ChessInputKind::Worker(WorkerKind::CastleChallenge), &self.templates.castle_challenge),
         ];
-        candidates.into_iter().find(|(_, template)| template.matches_redeem_script(redeem_script))
+        candidates
+            .into_iter()
+            .chain(self.templates.argent.iter().map(|(kind, template)| (*kind, template)))
+            .find(|(_, template)| template.matches_redeem_script(redeem_script))
     }
 }
 
@@ -635,6 +667,16 @@ fn int_arg(call: &DecodedCall, name: &str) -> Result<i64, ObserverError> {
     }
 }
 
+fn int_arg_any(call: &DecodedCall, names: &[&str]) -> Result<i64, ObserverError> {
+    names
+        .iter()
+        .find_map(|name| match call.args.iter().find(|arg| arg.name == *name).map(|arg| &arg.value) {
+            Some(DecodeValue::Int(value)) => Some(*value),
+            _ => None,
+        })
+        .ok_or_else(|| ObserverError(format!("missing int argument {}", names.join(" or "))))
+}
+
 fn bytes_arg(call: &DecodedCall, name: &str) -> Result<Vec<u8>, ObserverError> {
     match call.args.iter().find(|arg| arg.name == name).map(|arg| &arg.value) {
         Some(DecodeValue::Bytes(value)) => Ok(value.clone()),
@@ -642,9 +684,29 @@ fn bytes_arg(call: &DecodedCall, name: &str) -> Result<Vec<u8>, ObserverError> {
     }
 }
 
+fn bytes_arg_any(call: &DecodedCall, names: &[&str]) -> Result<Vec<u8>, ObserverError> {
+    names
+        .iter()
+        .find_map(|name| match call.args.iter().find(|arg| arg.name == *name).map(|arg| &arg.value) {
+            Some(DecodeValue::Bytes(value)) => Some(value.clone()),
+            _ => None,
+        })
+        .ok_or_else(|| ObserverError(format!("missing byte argument {}", names.join(" or "))))
+}
+
 fn hash_arg(call: &DecodedCall, name: &str) -> Result<Hash, ObserverError> {
     let bytes = bytes_arg(call, name)?;
     Hash::try_from_slice(&bytes).map_err(|_| ObserverError(format!("argument {name} is not 32 bytes")))
+}
+
+fn optional_hash_arg(call: &DecodedCall, name: &str) -> Result<Option<Hash>, ObserverError> {
+    let Some(arg) = call.args.iter().find(|arg| arg.name == name) else {
+        return Ok(None);
+    };
+    let DecodeValue::Bytes(bytes) = &arg.value else {
+        return Err(ObserverError(format!("argument {name} is not bytes")));
+    };
+    Hash::try_from_slice(bytes).map(Some).map_err(|_| ObserverError(format!("argument {name} is not 32 bytes")))
 }
 
 fn bytes_field(object: &DecodedObject, name: &str) -> Result<Vec<u8>, ObserverError> {
@@ -654,9 +716,34 @@ fn bytes_field(object: &DecodedObject, name: &str) -> Result<Vec<u8>, ObserverEr
     }
 }
 
+fn bytes_field_any(object: &DecodedObject, names: &[&str]) -> Result<Vec<u8>, ObserverError> {
+    names
+        .iter()
+        .find_map(|name| match object.get(name) {
+            Some(DecodeValue::Bytes(value)) => Some(value.clone()),
+            _ => None,
+        })
+        .ok_or_else(|| ObserverError(format!("missing bytes field {}", names.join(" or "))))
+}
+
 fn hash_field(object: &DecodedObject, name: &str) -> Result<Hash, ObserverError> {
     let bytes = bytes_field(object, name)?;
     Hash::try_from_slice(&bytes).map_err(|_| ObserverError(format!("field {name} is not 32 bytes")))
+}
+
+fn hash_field_any(object: &DecodedObject, names: &[&str]) -> Result<Hash, ObserverError> {
+    let bytes = bytes_field_any(object, names)?;
+    Hash::try_from_slice(&bytes).map_err(|_| ObserverError(format!("field {} is not 32 bytes", names.join(" or "))))
+}
+
+fn optional_hash_field(object: &DecodedObject, name: &str) -> Result<Option<Hash>, ObserverError> {
+    let Some(value) = object.get(name) else {
+        return Ok(None);
+    };
+    let DecodeValue::Bytes(bytes) = value else {
+        return Err(ObserverError(format!("field {name} is not bytes")));
+    };
+    Hash::try_from_slice(bytes).map(Some).map_err(|_| ObserverError(format!("field {name} is not 32 bytes")))
 }
 
 fn int_field(object: &DecodedObject, name: &str) -> Result<i64, ObserverError> {
@@ -669,20 +756,20 @@ fn int_field(object: &DecodedObject, name: &str) -> Result<i64, ObserverError> {
 fn league_from_decoded(object: &DecodedObject) -> Result<LeagueState, ObserverError> {
     Ok(LeagueState {
         admin: hash_field(object, "admin")?,
-        league_template: hash_field(object, "league_template")?,
-        player_template: hash_field(object, "player_template")?,
-        mux_template: hash_field(object, "mux_template")?,
-        routes_commitment: hash_field(object, "routes_commitment")?,
+        league_template: optional_hash_field(object, "league_template")?.unwrap_or_default(),
+        player_template: hash_field_any(object, &["player_template", "gen__player_template"])?,
+        mux_template: hash_field_any(object, &["mux_template", "gen__chess_mux_template"])?,
+        routes_commitment: hash_field_any(object, &["routes_commitment", "gen__chess_mux_routes_digest"])?,
         base_rating: int_field(object, "base_rating")?,
     })
 }
 
 fn player_from_decoded(object: &DecodedObject) -> Result<PlayerState, ObserverError> {
     Ok(PlayerState {
-        league_template: hash_field(object, "league_template")?,
-        player_template: hash_field(object, "player_template")?,
-        mux_template: hash_field(object, "mux_template")?,
-        routes_commitment: hash_field(object, "routes_commitment")?,
+        league_template: optional_hash_field(object, "league_template")?.unwrap_or_default(),
+        player_template: hash_field_any(object, &["player_template", "gen__player_template"])?,
+        mux_template: hash_field_any(object, &["mux_template", "gen__chess_mux_template"])?,
+        routes_commitment: hash_field_any(object, &["routes_commitment", "gen__chess_mux_routes_digest"])?,
         owner: hash_field(object, "owner")?,
         player_id: hash_field(object, "player_id")?,
         open_games: int_field(object, "open_games")?,
@@ -696,8 +783,9 @@ fn player_from_decoded(object: &DecodedObject) -> Result<PlayerState, ObserverEr
 
 fn game_from_decoded(object: &DecodedObject) -> Result<GameState, ObserverError> {
     Ok(GameState {
-        mux_template: hash_field(object, "mux_template")?,
-        route_templates: bytes_field(object, "route_templates")?,
+        mux_template: hash_field_any(object, &["mux_template", "gen__chess_mux_template"])?,
+        player_template: optional_hash_field(object, "gen__player_template")?.unwrap_or_default(),
+        route_templates: bytes_field_any(object, &["route_templates", "gen__chess_mux_routes"])?,
         white_player: hash_field(object, "white_player")?,
         black_player: hash_field(object, "black_player")?,
         board: bytes_field(object, "board")?,
@@ -716,7 +804,7 @@ fn game_from_decoded(object: &DecodedObject) -> Result<GameState, ObserverError>
 
 fn settle_from_decoded(object: &DecodedObject) -> Result<SettleState, ObserverError> {
     Ok(SettleState {
-        player_template: hash_field(object, "player_template")?,
+        player_template: hash_field_any(object, &["player_template", "gen__player_template"])?,
         white_player: hash_field(object, "white_player")?,
         black_player: hash_field(object, "black_player")?,
         status: int_field(object, "status")?,
@@ -1049,6 +1137,7 @@ fn load_templates() -> Result<ObserverTemplates, ObserverError> {
     let dummy = repeated_hash(0x11);
     let game = GameState {
         mux_template: dummy,
+        player_template: repeated_hash(0x66),
         route_templates: vec![0x22; 288],
         white_player: repeated_hash(0x33),
         black_player: repeated_hash(0x44),
@@ -1119,7 +1208,33 @@ fn load_templates() -> Result<ObserverTemplates, ObserverError> {
         king: ContractTemplate::from_compiled(&king),
         castle: ContractTemplate::from_compiled(&castle),
         castle_challenge: ContractTemplate::from_compiled(&castle_challenge),
+        argent: load_argent_templates()?,
     })
+}
+
+fn load_argent_templates() -> Result<Vec<(ChessInputKind, ContractTemplate)>, ObserverError> {
+    let artifact: Artifact =
+        serde_json::from_str(include_str!("../../build/argent/artifact.json")).map_err(|err| ObserverError(err.to_string()))?;
+    let specs = [
+        (ChessInputKind::League, "League"),
+        (ChessInputKind::Player, "Player"),
+        (ChessInputKind::Mux, "ChessMux"),
+        (ChessInputKind::Settle, "ChessSettle"),
+        (ChessInputKind::Worker(WorkerKind::Pawn), "ChessPawn"),
+        (ChessInputKind::Worker(WorkerKind::Knight), "ChessKnight"),
+        (ChessInputKind::Worker(WorkerKind::Vert), "ChessVert"),
+        (ChessInputKind::Worker(WorkerKind::Horiz), "ChessHoriz"),
+        (ChessInputKind::Worker(WorkerKind::Diag), "ChessDiag"),
+        (ChessInputKind::Worker(WorkerKind::King), "ChessKing"),
+        (ChessInputKind::Worker(WorkerKind::Castle), "ChessCastle"),
+        (ChessInputKind::Worker(WorkerKind::CastleChallenge), "ChessCastleChallengePrep"),
+    ];
+    specs
+        .into_iter()
+        .map(|(kind, contract)| {
+            ContractTemplate::from_artifact(&artifact, contract).map(|template| (kind, template)).map_err(ObserverError::from)
+        })
+        .collect()
 }
 
 fn compile_template(
@@ -1213,6 +1328,57 @@ fn opening_board() -> Vec<u8> {
 mod tests {
     use super::*;
     use crate::orchestrator::{GameResult, MoveSpec, SigningPlayer, TxArena, WorkerKind};
+    use argent_runtime::{state, TxBuilder, TxContext};
+    use kaspa_consensus_core::tx::{CovenantBinding, TransactionId, TransactionOutpoint};
+
+    #[test]
+    fn observer_decodes_generated_argent_transaction() {
+        let artifact: Artifact =
+            serde_json::from_str(include_str!("../../build/argent/artifact.json")).expect("pinned chess artifact deserializes");
+        let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+        let covenant_id = Hash::from_bytes([0x91; 32]);
+        let white_player = Hash::from_bytes([0x92; 32]);
+        let black_player = Hash::from_bytes([0x93; 32]);
+        let game_state = state! {
+            white_player: white_player,
+            black_player: black_player,
+            board: opening_board(),
+            turn: WHITE,
+            status: WWIN,
+            move_timeout: 600i64,
+            castle_rights: [1u8; 4],
+            en_passant_idx: -1i64,
+            pending_src_idx: -1i64,
+            pending_dst_idx: -1i64,
+            pending_promo: CLEAR,
+            recent_castle: CLEAR,
+            draw_state: NORMAL,
+        };
+        let outpoint = TransactionOutpoint::new(TransactionId::from_bytes([0x94; 32]), 0);
+        let utxo = builder
+            .covenant_utxo("ChessMux", game_state.clone(), 1_000, 0, false, Some(covenant_id))
+            .expect("terminal mux UTXO builds");
+        let context = TxContext::new().actor_input("ChessMux", game_state, "settle", outpoint, utxo, 0).actor_output(
+            "ChessSettle",
+            state! {
+                white_player: white_player,
+                black_player: black_player,
+                status: WWIN,
+            },
+            CovenantBinding::new(0, covenant_id),
+            1_000,
+        );
+        let tx = builder.build(&context).expect("terminal mux routes to settlement");
+
+        let emitter = ChessEventEmitter::load().expect("observer loads");
+        let observed = emitter.observe_tx(&tx, covenant_id).expect("generated Argent transaction decodes");
+        assert_eq!(observed.inputs[0].function, "settle");
+        assert!(matches!(observed.events.as_slice(), [ChessEvent::SettleCreated { status: WWIN, .. }]));
+        match &observed.inputs[0].input_state {
+            ChessState::Game(state) => assert_ne!(state.player_template, Hash::default()),
+            other => panic!("expected game state, got {other:?}"),
+        }
+    }
 
     #[test]
     fn observer_decodes_real_arena_transactions_end_to_end() {
