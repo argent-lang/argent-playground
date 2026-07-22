@@ -414,6 +414,24 @@ fn player_source_state(state: &PlayerStateData) -> BTreeMap<String, ArtifactValu
     }
 }
 
+fn game_source_state(state: &GameStateData) -> BTreeMap<String, ArtifactValue> {
+    state! {
+        white_player: state.white_player,
+        black_player: state.black_player,
+        board: state.board.clone(),
+        turn: state.turn,
+        status: state.status,
+        move_timeout: state.move_timeout,
+        castle_rights: state.castle_rights,
+        en_passant_idx: state.en_passant_idx,
+        pending_src_idx: state.pending_src_idx,
+        pending_dst_idx: state.pending_dst_idx,
+        pending_promo: state.pending_promo,
+        recent_castle: state.recent_castle,
+        draw_state: state.draw_state,
+    }
+}
+
 fn orchestrator_builder_error(context: &'static str) -> impl FnOnce(argent_runtime::BuilderError) -> OrchestratorError {
     move |err| OrchestratorError(format!("{context}: {err}"))
 }
@@ -461,8 +479,6 @@ pub struct TxArena {
     player_template: Hash,
     player_prefix: Vec<u8>,
     player_suffix: Vec<u8>,
-    player_prefix_len: i64,
-    player_suffix_len: i64,
     covenant_id: Hash,
     players: BTreeMap<String, PlayerStateData>,
     game: Option<GameStateData>,
@@ -1078,8 +1094,6 @@ impl TxArena {
             player_template,
             player_prefix,
             player_suffix,
-            player_prefix_len: layout.start as i64,
-            player_suffix_len: (player_contract.script.len() - (layout.start + layout.len)) as i64,
             covenant_id: league_output.covenant_id,
             players: BTreeMap::new(),
             game: None,
@@ -1240,15 +1254,11 @@ impl TxArena {
     pub fn start_game(&mut self, white: &SigningPlayer, black: &SigningPlayer) -> Result<(), OrchestratorError> {
         let white_state = self.players.get(&white.name).cloned().ok_or_else(|| OrchestratorError("missing white".to_string()))?;
         let black_state = self.players.get(&black.name).cloned().ok_or_else(|| OrchestratorError("missing black".to_string()))?;
-        let white_contract = self.compile_player(&white_state);
-        let black_contract = self.compile_player(&black_state);
 
         let mut next_white = white_state.clone();
         next_white.open_games += 1;
         let mut next_black = black_state.clone();
         next_black.open_games += 1;
-        let next_white_contract = self.compile_player(&next_white);
-        let next_black_contract = self.compile_player(&next_black);
 
         let white_ref = white.player_ref.ok_or_else(|| OrchestratorError("white missing player ref".to_string()))?;
         let black_ref = black.player_ref.ok_or_else(|| OrchestratorError("black missing player ref".to_string()))?;
@@ -1268,85 +1278,43 @@ impl TxArena {
             draw_state: 3,
             move_log: Vec::new(),
         };
-        let opening_mux = self.compile_mux(&opening);
-
-        let white_placeholder = entry_sigscript(
-            &white_contract,
-            "start_game",
-            vec![
-                Expr::bytes(vec![0u8; 65]),
-                Expr::bytes(white.pubkey_bytes.clone()),
-                Expr::int(0),
-                Expr::int(self.player_prefix_len),
-                Expr::int(self.player_suffix_len),
-                Expr::bytes(packed_execution_route_templates(&self.fix)),
-                Expr::int(DEFAULT_MOVE_TIMEOUT),
-                Expr::bytes(self.fix.mux.prefix.clone()),
-                Expr::bytes(self.fix.mux.suffix.clone()),
-            ],
-        );
-        let black_placeholder = entry_sigscript(
-            &black_contract,
-            "delegate_start_game",
-            vec![
-                Expr::bytes(vec![0u8; 65]),
-                Expr::bytes(black.pubkey_bytes.clone()),
-                Expr::int(DEFAULT_MOVE_TIMEOUT),
-                Expr::int(self.player_prefix_len),
-                Expr::int(self.player_suffix_len),
-            ],
-        );
-        let outputs = vec![
-            covenant_output_with_value(&next_white_contract, 0, self.covenant_id, next_white.value),
-            covenant_output_with_value(&next_black_contract, 0, self.covenant_id, next_black.value),
-            covenant_output(&opening_mux, 0, self.covenant_id),
-        ];
-        let entries = vec![
-            covenant_utxo_with_value(&white_contract, self.covenant_id, white_state.value),
-            covenant_utxo_with_value(&black_contract, self.covenant_id, black_state.value),
-        ];
-        let mut tx = Transaction::new(
-            1,
-            vec![tx_input(white_state.outpoint, white_placeholder, 1), tx_input(black_state.outpoint, black_placeholder, 1)],
-            outputs,
-            0,
-            Default::default(),
-            0,
-            vec![],
-        );
-        let white_sig = sign_tx_input_schnorr(&tx, &entries, 0, white);
-        let black_sig = sign_tx_input_schnorr(&tx, &entries, 1, black);
-        tx.inputs[0].signature_script = entry_sigscript(
-            &white_contract,
-            "start_game",
-            vec![
-                Expr::bytes(white_sig),
-                Expr::bytes(white.pubkey_bytes.clone()),
-                Expr::int(0),
-                Expr::int(self.player_prefix_len),
-                Expr::int(self.player_suffix_len),
-                Expr::bytes(packed_execution_route_templates(&self.fix)),
-                Expr::int(DEFAULT_MOVE_TIMEOUT),
-                Expr::bytes(self.fix.mux.prefix.clone()),
-                Expr::bytes(self.fix.mux.suffix.clone()),
-            ],
-        );
-        tx.inputs[1].signature_script = entry_sigscript(
-            &black_contract,
-            "delegate_start_game",
-            vec![
-                Expr::bytes(black_sig),
-                Expr::bytes(black.pubkey_bytes.clone()),
-                Expr::int(DEFAULT_MOVE_TIMEOUT),
-                Expr::int(self.player_prefix_len),
-                Expr::int(self.player_suffix_len),
-            ],
-        );
-        let executed_tx = tx.clone();
+        let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+        let white_utxo = builder
+            .covenant_utxo("Player", player_source_state(&white_state), white_state.value, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build white Player UTXO"))?;
+        let black_utxo = builder
+            .covenant_utxo("Player", player_source_state(&black_state), black_state.value, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build black Player UTXO"))?;
+        let white_keypair = white.keypair;
+        let white_public_key = white.pubkey_bytes.clone();
+        let black_keypair = black.keypair;
+        let black_public_key = black.pubkey_bytes.clone();
+        let context = TxContext::new()
+            .actor_input(
+                "Player",
+                player_source_state(&white_state),
+                EntryCall::new("start_game").args_with(move |tx, input_index| {
+                    args![sign_builder_input(tx, input_index, &white_keypair), white_public_key.clone(), WHITE, DEFAULT_MOVE_TIMEOUT,]
+                }),
+                white_state.outpoint,
+                white_utxo,
+                0,
+            )
+            .actor_input(
+                "Player",
+                player_source_state(&black_state),
+                EntryCall::new("delegate_start_game").args_with(move |tx, input_index| {
+                    args![sign_builder_input(tx, input_index, &black_keypair), black_public_key.clone(), DEFAULT_MOVE_TIMEOUT]
+                }),
+                black_state.outpoint,
+                black_utxo,
+                0,
+            )
+            .actor_output("Player", player_source_state(&next_white), CovenantBinding::new(0, self.covenant_id), next_white.value)
+            .actor_output("Player", player_source_state(&next_black), CovenantBinding::new(0, self.covenant_id), next_black.value)
+            .actor_output("ChessMux", game_source_state(&opening), CovenantBinding::new(0, self.covenant_id), 1_000);
+        let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("start game"))?;
         let executed_txid = executed_tx.id();
-        execute_input_with_covenants(tx.clone(), entries.clone(), 0)
-            .map_err(|err| OrchestratorError(format!("start leader failed: {err}")))?;
-        execute_input_with_covenants(tx, entries, 1).map_err(|err| OrchestratorError(format!("start delegate failed: {err}")))?;
         self.transactions.push(executed_tx);
 
         self.players.insert(white.name.clone(), next_white);
