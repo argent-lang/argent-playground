@@ -1,51 +1,65 @@
-# Argent Port
+# Argent Chess Port
 
-The handwritten contracts in `build/sil/` remain the executable reference while
-the native Argent port is reviewed. `build/argent/` is generated from `ag/app.ag`
-and is intentionally not consumed by the Rust orchestration yet.
+The Argent source in `ag/` defines the active chess covenant. The build pins its
+artifact and generated Sil under `build/argent/`.
 
-## Initial Comparison
+The application uses the artifact at both runtime boundaries:
 
-All twelve contracts have native Argent definitions: `League`, `Player`,
-`ChessMux`, the eight move/challenge workers, and `ChessSettle`. Their generated
-Sil compiles as one closed application.
+- the orchestrator uses `TxBuilder` to create every covenant transaction
+- the observer uses the generated ABI to identify inputs and decode state and calls
 
-The first textual pass compared each generated entry against its handwritten
-counterpart. It covers:
+The artifact also supplies the canonical contract templates and the generated
+worker route table. The Rust code does not compile handwritten Sil to reconstruct
+this metadata.
+
+## Contract Graph
+
+The application contains twelve actors: `League`, `Player`, `ChessMux`, eight
+move or challenge workers, and `ChessSettle`. They form one closed application.
+
+The graph covers:
 
 - league registration, lane rebalance, and lane fan-out
-- player registration state, game start, delegation, rebalance, and retirement
+- player registration, game start, delegation, rebalance, and retirement
 - mux authentication, move commitment, draw actions, timeout, and settlement
-- every worker's move geometry, board rewrite, draw challenge, castle challenge,
-  terminal status, timeout, and value-preservation rules
-- settlement payout, score counters, open-game counters, and integer Elo update
+- move geometry, board updates, draw challenges, castle challenges, terminal
+  status, timeout, and value preservation in every worker
+- settlement payout, score counters, open-game counters, and integer Elo updates
 
-The protocol conditions and state transitions match at this level. Execution of
-the generated contracts through the existing Rust game suite remains the next
-validation step.
+The Rust runtime exercises registration, game start, all move families, castle
+challenges, termination, timeouts, settlement, league maintenance, player
+maintenance, observer decoding, indexing, and the local web controller.
 
 ## Intentional Differences
 
 The handwritten mux overloads `route` with `selector == MUX` for claim,
-surrender, and draw acceptance. Argent actor enums select foreign route targets,
-so the port exposes those self-transitions as a separate `terminate` entry.
+surrender, and draw acceptance. Argent actor enums select foreign route targets.
+The Argent graph exposes these self-transitions as a separate `terminate` entry.
 
-The handwritten shared state stores a packed 288-byte route value containing
+The handwritten shared state stores a packed 288-byte route value. It contains
 eight worker templates and a settlement/player commitment. Argent generates a
-256-byte worker route table and carries the downstream `Player`, `ChessMux`, and
-`ChessSettle` template information as typed hidden state fields.
+256-byte worker route table. It carries the downstream `Player`, `ChessMux`, and
+`ChessSettle` template information in typed hidden state fields.
 
-`ChessCastleChallengePrep` receives a typed worker target. It still derives the
-required worker from the moving piece and geometry, then requires the supplied
-target to match before routing to its generated template.
+`ChessCastleChallengePrep` receives a typed worker target. It derives the
+required worker from the moving piece and geometry. It then requires the supplied
+target to match before it routes to the generated template.
 
-Generated entry signatures contain hidden template witnesses and may order
-arguments differently from the handwritten ABI. The generated state layouts and
-contract templates therefore also differ, even where user-visible chess state is
-unchanged.
+Generated entry signatures contain hidden template witnesses. The generated
+state layouts and contract templates differ from the handwritten baseline even
+when the user state is the same.
 
-## Follow-up Observations
+## Reference Baseline
 
-The generated contracts currently repeat shared constants, state declarations,
-and helper functions even when a particular actor does not use all of them. This
-is compiler output-size work, not a semantic port blocker.
+The handwritten contracts in `build/sil/` remain for independent protocol tests
+and script-size reports. These tests help detect semantic drift during the port.
+The application runtime does not load these contracts.
+
+`check.sh` regenerates `build/argent/`, rejects fixture drift, and runs the full
+Rust test and lint suite.
+
+## Follow-up Opportunity
+
+The generated contracts repeat some shared constants, state declarations, and
+helper functions that an actor does not use. This is an output-size opportunity.
+It does not block the port.

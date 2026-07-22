@@ -2,17 +2,20 @@
 
 This folder is a standalone Cargo workspace for the mux/worker on-chain chess covenant demo.
 
-## Port Baseline
+## Argent Runtime
 
 This workspace was imported from the Silverscript `chess` branch at commit
 `abe95d210b24c5d84065722e9e59d46e446f0a85`. It is the executable baseline for
 an in-place port to Argent.
 
-The handwritten contracts under `build/sil/` remain the active reference
-implementation. The native Argent port lives under `ag/`, and its separately
-pinned output is generated under `build/argent/`. The Rust application still
-uses `build/sil/`; switching it to the generated contracts is a later validation
-step rather than part of the initial source port.
+The Argent source under `ag/` now defines the active contract graph. Its pinned
+artifact and Sil output are under `build/argent/`.
+
+The Rust orchestrator builds every chess transaction with this artifact. The
+observer also uses its ABI to decode contract state and calls. The handwritten
+contracts under `build/sil/` remain as an independent protocol baseline for the
+legacy transaction suite and script-size measurements. They are not part of the
+application runtime.
 
 The workspace is independent of the parent playground crate. During the port,
 it uses sibling checkouts of Argent and Silverscript through local Cargo paths.
@@ -59,11 +62,11 @@ the full board.
 
 Layout:
 
-- `chess-covenant/`: Rust crate with compile-time tests for the covenant source.
-- `ag/`: the complete native Argent contract graph.
-- `build/sil/`: handwritten Sil reference contracts used by the Rust application.
-- `build/argent/`: pinned Sil and artifact output generated from `ag/`.
-- `ARGENT_PORT.md`: the initial textual comparison and known port boundaries.
+- `chess-covenant/`: Rust orchestrator, observer, indexer, web app, and tests.
+- `ag/`: the active Argent contract graph.
+- `build/argent/`: pinned artifact and Sil output generated from `ag/`.
+- `build/sil/`: handwritten Sil baseline used only by reference tests.
+- `ARGENT_PORT.md`: the runtime boundary and intentional port differences.
 - `ARCHITECTURE.md`: high-level design principles for the mux/worker chess protocol.
 - `COVERAGE.md`: audit matrix for current classical-rule coverage vs protocol behavior.
 

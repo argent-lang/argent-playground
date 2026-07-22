@@ -14,15 +14,15 @@ flowchart TD
     G -- routes terminal state --> S
     S -- settles into --> P
 
-    L -. injects player_template .-> P
-    L -. injects mux_template .-> P
-    L -. injects routes_commitment .-> P
+    L -. carries player template .-> P
+    L -. carries mux and settle templates .-> P
+    L -. carries worker-table digest .-> P
 
-    P -. injects mux_template .-> G
-    P -. witnesses route_templates .-> G
+    P -. opens worker table .-> G
+    P -. carries role templates .-> G
 
-    S -. validates Player inputs by player_template .-> P
-    P -. delegates to Settle leader by route commitment .-> S
+    S -. validates Player inputs by template .-> P
+    P -. delegates to Settle leader .-> S
 ```
 
 ## What each layer needs to know
@@ -30,28 +30,30 @@ flowchart TD
 ```mermaid
 flowchart LR
     subgraph League["League"]
-        LH["player_template"]
-        LM["mux_template"]
-        LR["routes_commitment"]
+        LH["Player template"]
+        LM["Mux and Settle templates"]
+        LR["worker-table digest"]
     end
 
     subgraph Player["Player"]
-        PM["mux_template"]
-        PX["routes_commitment"]
+        PM["Mux, Settle, and Player templates"]
+        PX["worker-table digest"]
         PP["player_id"]
         PO["owner"]
         PR["rating"]
     end
 
     subgraph Game["Game"]
-        GH["route_templates"]
+        GH["256-byte worker table"]
+        GT["Mux, Settle, and Player templates"]
         GW["white_player_ref"]
         GB["black_player_ref"]
         GR["result / terminal state"]
     end
 
     subgraph Settle["Settle"]
-        SH["blake2b(settle_template || player_template)"]
+        SH["role templates"]
+        SX["worker-table digest"]
         SR["terminal result"]
     end
 
@@ -63,10 +65,12 @@ flowchart LR
     PX --> Game
     PP --> Game
 
-    GH --> Settle
+    GT --> Settle
 
     GW --> Player
     GB --> Player
+    SH --> Player
+    SX --> Player
 ```
 
 Today `player_id` does not come from injected League state. It is derived as
@@ -77,19 +81,14 @@ Today the game state binds each side as `blake2b(owner || player_id)`, not as a
 raw `player_id`. That keeps the game-side footprint to one field per side while
 still letting settlement recover canonical player ids from `Player` inputs.
 
-Today `League` and `Player` keep only `routes_commitment = blake2b(route_templates)`.
-The full `route_templates` blob is supplied only when `Player.start_game` expands
-that commitment into a concrete game state.
+The Argent compiler derives hidden routing fields from the actor graph. `League`
+and `Player` carry the worker-table digest. `Player.start_game` receives the
+matching 256-byte worker table through a generated witness and stores it in the
+game state.
 
-Today that `route_templates` blob includes both:
-
-- the move-worker family hashes
-- a terminal settlement commitment at the tail:
-  `blake2b(settle_template || player_template)`
-
-That tail commitment lets `ChessMux.settle` safely witness the concrete settle
-template and the trusted `player_template` together before materializing a
-`ChessSettle` state.
+The game state also carries direct `ChessMux`, `ChessSettle`, and `Player`
+template fields. These fields let the game return to mux or enter settlement
+without adding non-worker entries to the worker table.
 
 ## Why shared covenant id is not enough by itself
 
@@ -104,10 +103,10 @@ So settlement needs both:
 1. same cov-id group
 2. role validation by template hash
 
-That is why the design depends on:
+That is why the generated design depends on:
 
-- injected `player_template`, `mux_template`, and `routes_commitment`
+- hidden role templates and a worker-table digest
 - input-side template validation primitives
 
-And that is also why the terminal game route keeps a commitment to both
-`settle_template` and `player_template`, rather than only a bare settle worker hash.
+The compiler propagates these dependencies through the actor graph. Authored
+state contains only the chess data.

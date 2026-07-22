@@ -31,7 +31,7 @@ mux.
 In concrete terms:
 
 1. mux authenticates the side to move
-2. mux interprets `selector` as a pure template choice and `termination_action` as a game-level side decision
+2. mux uses the typed `MoveActor` target as the worker choice
 3. mux commits the pending move into shared state when a worker route is chosen
 4. the worker proves one bounded rule and rewrites the board
 5. the worker returns to mux with cleared pending fields
@@ -88,8 +88,8 @@ This pattern simulates something like a stateful version of Taproot branch
 selection.
 
 The protocol commits to many possible execution templates, but only one branch
-is exercised for a given move. In that sense, mux plus worker hashes acts like
-a contract-level branch selector.
+is exercised for a given move. In that sense, mux plus the generated worker
+route table acts like a contract-level branch selector.
 
 The spender does not get to invent the next script. State decides which
 templates are valid next steps.
@@ -178,7 +178,7 @@ The board is not physically flipped. The protocol flips interpretation:
 
 The flow is:
 
-1. the claimant routes to mux with `selector = 8` and `termination_action = 2`, which flips `turn` and enters `draw_state = 1`
+1. the claimant calls `ChessMux.terminate` with `termination_action = 2`; this flips `turn` and enters `draw_state = 1`
 2. the opponent tries to find a saving move for the claimant side using an ordinary worker
 3. if that succeeds, play continues in `draw_state = 2`
 4. if phase 2 ends without a decisive king capture, the original claimant loses
@@ -197,7 +197,7 @@ The flow is:
 
 1. the mover routes into an ordinary worker and sets a draw-offer bit in mux state
 2. the worker applies the move and returns to mux with `draw_state = 4` or `5`
-3. on the opponent's turn, they may accept through mux with `selector = 8` and `termination_action = 4`
+3. on the opponent's turn, they may accept through `ChessMux.terminate` with `termination_action = 4`
 4. any ordinary reply implicitly rejects the offer and clears the draw-offer state
 
 This keeps draw agreement asynchronous without adding a second timeout model or

@@ -132,10 +132,8 @@ What changes in each phase:
 
 - one immutable league lane recreates itself
 - one fresh player account is emitted
-- the league injects:
-  - `player_template`
-  - `mux_template`
-  - `routes_commitment`
+- the compiler propagates the hidden templates and worker-table digest needed by
+  later actors
 
 ### `2 -> 3` Players start game
 
@@ -144,14 +142,10 @@ What changes in each phase:
 - one opening `ChessMux` state is created
 - game funding is defined here by mutual consent
 
-Illustrative SIL excerpt:
+Illustrative Argent excerpt:
 
 ```js
-State next_self = {
-    league_template: league_template,
-    player_template: player_template,
-    mux_template: mux_template,
-    routes_commitment: routes_commitment,
+PlayerState next_self = {
     owner: owner,
     player_id: player_id,
     open_games: open_games + 1,
@@ -162,16 +156,11 @@ State next_self = {
     losses: losses
 };
 
-require(OpAuthOutputCount(this.activeInputIndex) == 3);
-validateOutputState(OpAuthOutputIdx(this.activeInputIndex, 0), next_self);
-validateOutputState(OpAuthOutputIdx(this.activeInputIndex, 1), next_other);
-validateOutputStateWithTemplate(
-    OpAuthOutputIdx(this.activeInputIndex, 2),
-    next_game,
-    mux_prefix,
-    mux_suffix,
-    mux_template
-);
+become {
+    self_out <- Player(next_self);
+    other_out <- Player(next_other);
+    game <- ChessMux(next_game);
+};
 ```
 
 ### `1 -> 1` Game step
@@ -189,12 +178,10 @@ There are two subtle control points worth showing live:
 - player commitment is checked at mux exit
 - timeout escape exists on every worker
 
-Illustrative SIL excerpt:
+Illustrative Argent excerpt:
 
 ```js
-State next_state = {
-    mux_template: mux_template,
-    route_templates: route_templates,
+GameState next_state = {
     white_player: white_player,
     black_player: black_player,
     board: board,
@@ -210,20 +197,15 @@ State next_state = {
     draw_state: next_draw_state
 };
 
-byte[32] target_template = all_route_templates.slice(hash_start, hash_end);
-validateOutputStateWithTemplate(
-    output_idx,
-    next_state,
-    target_prefix,
-    target_suffix,
-    target_template
-);
+become target(next_state);
 ```
 
 This is the mux doing the two jobs that matter:
 
 - commit the pending move into shared state
-- route into exactly one worker template
+- route into exactly one typed worker target
+
+The compiler lowers the typed target to the generated worker route table.
 
 ### `3 -> 2` Game settle
 

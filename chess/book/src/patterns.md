@@ -21,19 +21,17 @@ Another way to say it:
 
 ## Commit Large Future Data Early, Expand Late
 
-`League` and `Player` keep `routes_commitment`, while `Player.start_game`
-expands the full `route_templates` blob only when materializing a `Game`.
+`League` and `Player` keep the generated worker-table digest.
+`Player.start_game` opens the full worker table only when it materializes a
+`Game`.
 
 Pattern:
 
 - keep large routing tables as commitments in long-lived management layers
 - expand them only at the boundary where they become operational
 
-The same idea shows up again at the tail:
-
-- the game keeps a commitment to `blake2b(settle_template || player_template)`
-- `ChessMux.settle` expands that commitment only when the terminal route is
-  actually taken
+Direct generated template fields cover routes outside the worker table. The game
+uses them to return to mux and to emit settlement state.
 
 ## Role Identity Comes From Template, Not Covenant Id Alone
 

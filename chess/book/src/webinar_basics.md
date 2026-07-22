@@ -46,15 +46,14 @@ That gives us family membership, but not role identity.
 So the design uses two layers:
 
 1. covenant id says "this input belongs to the same system"
-2. injected template selectors say "this input/output is specifically a Player,
+2. generated hidden templates say "this input/output is specifically a Player,
    Mux, worker, or Settle"
 
-That is why the contracts carry fields such as:
+That is why the generated contracts carry hidden fields such as:
 
-- `player_template`
-- `mux_template`
-- `route_templates`
-- `routes_commitment`
+- the `Player`, `ChessMux`, and `ChessSettle` templates
+- the worker route table
+- the worker-table digest
 
 ## ICC: Inter-Covenant Communication
 

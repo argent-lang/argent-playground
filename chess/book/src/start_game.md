@@ -21,7 +21,7 @@ sequenceDiagram
     participant G as Game output
 
     PL->>PL: verify owner signature
-    PL->>PL: verify routes commitment against witnessed route_templates
+    PL->>PL: verify generated worker-table digest
     PL->>PD: verify input template == player_template
     PL->>G: choose white/black refs from owner + player_id
     PL->>OP1: recreate self with open_games + 1
@@ -37,7 +37,7 @@ sequenceDiagram
 The leader does the expensive work:
 
 - reading the peer player state
-- checking the witnessed `route_templates`
+- checking the witnessed generated worker table
 - constructing the opening game state
 - validating all three outputs
 

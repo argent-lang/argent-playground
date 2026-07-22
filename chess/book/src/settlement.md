@@ -7,7 +7,7 @@ Target transaction:
 The intended auth split is:
 
 - `ChessMux` routes terminal state into `ChessSettle`
-- the terminal route tail is a commitment to `blake2b(settle_template || player_template)`
+- generated hidden state carries the `ChessSettle` and `Player` templates
 - `ChessSettle` is the settlement leader
 - both `Player` inputs are delegates
 - `ChessSettle` validates both `Player` outputs and the objective payout split
@@ -22,7 +22,7 @@ sequenceDiagram
     participant OW as Player output A
     participant OB as Player output B
 
-    G->>S: witness settle template and player_template, then route terminal state
+    G->>S: use generated settle template and route terminal state
     S->>S: verify terminal chess result
     S->>PW: verify input template == player_template
     S->>PB: verify input template == player_template
@@ -47,8 +47,8 @@ sequenceDiagram
 What is implemented now:
 
 - `ChessMux` routes a terminal mux state into `ChessSettle`
-- that route is authenticated against the tail commitment
-  `blake2b(settle_template || player_template)`
+- generated template fields authenticate the `ChessSettle` output and later
+  `Player` inputs and outputs
 - `ChessSettle` settles into two `Player` outputs
 - settlement requires both players to have `open_games > 0`
 - settlement decrements `open_games` for both players
