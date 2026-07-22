@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use argent_runtime::{actor as actor_arg, args, state, Artifact, ArtifactValue, EntryCall, TxBuilder, TxContext};
+use argent_runtime::{actor as actor_arg, args, state, Artifact, ArtifactValue, CovenantOutput, EntryCall, TxBuilder, TxContext};
 use blake2b_simd::Params as Blake2bParams;
 use kaspa_consensus_core::hashing::sighash::calc_schnorr_signature_hash;
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
@@ -10,7 +10,7 @@ use kaspa_consensus_core::hashing::sighash_type::SIG_HASH_ALL;
 use kaspa_consensus_core::mass::units::SigopCount;
 use kaspa_consensus_core::tx::{
     CovenantBinding, MutableTransaction, PopulatedTransaction, ScriptPublicKey, Transaction, TransactionId, TransactionInput,
-    TransactionOutpoint, TransactionOutput, UtxoEntry, VerifiableTransaction,
+    TransactionOutpoint, UtxoEntry, VerifiableTransaction,
 };
 use kaspa_consensus_core::Hash;
 use kaspa_txscript::caches::Cache;
@@ -346,7 +346,6 @@ pub struct LocalArena {
 
 #[derive(Clone)]
 struct TemplateFixture {
-    source: &'static str,
     prefix: Vec<u8>,
     suffix: Vec<u8>,
     hash: Hash,
@@ -1707,12 +1706,10 @@ impl TxArena {
         let expected_status = status_from_result(result);
         let white_state = self.players.get(&white.name).cloned().ok_or_else(|| OrchestratorError("missing white".to_string()))?;
         let black_state = self.players.get(&black.name).cloned().ok_or_else(|| OrchestratorError("missing black".to_string()))?;
-        let white_contract = self.compile_player(&white_state);
-        let black_contract = self.compile_player(&black_state);
 
         let white_ref = white.player_ref.ok_or_else(|| OrchestratorError("white missing player ref".to_string()))?;
         let black_ref = black.player_ref.ok_or_else(|| OrchestratorError("black missing player ref".to_string()))?;
-        let (routed_settle, settle_outpoint, include_mux_settle_history) = if let Some(active_settle) = self.active_settle.clone() {
+        let (settlement, mux_settle_tx) = if let Some(active_settle) = self.active_settle.clone() {
             if active_settle.status != expected_status {
                 return Err(OrchestratorError(format!(
                     "active settle status {} does not match requested result {}",
@@ -1722,11 +1719,18 @@ impl TxArena {
             if active_settle.white_player != white_ref || active_settle.black_player != black_ref {
                 return Err(OrchestratorError("active settle does not match provided players".to_string()));
             }
-            (
-                compile_settle_state(self.fix.settle.source, &self.player_template, &white_ref, &black_ref, expected_status),
-                active_settle.outpoint,
-                false,
-            )
+            let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+            let utxo = builder
+                .covenant_utxo(
+                    "ChessSettle",
+                    settle_source_state(white_ref, black_ref, expected_status),
+                    1_000,
+                    0,
+                    false,
+                    Some(self.covenant_id),
+                )
+                .map_err(orchestrator_builder_error("build active ChessSettle UTXO"))?;
+            (CovenantOutput { index: 0, covenant_id: self.covenant_id, outpoint: active_settle.outpoint, utxo }, None)
         } else {
             let game = self.game.clone().ok_or_else(|| OrchestratorError("missing game".to_string()))?;
             if game.status != expected_status {
@@ -1735,37 +1739,26 @@ impl TxArena {
                     game.status, expected_status
                 )));
             }
-            let terminal = self.compile_mux(&game);
-            let routed_settle =
-                compile_settle_state(self.fix.settle.source, &self.player_template, &white_ref, &black_ref, expected_status);
-            let mux_settle_sigscript = entry_sigscript(
-                &terminal,
-                "settle",
-                vec![
-                    hash_expr(self.player_template),
-                    Expr::bytes(self.fix.settle.prefix.clone()),
-                    Expr::bytes(self.fix.settle.suffix.clone()),
-                ],
-            );
-            let mux_tx = Transaction::new(
-                1,
-                vec![tx_input(
-                    self.game_outpoint.ok_or_else(|| OrchestratorError("missing game outpoint".to_string()))?,
-                    mux_settle_sigscript,
-                    0,
-                )],
-                vec![covenant_output(&routed_settle, 0, self.covenant_id)],
-                0,
-                Default::default(),
-                0,
-                vec![],
-            );
-            let executed_mux_tx = mux_tx.clone();
-            execute_input_with_covenants(mux_tx, vec![covenant_utxo(&terminal, self.covenant_id)], 0)
-                .map_err(|err| OrchestratorError(format!("mux settle failed: {err}")))?;
-            self.transactions.push(executed_mux_tx.clone());
-            (routed_settle, TransactionOutpoint { transaction_id: executed_mux_tx.id(), index: 0 }, true)
+            let game_outpoint = self.game_outpoint.ok_or_else(|| OrchestratorError("missing game outpoint".to_string()))?;
+            let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+            let game_utxo = builder
+                .covenant_utxo("ChessMux", game_source_state(&game), 1_000, 0, false, Some(self.covenant_id))
+                .map_err(orchestrator_builder_error("build terminal ChessMux UTXO"))?;
+            let context = TxContext::new()
+                .actor_input("ChessMux", game_source_state(&game), "settle", game_outpoint, game_utxo, 0)
+                .actor_output(
+                    "ChessSettle",
+                    settle_source_state(white_ref, black_ref, expected_status),
+                    CovenantBinding::new(0, self.covenant_id),
+                    1_000,
+                );
+            let tx = builder.build(&context).map_err(orchestrator_builder_error("route terminal game to settlement"))?;
+            let settlement = CovenantOutput::from_tx(&tx, 0).map_err(orchestrator_builder_error("read ChessSettle output"))?;
+            (settlement, Some(tx))
         };
+        if let Some(tx) = mux_settle_tx.as_ref() {
+            self.transactions.push(tx.clone());
+        }
 
         let mut next_white = white_state.clone();
         let mut next_black = black_state.clone();
@@ -1800,7 +1793,7 @@ impl TxArena {
         next_white.rating = approx_updated_rating(white_old_rating, black_old_rating, white_actual);
         next_black.rating = approx_updated_rating(black_old_rating, white_old_rating, black_actual);
 
-        let stake = 1_000u64;
+        let stake = settlement.utxo.amount;
         match result {
             GameResult::WhiteWin => {
                 next_white.value += stake;
@@ -1816,65 +1809,28 @@ impl TxArena {
             }
         }
 
-        let settled_white = self.compile_player(&next_white);
-        let settled_black = self.compile_player(&next_black);
-        let route_templates = packed_execution_route_templates(&self.fix);
-        let settle_sigscript = entry_sigscript(
-            &routed_settle,
-            "settle",
-            vec![Expr::bytes(self.player_prefix.clone()), Expr::bytes(self.player_suffix.clone())],
-        );
-
-        let white_placeholder = entry_sigscript(
-            &white_contract,
-            "delegate_settle",
-            vec![
-                Expr::int(self.fix.settle.prefix.len() as i64),
-                Expr::int(self.fix.settle.suffix.len() as i64),
-                hash_expr(self.fix.settle.hash),
-                Expr::bytes(route_templates.clone()),
-            ],
-        );
-        let black_placeholder = entry_sigscript(
-            &black_contract,
-            "delegate_settle",
-            vec![
-                Expr::int(self.fix.settle.prefix.len() as i64),
-                Expr::int(self.fix.settle.suffix.len() as i64),
-                hash_expr(self.fix.settle.hash),
-                Expr::bytes(route_templates.clone()),
-            ],
-        );
-        let outputs = vec![
-            covenant_output_with_value(&settled_white, 0, self.covenant_id, next_white.value),
-            covenant_output_with_value(&settled_black, 0, self.covenant_id, next_black.value),
-        ];
-        let entries = vec![
-            covenant_utxo(&routed_settle, self.covenant_id),
-            covenant_utxo_with_value(&white_contract, self.covenant_id, white_state.value),
-            covenant_utxo_with_value(&black_contract, self.covenant_id, black_state.value),
-        ];
-        let tx = Transaction::new(
-            1,
-            vec![
-                tx_input(settle_outpoint, settle_sigscript, 0),
-                tx_input(white_state.outpoint, white_placeholder, 0),
-                tx_input(black_state.outpoint, black_placeholder, 0),
-            ],
-            outputs,
-            0,
-            Default::default(),
-            0,
-            vec![],
-        );
-        let executed_tx = tx.clone();
+        let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+        let white_utxo = builder
+            .covenant_utxo("Player", player_source_state(&white_state), white_state.value, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build white settlement Player UTXO"))?;
+        let black_utxo = builder
+            .covenant_utxo("Player", player_source_state(&black_state), black_state.value, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build black settlement Player UTXO"))?;
+        let context = TxContext::new()
+            .actor_input(
+                "ChessSettle",
+                settle_source_state(white_ref, black_ref, expected_status),
+                "settle",
+                settlement.outpoint,
+                settlement.utxo,
+                0,
+            )
+            .actor_input("Player", player_source_state(&white_state), "delegate_settle", white_state.outpoint, white_utxo, 0)
+            .actor_input("Player", player_source_state(&black_state), "delegate_settle", black_state.outpoint, black_utxo, 0)
+            .actor_output("Player", player_source_state(&next_white), CovenantBinding::new(0, self.covenant_id), next_white.value)
+            .actor_output("Player", player_source_state(&next_black), CovenantBinding::new(0, self.covenant_id), next_black.value);
+        let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("settle game into players"))?;
         let executed_txid = executed_tx.id();
-        execute_input_with_covenants(tx.clone(), entries.clone(), 0)
-            .map_err(|err| OrchestratorError(format!("settle leader failed: {err}")))?;
-        execute_input_with_covenants(tx.clone(), entries.clone(), 1)
-            .map_err(|err| OrchestratorError(format!("settle white delegate failed: {err}")))?;
-        execute_input_with_covenants(tx, entries, 2)
-            .map_err(|err| OrchestratorError(format!("settle black delegate failed: {err}")))?;
         self.transactions.push(executed_tx);
 
         self.players.insert(white.name.clone(), next_white);
@@ -1903,7 +1859,7 @@ impl TxArena {
                 kind: OffchainMessageKind::SettlementNotice { result },
             },
         );
-        if include_mux_settle_history {
+        if mux_settle_tx.is_some() {
             self.history.push(SubmittedTx { recipe_name: "mux_settle", consumed: vec![], produced: vec![], signer_names: vec![] });
         }
         self.history.push(SubmittedTx { recipe_name: "settle", consumed: vec![], produced: vec![], signer_names: vec![] });
@@ -2049,10 +2005,6 @@ impl TxArena {
             },
         )
     }
-
-    fn compile_mux(&self, state: &GameStateData) -> CompiledContract<'static> {
-        compile_game_state(self.fix.mux.source, &self.fix, state)
-    }
 }
 
 fn build_execution_fixture() -> ExecutionFixture {
@@ -2113,7 +2065,7 @@ fn template_fixture(source: &'static str, ctor: &[Expr<'_>]) -> TemplateFixture 
     let prefix = compiled.script[..layout.start].to_vec();
     let suffix = compiled.script[layout.start + layout.len..].to_vec();
     let hash = Hash::from_bytes(compiled.template_hash());
-    TemplateFixture { source, prefix, suffix, hash }
+    TemplateFixture { prefix, suffix, hash }
 }
 
 fn packed_execution_route_templates(fix: &ExecutionFixture) -> Vec<u8> {
@@ -2392,27 +2344,6 @@ fn apply_worker_state(
     Ok(next)
 }
 
-fn compile_game_state(source: &'static str, fix: &ExecutionFixture, state: &GameStateData) -> CompiledContract<'static> {
-    let ctor = vec![
-        hash_expr(fix.mux.hash),
-        Expr::bytes(packed_execution_route_templates(fix)),
-        hash_expr(state.white_player),
-        hash_expr(state.black_player),
-        Expr::bytes(state.board.clone()),
-        Expr::int(state.turn),
-        Expr::int(state.status),
-        Expr::int(state.move_timeout),
-        Expr::bytes(state.castle_rights.to_vec()),
-        Expr::int(state.en_passant_idx),
-        Expr::int(state.pending_src_idx),
-        Expr::int(state.pending_dst_idx),
-        Expr::int(state.pending_promo),
-        Expr::int(state.recent_castle),
-        Expr::int(state.draw_state),
-    ];
-    compile_contract(source, &ctor, CompileOptions::default()).expect("compile game state")
-}
-
 fn compile_player_state(source: &'static str, args: PlayerStateArgs<'_>) -> CompiledContract<'static> {
     let ctor = vec![
         hash_expr(*args.league_template),
@@ -2431,17 +2362,6 @@ fn compile_player_state(source: &'static str, args: PlayerStateArgs<'_>) -> Comp
     compile_contract(source, &ctor, CompileOptions::default()).expect("compile player state")
 }
 
-fn compile_settle_state(
-    source: &'static str,
-    player_template: &Hash,
-    white_hash: &Hash,
-    black_hash: &Hash,
-    status: i64,
-) -> CompiledContract<'static> {
-    let ctor = vec![hash_expr(*player_template), hash_expr(*white_hash), hash_expr(*black_hash), Expr::int(status)];
-    compile_contract(source, &ctor, CompileOptions::default()).expect("compile settle state")
-}
-
 fn entry_sigscript(compiled: &CompiledContract<'_>, function: &str, args: Vec<Expr<'_>>) -> Vec<u8> {
     let sigscript = compiled.build_sig_script(function, args).expect("sigscript builds");
     pay_to_script_hash_signature_script_with_flags(
@@ -2456,29 +2376,8 @@ fn tx_input(previous_outpoint: TransactionOutpoint, signature_script: Vec<u8>, s
     TransactionInput { previous_outpoint, signature_script, sequence: 0, compute_commit: SigopCount(sig_op_count).into() }
 }
 
-fn covenant_output_with_value(
-    compiled: &CompiledContract<'_>,
-    authorizing_input: u16,
-    covenant_id: Hash,
-    value: u64,
-) -> TransactionOutput {
-    TransactionOutput {
-        value,
-        script_public_key: pay_to_script_hash_script(&compiled.script),
-        covenant: Some(CovenantBinding { authorizing_input, covenant_id }),
-    }
-}
-
-fn covenant_output(compiled: &CompiledContract<'_>, authorizing_input: u16, covenant_id: Hash) -> TransactionOutput {
-    covenant_output_with_value(compiled, authorizing_input, covenant_id, 1_000)
-}
-
 fn covenant_utxo_with_value(compiled: &CompiledContract<'_>, covenant_id: Hash, value: u64) -> UtxoEntry {
     UtxoEntry::new(value, pay_to_script_hash_script(&compiled.script), 0, false, Some(covenant_id))
-}
-
-fn covenant_utxo(compiled: &CompiledContract<'_>, covenant_id: Hash) -> UtxoEntry {
-    covenant_utxo_with_value(compiled, covenant_id, 1_000)
 }
 
 fn execute_input_with_covenants(tx: Transaction, entries: Vec<UtxoEntry>, input_idx: usize) -> Result<(), TxScriptError> {
