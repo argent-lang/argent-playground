@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use argent_runtime::{args, state, Artifact, ArtifactValue, EntryCall, TxBuilder, TxContext};
+use argent_runtime::{actor as actor_arg, args, state, Artifact, ArtifactValue, EntryCall, TxBuilder, TxContext};
 use blake2b_simd::Params as Blake2bParams;
 use kaspa_consensus_core::hashing::sighash::calc_schnorr_signature_hash;
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
@@ -1378,124 +1378,94 @@ impl TxArena {
         }
 
         let worker = determine_worker(&game.board, mv)?;
-        let target = self.worker_fixture(worker);
-        let active = self.compile_mux(&game);
         let pending = pending_state_for_move(&game, mv);
-        let worker_contract = self.compile_worker(target.source, &pending);
-        let placeholder = entry_sigscript(
-            &active,
-            "route",
-            vec![
-                Expr::int(worker_selector(worker)),
-                Expr::int(mv.from_x),
-                Expr::int(mv.from_y),
-                Expr::int(mv.to_x),
-                Expr::int(mv.to_y),
-                Expr::int(mv.promo_piece),
-                Expr::int(0),
-                Expr::bytes(vec![0u8; 65]),
-                Expr::bytes(actor.pubkey_bytes.clone()),
-                hash_expr(actor.player_id.ok_or_else(|| OrchestratorError("missing player id".to_string()))?),
-                Expr::bytes(target.prefix.clone()),
-                Expr::bytes(target.suffix.clone()),
-            ],
-        );
-        let outputs = vec![covenant_output(&worker_contract, 0, self.covenant_id)];
-        let entries = vec![covenant_utxo(&active, self.covenant_id)];
-        let mut route_tx = Transaction::new(
-            1,
-            vec![tx_input(self.game_outpoint.ok_or_else(|| OrchestratorError("missing game outpoint".to_string()))?, placeholder, 1)],
-            outputs,
-            0,
-            Default::default(),
-            0,
-            vec![],
-        );
-        let sig = sign_tx_input_schnorr(&route_tx, &entries, 0, actor);
-        route_tx.inputs[0].signature_script = entry_sigscript(
-            &active,
-            "route",
-            vec![
-                Expr::int(worker_selector(worker)),
-                Expr::int(mv.from_x),
-                Expr::int(mv.from_y),
-                Expr::int(mv.to_x),
-                Expr::int(mv.to_y),
-                Expr::int(mv.promo_piece),
-                Expr::int(0),
-                Expr::bytes(sig),
-                Expr::bytes(actor.pubkey_bytes.clone()),
-                hash_expr(actor.player_id.ok_or_else(|| OrchestratorError("missing player id".to_string()))?),
-                Expr::bytes(target.prefix.clone()),
-                Expr::bytes(target.suffix.clone()),
-            ],
-        );
-        let executed_route_tx = route_tx.clone();
-        let worker_outpoint = TransactionOutpoint { transaction_id: executed_route_tx.id(), index: 0 };
-
+        let game_outpoint = self.game_outpoint.ok_or_else(|| OrchestratorError("missing game outpoint".to_string()))?;
+        let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+        let game_utxo = builder
+            .covenant_utxo("ChessMux", game_source_state(&game), 1_000, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build active ChessMux UTXO"))?;
+        let selected_worker = worker_actor(worker).to_string();
+        let keypair = actor.keypair;
+        let public_key = actor.pubkey_bytes.clone();
+        let player_id = actor.player_id.ok_or_else(|| OrchestratorError("missing player id".to_string()))?;
+        let route_context = TxContext::new()
+            .actor_input(
+                "ChessMux",
+                game_source_state(&game),
+                EntryCall::new("route").args_with(move |tx, input_index| {
+                    args![
+                        actor_arg(selected_worker.clone()),
+                        mv.from_x,
+                        mv.from_y,
+                        mv.to_x,
+                        mv.to_y,
+                        mv.promo_piece,
+                        CLEAR,
+                        sign_builder_input(tx, input_index, &keypair),
+                        public_key.clone(),
+                        player_id,
+                    ]
+                }),
+                game_outpoint,
+                game_utxo,
+                0,
+            )
+            .actor_output(worker_actor(worker), game_source_state(&pending), CovenantBinding::new(0, self.covenant_id), 1_000);
+        let executed_route_tx = builder.build(&route_context).map_err(orchestrator_builder_error("route move to worker"))?;
+        let worker_output = argent_runtime::CovenantOutput::from_tx(&executed_route_tx, 0)
+            .map_err(orchestrator_builder_error("read worker output"))?;
+        let worker_outpoint = worker_output.outpoint;
         let next = apply_worker_state(worker, &pending, mv, allow_partial_commit)?;
-        let next_mux = self.compile_mux(&next);
-        let apply_sigscript = entry_sigscript(
-            &worker_contract,
-            "apply",
-            vec![Expr::bytes(self.fix.mux.prefix.clone()), Expr::bytes(self.fix.mux.suffix.clone())],
-        );
-        let apply_tx = Transaction::new(
-            1,
-            vec![tx_input(worker_outpoint, apply_sigscript, 0)],
-            vec![covenant_output(&next_mux, 0, self.covenant_id)],
-            0,
-            Default::default(),
-            0,
-            vec![],
-        );
-        let apply_entries = vec![covenant_utxo(&worker_contract, self.covenant_id)];
-        let executed_apply_tx = apply_tx.clone();
-        execute_input_with_covenants(route_tx, entries, 0).map_err(|err| OrchestratorError(format!("route failed: {err}")))?;
-        let apply_result = execute_input_with_covenants(apply_tx, apply_entries, 0);
-        if let Err(err) = apply_result {
-            if !allow_partial_commit {
-                return Err(OrchestratorError(format!("apply failed: {err}")));
-            }
-            self.transactions.push(executed_route_tx);
-            self.game = None;
-            self.game_outpoint = None;
-            self.active_worker = Some(ActiveWorkerState { kind: worker, state: pending, outpoint: worker_outpoint });
+        let apply_context = TxContext::new()
+            .actor_input(worker_actor(worker), game_source_state(&pending), "apply", worker_output.outpoint, worker_output.utxo, 0)
+            .actor_output("ChessMux", game_source_state(&next), CovenantBinding::new(0, self.covenant_id), 1_000);
+        let apply_result = builder.build(&apply_context);
+        let executed_apply_tx = match apply_result {
+            Ok(tx) => tx,
+            Err(err) => {
+                if !allow_partial_commit {
+                    return Err(OrchestratorError(format!("apply failed: {err}")));
+                }
+                self.transactions.push(executed_route_tx);
+                self.game = None;
+                self.game_outpoint = None;
+                self.active_worker = Some(ActiveWorkerState { kind: worker, state: pending, outpoint: worker_outpoint });
 
-            let winner = actor_side.other();
-            let result = if winner == Side::White { GameResult::WhiteWin } else { GameResult::BlackWin };
-            let recipient = if winner == Side::White {
-                self.players
-                    .iter()
-                    .find_map(|(name, state)| {
-                        (player_ref_hash(state.owner_hash, state.player_id) == game.white_player).then_some(name.clone())
-                    })
-                    .ok_or_else(|| OrchestratorError("missing white owner".to_string()))?
-            } else {
-                self.players
-                    .iter()
-                    .find_map(|(name, state)| {
-                        (player_ref_hash(state.owner_hash, state.player_id) == game.black_player).then_some(name.clone())
-                    })
-                    .ok_or_else(|| OrchestratorError("missing black owner".to_string()))?
-            };
-            self.push_message(
-                &recipient,
-                OffchainMessage {
-                    from: actor.name.clone(),
-                    to: recipient.clone(),
-                    kind: OffchainMessageKind::TimeoutClaimAvailable { result, worker, move_label: mv.label() },
-                },
-            );
-            let route_submission = SubmittedTx {
-                recipe_name: self.planner().route_recipe(worker).name,
-                consumed: vec![],
-                produced: vec![],
-                signer_names: vec![actor.name.clone()],
-            };
-            self.history.push(route_submission.clone());
-            return Ok(vec![route_submission]);
-        }
+                let winner = actor_side.other();
+                let result = if winner == Side::White { GameResult::WhiteWin } else { GameResult::BlackWin };
+                let recipient = if winner == Side::White {
+                    self.players
+                        .iter()
+                        .find_map(|(name, state)| {
+                            (player_ref_hash(state.owner_hash, state.player_id) == game.white_player).then_some(name.clone())
+                        })
+                        .ok_or_else(|| OrchestratorError("missing white owner".to_string()))?
+                } else {
+                    self.players
+                        .iter()
+                        .find_map(|(name, state)| {
+                            (player_ref_hash(state.owner_hash, state.player_id) == game.black_player).then_some(name.clone())
+                        })
+                        .ok_or_else(|| OrchestratorError("missing black owner".to_string()))?
+                };
+                self.push_message(
+                    &recipient,
+                    OffchainMessage {
+                        from: actor.name.clone(),
+                        to: recipient.clone(),
+                        kind: OffchainMessageKind::TimeoutClaimAvailable { result, worker, move_label: mv.label() },
+                    },
+                );
+                let route_submission = SubmittedTx {
+                    recipe_name: self.planner().route_recipe(worker).name,
+                    consumed: vec![],
+                    produced: vec![],
+                    signer_names: vec![actor.name.clone()],
+                };
+                self.history.push(route_submission.clone());
+                return Ok(vec![route_submission]);
+            }
+        };
 
         self.transactions.push(executed_route_tx);
         self.transactions.push(executed_apply_tx);
@@ -2235,16 +2205,16 @@ fn square_idx(x: i64, y: i64) -> i64 {
     y * 8 + x
 }
 
-fn worker_selector(worker: WorkerKind) -> i64 {
+fn worker_actor(worker: WorkerKind) -> &'static str {
     match worker {
-        WorkerKind::Pawn => 0,
-        WorkerKind::Knight => 1,
-        WorkerKind::Vert => 2,
-        WorkerKind::Horiz => 3,
-        WorkerKind::Diag => 4,
-        WorkerKind::King => 5,
-        WorkerKind::Castle => 6,
-        WorkerKind::CastleChallenge => 7,
+        WorkerKind::Pawn => "ChessPawn",
+        WorkerKind::Knight => "ChessKnight",
+        WorkerKind::Vert => "ChessVert",
+        WorkerKind::Horiz => "ChessHoriz",
+        WorkerKind::Diag => "ChessDiag",
+        WorkerKind::King => "ChessKing",
+        WorkerKind::Castle => "ChessCastle",
+        WorkerKind::CastleChallenge => "ChessCastleChallengePrep",
     }
 }
 
