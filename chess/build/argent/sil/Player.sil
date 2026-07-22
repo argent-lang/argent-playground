@@ -50,7 +50,6 @@ contract Player(
         byte[32] gen__chess_settle_template;
         byte[32] gen__player_template;
         byte[32] gen__chess_mux_routes_digest;
-
         // :: user declared fields
         int base_rating;
         byte[32] admin;
@@ -61,7 +60,6 @@ contract Player(
         byte[32] gen__player_template;
         byte[32] gen__chess_mux_template;
         byte[256] gen__chess_mux_routes;
-
         // :: user declared fields
         byte[32] white_player;
         byte[32] black_player;
@@ -83,7 +81,6 @@ contract Player(
         byte[32] gen__chess_settle_template;
         byte[32] gen__player_template;
         byte[32] gen__chess_mux_routes_digest;
-
         // :: user declared fields
         byte[32] white_player;
         byte[32] black_player;
@@ -141,10 +138,6 @@ contract Player(
         byte[] gen__chess_mux_suffix,
         byte[256] gen__chess_mux_routes
     ) {
-        // :: witness lens
-        int gen__chess_mux_prefix_len = gen__chess_mux_prefix.length;
-        int gen__chess_mux_suffix_len = gen__chess_mux_suffix.length;
-
         // :: routes: route_family/GameState/chess_mux
         require(blake2b(gen__chess_mux_routes) == gen__chess_mux_routes_digest);
 
@@ -188,7 +181,6 @@ contract Player(
             gen__chess_settle_template: gen__chess_settle_template,
             gen__player_template: gen__player_template,
             gen__chess_mux_routes_digest: gen__chess_mux_routes_digest,
-
             // :: user declared fields
             owner: owner,
             player_id: player_id,
@@ -205,7 +197,6 @@ contract Player(
             gen__chess_settle_template: gen__chess_settle_template,
             gen__player_template: gen__player_template,
             gen__chess_mux_routes_digest: gen__chess_mux_routes_digest,
-
             // :: user declared fields
             owner: other.owner,
             player_id: other.player_id,
@@ -222,7 +213,6 @@ contract Player(
             gen__player_template: gen__player_template,
             gen__chess_mux_template: gen__chess_mux_template,
             gen__chess_mux_routes: gen__chess_mux_routes,
-
             // :: user declared fields
             white_player: white_player,
             black_player: black_player,

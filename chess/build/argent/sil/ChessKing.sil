@@ -55,7 +55,6 @@ contract ChessKing(
         byte[32] gen__chess_settle_template;
         byte[32] gen__player_template;
         byte[32] gen__chess_mux_routes_digest;
-
         // :: user declared fields
         int base_rating;
         byte[32] admin;
@@ -66,7 +65,6 @@ contract ChessKing(
         byte[32] gen__chess_settle_template;
         byte[32] gen__player_template;
         byte[32] gen__chess_mux_routes_digest;
-
         // :: user declared fields
         byte[32] owner;
         byte[32] player_id;
@@ -83,7 +81,6 @@ contract ChessKing(
         byte[32] gen__chess_settle_template;
         byte[32] gen__player_template;
         byte[32] gen__chess_mux_routes_digest;
-
         // :: user declared fields
         byte[32] white_player;
         byte[32] black_player;
@@ -136,10 +133,6 @@ contract ChessKing(
     // :: entrypoints
     // :: leader entry (1:N)
     entrypoint function apply(byte[] gen__chess_mux_prefix, byte[] gen__chess_mux_suffix) {
-        // :: witness lens
-        int gen__chess_mux_prefix_len = gen__chess_mux_prefix.length;
-        int gen__chess_mux_suffix_len = gen__chess_mux_suffix.length;
-
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one ChessMux
@@ -255,7 +248,6 @@ contract ChessKing(
             gen__player_template: gen__player_template,
             gen__chess_mux_template: gen__chess_mux_template,
             gen__chess_mux_routes: gen__chess_mux_routes,
-
             // :: user declared fields
             white_player: white_player,
             black_player: black_player,
@@ -284,10 +276,6 @@ contract ChessKing(
 
     // :: leader entry (1:N)
     entrypoint function timeout(byte[] gen__chess_settle_prefix, byte[] gen__chess_settle_suffix) {
-        // :: witness lens
-        int gen__chess_settle_prefix_len = gen__chess_settle_prefix.length;
-        int gen__chess_settle_suffix_len = gen__chess_settle_suffix.length;
-
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
         // :: emits one ChessSettle
@@ -301,7 +289,6 @@ contract ChessKing(
             gen__chess_settle_template: gen__chess_settle_template,
             gen__player_template: gen__player_template,
             gen__chess_mux_routes_digest: blake2b(gen__chess_mux_routes),
-
             // :: user declared fields
             white_player: white_player,
             black_player: black_player,

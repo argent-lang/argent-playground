@@ -44,7 +44,6 @@ contract League(
         byte[32] gen__chess_settle_template;
         byte[32] gen__player_template;
         byte[32] gen__chess_mux_routes_digest;
-
         // :: user declared fields
         byte[32] owner;
         byte[32] player_id;
@@ -61,7 +60,6 @@ contract League(
         byte[32] gen__player_template;
         byte[32] gen__chess_mux_template;
         byte[256] gen__chess_mux_routes;
-
         // :: user declared fields
         byte[32] white_player;
         byte[32] black_player;
@@ -83,7 +81,6 @@ contract League(
         byte[32] gen__chess_settle_template;
         byte[32] gen__player_template;
         byte[32] gen__chess_mux_routes_digest;
-
         // :: user declared fields
         byte[32] white_player;
         byte[32] black_player;
@@ -130,10 +127,6 @@ contract League(
         byte[] gen__player_prefix,
         byte[] gen__player_suffix
     ) {
-        // :: witness lens
-        int gen__player_prefix_len = gen__player_prefix.length;
-        int gen__player_suffix_len = gen__player_suffix.length;
-
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 2);
         // :: output league: League
@@ -148,7 +141,6 @@ contract League(
             gen__chess_settle_template: gen__chess_settle_template,
             gen__player_template: gen__player_template,
             gen__chess_mux_routes_digest: gen__chess_mux_routes_digest,
-
             // :: user declared fields
             owner: blake2b(owner_pk),
             player_id: blake2b(bytes("LeaguePlayerId") + OpOutpointTxId(this.activeInputIndex) + byte[4](OpOutpointIndex(this.activeInputIndex))),
