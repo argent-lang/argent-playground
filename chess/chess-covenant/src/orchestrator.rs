@@ -7,18 +7,10 @@ use blake2b_simd::Params as Blake2bParams;
 use kaspa_consensus_core::hashing::sighash::calc_schnorr_signature_hash;
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 use kaspa_consensus_core::hashing::sighash_type::SIG_HASH_ALL;
-use kaspa_consensus_core::mass::units::SigopCount;
 use kaspa_consensus_core::tx::{
-    CovenantBinding, MutableTransaction, PopulatedTransaction, ScriptPublicKey, Transaction, TransactionId, TransactionInput,
-    TransactionOutpoint, UtxoEntry, VerifiableTransaction,
+    CovenantBinding, MutableTransaction, ScriptPublicKey, Transaction, TransactionId, TransactionOutpoint, UtxoEntry,
 };
 use kaspa_consensus_core::Hash;
-use kaspa_txscript::caches::Cache;
-use kaspa_txscript::covenants::CovenantsContext;
-use kaspa_txscript::{
-    pay_to_script_hash_script, pay_to_script_hash_signature_script_with_flags, EngineCtx, EngineFlags, TxScriptEngine,
-};
-use kaspa_txscript_errors::TxScriptError;
 use secp256k1::{Keypair, Message, Secp256k1, SecretKey};
 use silverscript_lang::ast::Expr;
 use silverscript_lang::compiler::{compile_contract, CompileOptions, CompiledContract};
@@ -1868,16 +1860,22 @@ impl TxArena {
 
     pub fn retire_player(&mut self, player: &SigningPlayer) -> Result<(), OrchestratorError> {
         let state = self.players.get(&player.name).cloned().ok_or_else(|| OrchestratorError("missing player".to_string()))?;
-        let contract = self.compile_player(&state);
-        let placeholder =
-            entry_sigscript(&contract, "retire", vec![Expr::bytes(vec![0u8; 65]), Expr::bytes(player.pubkey_bytes.clone())]);
-        let entries = vec![covenant_utxo_with_value(&contract, self.covenant_id, state.value)];
-        let mut tx = Transaction::new(1, vec![tx_input(state.outpoint, placeholder, 1)], vec![], 0, Default::default(), 0, vec![]);
-        let sig = sign_tx_input_schnorr(&tx, &entries, 0, player);
-        tx.inputs[0].signature_script =
-            entry_sigscript(&contract, "retire", vec![Expr::bytes(sig), Expr::bytes(player.pubkey_bytes.clone())]);
-        let executed_tx = tx.clone();
-        execute_input_with_covenants(tx, entries, 0).map_err(|err| OrchestratorError(format!("retire failed: {err}")))?;
+        let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+        let player_utxo = builder
+            .covenant_utxo("Player", player_source_state(&state), state.value, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build retiring Player UTXO"))?;
+        let keypair = player.keypair;
+        let public_key = player.pubkey_bytes.clone();
+        let context = TxContext::new().actor_input(
+            "Player",
+            player_source_state(&state),
+            EntryCall::new("retire")
+                .args_with(move |tx, input_index| args![sign_builder_input(tx, input_index, &keypair), public_key.clone()]),
+            state.outpoint,
+            player_utxo,
+            0,
+        );
+        let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("retire player"))?;
         self.transactions.push(executed_tx);
         self.players.remove(&player.name);
         self.history.push(SubmittedTx {
@@ -1984,26 +1982,6 @@ impl TxArena {
                 })
             })
             .ok_or_else(|| OrchestratorError("missing player account".to_string()))
-    }
-
-    fn compile_player(&self, state: &PlayerStateData) -> CompiledContract<'static> {
-        compile_player_state(
-            player_static_source(),
-            PlayerStateArgs {
-                league_template: &self.league_template,
-                player_template: &self.player_template,
-                mux_template: &self.fix.mux.hash,
-                routes_commitment: &routes_commitment(&packed_execution_route_templates(&self.fix)),
-                owner_hash: &state.owner_hash,
-                player_id: &state.player_id,
-                open_games: state.open_games,
-                rating: state.rating,
-                games: state.games,
-                wins: state.wins,
-                draws: state.draws,
-                losses: state.losses,
-            },
-        )
     }
 }
 
@@ -2360,54 +2338,6 @@ fn compile_player_state(source: &'static str, args: PlayerStateArgs<'_>) -> Comp
         Expr::int(args.losses),
     ];
     compile_contract(source, &ctor, CompileOptions::default()).expect("compile player state")
-}
-
-fn entry_sigscript(compiled: &CompiledContract<'_>, function: &str, args: Vec<Expr<'_>>) -> Vec<u8> {
-    let sigscript = compiled.build_sig_script(function, args).expect("sigscript builds");
-    pay_to_script_hash_signature_script_with_flags(
-        compiled.script.clone(),
-        sigscript,
-        EngineFlags { covenants_enabled: true, ..Default::default() },
-    )
-    .expect("wrap p2sh sigscript")
-}
-
-fn tx_input(previous_outpoint: TransactionOutpoint, signature_script: Vec<u8>, sig_op_count: u8) -> TransactionInput {
-    TransactionInput { previous_outpoint, signature_script, sequence: 0, compute_commit: SigopCount(sig_op_count).into() }
-}
-
-fn covenant_utxo_with_value(compiled: &CompiledContract<'_>, covenant_id: Hash, value: u64) -> UtxoEntry {
-    UtxoEntry::new(value, pay_to_script_hash_script(&compiled.script), 0, false, Some(covenant_id))
-}
-
-fn execute_input_with_covenants(tx: Transaction, entries: Vec<UtxoEntry>, input_idx: usize) -> Result<(), TxScriptError> {
-    let reused_values = SigHashReusedValuesUnsync::new();
-    let sig_cache = Cache::new(10_000);
-    let input = tx.inputs[input_idx].clone();
-    let populated = PopulatedTransaction::new(&tx, entries);
-    let cov_ctx = CovenantsContext::from_tx(&populated).map_err(TxScriptError::from)?;
-    let utxo = populated.utxo(input_idx).expect("selected input utxo");
-    let mut vm = TxScriptEngine::from_transaction_input(
-        &populated,
-        &input,
-        input_idx,
-        utxo,
-        EngineCtx::new(&sig_cache).with_reused(&reused_values).with_covenants_ctx(&cov_ctx),
-        EngineFlags { covenants_enabled: true, ..Default::default() },
-    );
-    vm.execute()
-}
-
-fn sign_tx_input_schnorr(tx: &Transaction, entries: &[UtxoEntry], input_idx: usize, player: &SigningPlayer) -> Vec<u8> {
-    let reused_values = SigHashReusedValuesUnsync::new();
-    let populated = PopulatedTransaction::new(tx, entries.to_vec());
-    let sig_hash = calc_schnorr_signature_hash(&populated, input_idx, SIG_HASH_ALL, &reused_values);
-    let msg = Message::from_digest_slice(sig_hash.as_bytes().as_slice()).expect("valid sighash message");
-    let sig = player.keypair.sign_schnorr(msg);
-    let mut signature = Vec::new();
-    signature.extend_from_slice(sig.as_ref());
-    signature.push(SIG_HASH_ALL.to_u8());
-    signature
 }
 
 fn sign_builder_input<T: AsRef<Transaction>>(tx: &MutableTransaction<T>, input_index: usize, keypair: &Keypair) -> Vec<u8> {
