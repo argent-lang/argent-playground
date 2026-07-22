@@ -309,6 +309,38 @@ fn execute_mux_terminate(
     builder.build(&context).unwrap_or_else(|err| panic!("mux terminate action {termination_action} must execute: {err}"));
 }
 
+fn settle_state(white_player: [u8; 32], black_player: [u8; 32], status: i64) -> BTreeMap<String, ArtifactValue> {
+    state! {
+        white_player: white_player,
+        black_player: black_player,
+        status: status,
+    }
+}
+
+fn execute_to_settle<'a>(
+    builder: &TxBuilder<'_>,
+    source_actor: &str,
+    source_state: &GameStateData,
+    entry: impl Into<EntryCall<'a>>,
+    sequence: u64,
+    settle_status: i64,
+    fixture_tag: u8,
+) {
+    let covenant_id = Hash::from_bytes([fixture_tag; 32]);
+    let source_values = source_state.source_state();
+    let outpoint = TransactionOutpoint::new(TransactionId::from_bytes([fixture_tag.wrapping_add(1); 32]), 0);
+    let utxo = builder
+        .covenant_utxo(source_actor, source_values.clone(), GAME_VALUE, 0, false, Some(covenant_id))
+        .unwrap_or_else(|err| panic!("{source_actor} UTXO must build: {err}"));
+    let context = TxContext::new().actor_input(source_actor, source_values, entry, outpoint, utxo, sequence).actor_output(
+        "ChessSettle",
+        settle_state(source_state.white_player, source_state.black_player, settle_status),
+        CovenantBinding::new(0, covenant_id),
+        GAME_VALUE,
+    );
+    builder.build(&context).unwrap_or_else(|err| panic!("{source_actor} must transition to ChessSettle: {err}"));
+}
+
 #[test]
 fn argent_ordinary_workers_round_trip_through_mux() {
     let artifact = chess_artifact();
@@ -531,4 +563,28 @@ fn argent_mux_executes_claim_surrender_and_draw_acceptance() {
     accepted.status = DRAW;
     accepted.draw_state = NORMAL;
     execute_mux_terminate(&builder, &white, &offered, ACCEPT, &accepted, 0x87);
+}
+
+#[test]
+fn argent_worker_and_mux_paths_exit_the_family_into_settlement() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x61);
+    let black = player(0x62);
+
+    let initial = GameStateData::live(white.player_ref, black.player_ref, opening_board());
+    let invalid_knight_move = MoveSpec::new(0, 1, 0, 2);
+    let knight_state = initial.committed_route("ChessKnight", invalid_knight_move, CLEAR);
+    execute_to_settle(&builder, "ChessKnight", &knight_state, "timeout", MOVE_TIMEOUT as u64, BWIN, 0x91);
+
+    let keypair = black.keypair;
+    let public_key = black.public_key.clone();
+    let player_id = black.player_id;
+    let mux_timeout = EntryCall::new("timeout")
+        .args_with(move |tx, input_index| args![sign_input(tx, input_index, &keypair), public_key.clone(), player_id]);
+    execute_to_settle(&builder, "ChessMux", &initial, mux_timeout, MOVE_TIMEOUT as u64, BWIN, 0x93);
+
+    let mut terminal = initial;
+    terminal.status = BWIN;
+    execute_to_settle(&builder, "ChessMux", &terminal, "settle", 0, BWIN, 0x95);
 }
