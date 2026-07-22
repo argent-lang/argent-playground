@@ -6,6 +6,8 @@ state RegistryState {
 }
 
 actor Registry owns RegistryState {
+    // TODO: - when argent support dynamic size array, label should be byte[] so we can remove label_len param
+    //       - consume siblings from sigscript instead of payload
     entry register(label: byte[63], label_len: int, owner: pubkey, owner_sig: sig) emits {
         registry: Registry;
         name: Name;

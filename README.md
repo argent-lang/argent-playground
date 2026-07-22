@@ -57,11 +57,8 @@ src/bin/dex_asset.rs
 
 src/bin/name_service.rs
   file-backed Registry and transferable Name app under `ag/name_service`
-  commits registered labels to a 128-level sparse Merkle tree using fixed-size
-  4,096-byte proofs containing every sibling hash in root-to-leaf order
-  uses separate keyed-BLAKE3 domains for name keys, leaves and internal nodes
-  mints two names, rejects a duplicate through the Kaspa script engine and
-  transfers a Name output without spending the shared Registry UTXO
+  commits registered labels to a 128-level sparse Merkle tree
+  mints two names, rejects a duplicate and transfers a Name output
 
 build/
   generated artifacts and Silverscript output

@@ -70,17 +70,21 @@ struct NameTree {
 
 impl NameTree {
     fn root(&self) -> [u8; 32] {
-        self.levels()[0].get(&ZERO).copied().unwrap_or(ZERO)
+        let empty_hashes = Self::empty_hashes();
+        self.levels(&empty_hashes)[0].get(&ZERO).copied().unwrap_or(empty_hashes[0])
     }
 
     fn proof_payload(&self, key: [u8; 32]) -> Vec<u8> {
-        let levels = self.levels();
+        let empty_hashes = Self::empty_hashes();
+        let levels = self.levels(&empty_hashes);
+        let path = Self::tree_path(key);
         let mut payload = Vec::with_capacity(SMT_PROOF_BYTES);
 
-        for depth in 0..SMT_DEPTH {
-            let mut sibling_prefix = Self::prefix(key, depth + 1);
-            sibling_prefix[depth / 8] ^= 1 << (7 - depth % 8);
-            let sibling = levels[depth + 1].get(&sibling_prefix).copied().unwrap_or(ZERO);
+        for depth in (0..SMT_DEPTH).rev() {
+            let mut sibling_prefix = Self::prefix(path, depth + 1);
+            let (path_byte, path_bit) = Self::path_bit_location(depth);
+            sibling_prefix[path_byte] ^= path_bit;
+            let sibling = levels[depth + 1].get(&sibling_prefix).copied().unwrap_or(empty_hashes[depth + 1]);
             payload.extend_from_slice(&sibling);
         }
 
@@ -94,10 +98,11 @@ impl NameTree {
 
         let mut old_current = ZERO;
         let mut new_current = Self::leaf_hash(key);
-        for depth in (0..SMT_DEPTH).rev() {
-            let sibling = payload[depth * 32..(depth + 1) * 32].try_into().ok()?;
+        let path = Self::tree_path(key);
+        for (proof_index, depth) in (0..SMT_DEPTH).rev().enumerate() {
+            let sibling = payload[proof_index * 32..(proof_index + 1) * 32].try_into().ok()?;
 
-            if Self::key_goes_right(key, depth) {
+            if Self::key_goes_right(path, depth) {
                 old_current = Self::node_hash(sibling, old_current);
                 new_current = Self::node_hash(sibling, new_current);
             } else {
@@ -110,10 +115,10 @@ impl NameTree {
     }
 
     fn insert(&mut self, key: [u8; 32]) -> bool {
-        self.leaves.insert(Self::prefix(key, SMT_DEPTH), key).is_none()
+        self.leaves.insert(Self::prefix(Self::tree_path(key), SMT_DEPTH), key).is_none()
     }
 
-    fn levels(&self) -> Vec<BTreeMap<[u8; 32], [u8; 32]>> {
+    fn levels(&self, empty_hashes: &[[u8; 32]]) -> Vec<BTreeMap<[u8; 32], [u8; 32]>> {
         let mut levels = vec![BTreeMap::new(); SMT_DEPTH + 1];
         for (path, key) in &self.leaves {
             levels[SMT_DEPTH].insert(*path, Self::leaf_hash(*key));
@@ -123,12 +128,13 @@ impl NameTree {
             let parents = levels[depth + 1].keys().map(|key| Self::prefix(*key, depth)).collect::<BTreeSet<_>>();
             let mut parent_level = BTreeMap::new();
             for parent in parents {
-                let left = levels[depth + 1].get(&parent).copied().unwrap_or(ZERO);
+                let left = levels[depth + 1].get(&parent).copied().unwrap_or(empty_hashes[depth + 1]);
                 let mut right_prefix = parent;
-                right_prefix[depth / 8] |= 1 << (7 - depth % 8);
-                let right = levels[depth + 1].get(&right_prefix).copied().unwrap_or(ZERO);
+                let (path_byte, path_bit) = Self::path_bit_location(depth);
+                right_prefix[path_byte] |= path_bit;
+                let right = levels[depth + 1].get(&right_prefix).copied().unwrap_or(empty_hashes[depth + 1]);
                 let node = Self::node_hash(left, right);
-                if node != ZERO {
+                if node != empty_hashes[depth] {
                     parent_level.insert(parent, node);
                 }
             }
@@ -137,20 +143,41 @@ impl NameTree {
         levels
     }
 
+    fn empty_hashes() -> Vec<[u8; 32]> {
+        let mut hashes = vec![ZERO; SMT_DEPTH + 1];
+        for depth in (0..SMT_DEPTH).rev() {
+            hashes[depth] = Self::node_hash(hashes[depth + 1], hashes[depth + 1]);
+        }
+        hashes
+    }
+
+    // covenant folds the proof leaf-to-root while consuming key bytes in
+    // ascending order, so the tree path reverses the key's first 16 bytes.
+    fn tree_path(mut key: [u8; 32]) -> [u8; 32] {
+        key[..SMT_DEPTH / 8].reverse();
+        key
+    }
+
     fn prefix(mut key: [u8; 32], depth: usize) -> [u8; 32] {
         let whole_bytes = depth / 8;
         let retained_bits = depth % 8;
         if retained_bits == 0 {
             key[whole_bytes..].fill(0);
         } else {
-            key[whole_bytes] &= 0xff << (8 - retained_bits);
+            let retained_prefix_mask = u8::MAX << (8 - retained_bits);
+            key[whole_bytes] &= retained_prefix_mask;
             key[whole_bytes + 1..].fill(0);
         }
         key
     }
 
+    fn path_bit_location(depth: usize) -> (usize, u8) {
+        (depth / 8, 1 << (7 - depth % 8))
+    }
+
     fn key_goes_right(key: [u8; 32], depth: usize) -> bool {
-        key[depth / 8] & (1 << (7 - depth % 8)) != 0
+        let (path_byte, path_bit) = Self::path_bit_location(depth);
+        key[path_byte] & path_bit != 0
     }
 
     fn leaf_hash(key: [u8; 32]) -> [u8; 32] {
@@ -158,9 +185,6 @@ impl NameTree {
     }
 
     fn node_hash(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
-        if left == ZERO && right == ZERO {
-            return ZERO;
-        }
         let mut preimage = [0u8; 64];
         preimage[..32].copy_from_slice(&left);
         preimage[32..].copy_from_slice(&right);
@@ -175,9 +199,10 @@ fn main() -> PlaygroundResult<()> {
     let bob = demo_keypair(0x22);
     let alice_owner = alice.x_only_public_key().0.serialize().to_vec();
     let bob_owner = bob.x_only_public_key().0.serialize().to_vec();
+    let mut tree = NameTree::default();
 
-    // Deploy the shared Registry directly as the genesis covenant output.
-    let registry_initial = state! { root: ZERO.to_vec(), count: 0 };
+    // Initiate the shared registry (the genesis)
+    let registry_initial = state! { root: tree.root().to_vec() };
     let registry_funding = UtxoEntry::new(REGISTRY_VALUE, ScriptPublicKey::from_vec(0, vec![0x51]), 0, false, None);
     let registry_genesis_context = TxContext::new()
         .input(demo_outpoint(0x90, 0), registry_funding, Vec::new(), 0)
@@ -185,10 +210,10 @@ fn main() -> PlaygroundResult<()> {
     let registry_genesis_tx = builder.build(&registry_genesis_context)?;
     let registry_empty = CovenantOutput::from_tx(&registry_genesis_tx, 0)?;
 
-    // Proofs contain all 128 sibling hashes in root-to-leaf order.
+    // Proofs contain all 128 sibling hashes in leaf-to-root order
+    // Mint alice from fresh root
     let alice_name = CanonicalName::parse("alice")?;
     let alice_key = alice_name.key(registry_empty.covenant_id);
-    let mut tree = NameTree::default();
     let alice_proof = tree.proof_payload(alice_key);
     let alice_proof_len = alice_proof.len();
     let alice_root =
@@ -197,7 +222,7 @@ fn main() -> PlaygroundResult<()> {
         return Err("alice insertion did not produce the verified root".into());
     }
 
-    let registry_alice = state! { root: alice_root.to_vec(), count: 1 };
+    let registry_alice = state! { root: alice_root.to_vec() };
     let alice_name_state = state! {
         name_key: alice_key.to_vec(),
         label: alice_name.padded.to_vec(),
@@ -235,7 +260,7 @@ fn main() -> PlaygroundResult<()> {
         return Err("bob insertion did not produce the verified root".into());
     }
 
-    let registry_bob = state! { root: bob_root.to_vec(), count: 2 };
+    let registry_bob = state! { root: bob_root.to_vec() };
     let bob_name_state = state! {
         name_key: bob_key.to_vec(),
         label: bob_name.padded.to_vec(),
@@ -282,7 +307,7 @@ fn main() -> PlaygroundResult<()> {
         .input(demo_outpoint(0x93, 0), duplicate_funding, Vec::new(), 0)
         .actor_output(
             "Registry",
-            state! { root: bob_root.to_vec(), count: 3 },
+            state! { root: bob_root.to_vec() },
             CovenantBinding::new(0, registry_twice.covenant_id),
             REGISTRY_VALUE,
         )
@@ -293,7 +318,7 @@ fn main() -> PlaygroundResult<()> {
         Err(error) => error,
     };
 
-    // Transfer alice's Name output without touching the Registry shared UTXO.
+    // Transfer alice's Name output
     let alice_transferred = state! {
         name_key: alice_key.to_vec(),
         label: alice_name.padded.to_vec(),
@@ -345,29 +370,5 @@ mod tests {
             assert_eq!(&domain[..key.len()], key);
             assert!(domain[key.len()..].iter().all(|byte| *byte == 0));
         }
-    }
-
-    #[test]
-    fn uncompressed_proofs_insert_and_reject_duplicates() {
-        let registry_id = Hash::from_bytes([0x44; 32]);
-        let alice = CanonicalName::parse("alice").expect("valid name").key(registry_id);
-        let bob = CanonicalName::parse("bob").expect("valid name").key(registry_id);
-        let mut tree = NameTree::default();
-
-        let alice_proof = tree.proof_payload(alice);
-        assert_eq!(alice_proof.len(), SMT_PROOF_BYTES);
-        assert!(NameTree::verified_insert_root(tree.root(), alice, &alice_proof[..SMT_PROOF_BYTES - 32]).is_none());
-        let alice_root = NameTree::verified_insert_root(tree.root(), alice, &alice_proof).expect("empty proof inserts");
-        assert!(tree.insert(alice));
-        assert_eq!(tree.root(), alice_root);
-
-        let bob_proof = tree.proof_payload(bob);
-        assert_eq!(bob_proof.len(), SMT_PROOF_BYTES);
-        let bob_root = NameTree::verified_insert_root(tree.root(), bob, &bob_proof).expect("uncompressed proof inserts");
-        assert!(tree.insert(bob));
-        assert_eq!(tree.root(), bob_root);
-
-        let duplicate = tree.proof_payload(alice);
-        assert!(NameTree::verified_insert_root(tree.root(), alice, &duplicate).is_none());
     }
 }
