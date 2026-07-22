@@ -2,14 +2,15 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
+use argent_runtime::{args, state, Artifact, ArtifactValue, EntryCall, TxBuilder, TxContext};
 use blake2b_simd::Params as Blake2bParams;
 use kaspa_consensus_core::hashing::sighash::calc_schnorr_signature_hash;
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 use kaspa_consensus_core::hashing::sighash_type::SIG_HASH_ALL;
 use kaspa_consensus_core::mass::units::SigopCount;
 use kaspa_consensus_core::tx::{
-    CovenantBinding, PopulatedTransaction, Transaction, TransactionId, TransactionInput, TransactionOutpoint, TransactionOutput,
-    UtxoEntry, VerifiableTransaction,
+    CovenantBinding, MutableTransaction, PopulatedTransaction, ScriptPublicKey, Transaction, TransactionId, TransactionInput,
+    TransactionOutpoint, TransactionOutput, UtxoEntry, VerifiableTransaction,
 };
 use kaspa_consensus_core::Hash;
 use kaspa_txscript::caches::Cache;
@@ -393,6 +394,30 @@ struct PlayerStateArgs<'a> {
     losses: i64,
 }
 
+fn league_source_state(base_rating: i64, admin: Hash) -> BTreeMap<String, ArtifactValue> {
+    state! {
+        base_rating: base_rating,
+        admin: admin,
+    }
+}
+
+fn player_source_state(state: &PlayerStateData) -> BTreeMap<String, ArtifactValue> {
+    state! {
+        owner: state.owner_hash,
+        player_id: state.player_id,
+        open_games: state.open_games,
+        rating: state.rating,
+        games: state.games,
+        wins: state.wins,
+        draws: state.draws,
+        losses: state.losses,
+    }
+}
+
+fn orchestrator_builder_error(context: &'static str) -> impl FnOnce(argent_runtime::BuilderError) -> OrchestratorError {
+    move |err| OrchestratorError(format!("{context}: {err}"))
+}
+
 #[derive(Clone)]
 struct GameStateData {
     white_player: Hash,
@@ -427,6 +452,9 @@ struct ActiveSettleState {
 }
 
 pub struct TxArena {
+    artifact: Artifact,
+    league_state: BTreeMap<String, ArtifactValue>,
+    league_outpoint: TransactionOutpoint,
     fix: ExecutionFixture,
     league_template: Hash,
     base_rating: i64,
@@ -435,7 +463,6 @@ pub struct TxArena {
     player_suffix: Vec<u8>,
     player_prefix_len: i64,
     player_suffix_len: i64,
-    league: CompiledContract<'static>,
     covenant_id: Hash,
     players: BTreeMap<String, PlayerStateData>,
     game: Option<GameStateData>,
@@ -445,7 +472,6 @@ pub struct TxArena {
     messages: BTreeMap<String, Vec<OffchainMessage>>,
     history: Vec<SubmittedTx>,
     transactions: Vec<Transaction>,
-    next_registration_index: u32,
 }
 
 #[derive(Clone)]
@@ -998,6 +1024,8 @@ impl TxOrchestrator {
 
 impl TxArena {
     pub fn new() -> Result<Self, OrchestratorError> {
+        let artifact: Artifact = serde_json::from_str(include_str!("../../build/argent/artifact.json"))
+            .map_err(|err| OrchestratorError(format!("failed to load pinned Argent artifact: {err}")))?;
         let fix = build_execution_fixture();
         let league_template = repeated_hash(0x11);
         let admin = repeated_hash(0x33);
@@ -1024,18 +1052,26 @@ impl TxArena {
         let player_prefix = player_contract.script[..layout.start].to_vec();
         let player_suffix = player_contract.script[layout.start + layout.len..].to_vec();
         let player_template = Hash::from_bytes(player_contract.template_hash());
-        let league = compile_league_state(
-            league_static_source(),
-            &league_template,
-            &player_template,
-            &fix.mux.hash,
-            &routes_commitment,
-            base_rating,
-            &admin,
-        );
-        let covenant_id = populate_single_output_genesis_covenant(&league);
+        let league_state = league_source_state(base_rating, admin);
+        let league_output = {
+            let builder = TxBuilder::new(&artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+            let funding_outpoint = TransactionOutpoint::new(TransactionId::from_bytes([0x77; 32]), 0);
+            let funding_utxo = UtxoEntry::new(1_000, ScriptPublicKey::from_vec(0, vec![0x51]), 0, false, None);
+            let context = TxContext::new().input(funding_outpoint, funding_utxo, Vec::new(), 0).actor_genesis_output(
+                0,
+                "launch::league",
+                "League",
+                league_state.clone(),
+                1_000,
+            );
+            let tx = builder.build(&context).map_err(orchestrator_builder_error("launch League"))?;
+            argent_runtime::CovenantOutput::from_tx(&tx, 0).map_err(orchestrator_builder_error("read League genesis output"))?
+        };
 
         Ok(Self {
+            artifact,
+            league_state,
+            league_outpoint: league_output.outpoint,
             fix,
             league_template,
             base_rating,
@@ -1044,8 +1080,7 @@ impl TxArena {
             player_suffix,
             player_prefix_len: layout.start as i64,
             player_suffix_len: (player_contract.script.len() - (layout.start + layout.len)) as i64,
-            league,
-            covenant_id,
+            covenant_id: league_output.covenant_id,
             players: BTreeMap::new(),
             game: None,
             game_outpoint: None,
@@ -1054,7 +1089,6 @@ impl TxArena {
             messages: BTreeMap::new(),
             history: Vec::new(),
             transactions: Vec::new(),
-            next_registration_index: 7,
         })
     }
 
@@ -1116,83 +1150,56 @@ impl TxArena {
     }
 
     pub fn register_player(&mut self, player: &mut SigningPlayer) -> Result<(), OrchestratorError> {
-        let index = self.next_registration_index;
-        self.next_registration_index += 1;
-        let txid = [0xabu8; 32];
-        let player_id = blake2b([b"LeaguePlayerId".as_slice(), &txid, &index.to_le_bytes()].concat().as_slice());
+        let player_id = blake2b(
+            &[
+                b"LeaguePlayerId".as_slice(),
+                self.league_outpoint.transaction_id.as_bytes().as_slice(),
+                &self.league_outpoint.index.to_le_bytes(),
+            ]
+            .concat(),
+        );
         let player_ref = player_ref_hash(player.owner_hash, player_id);
-
-        let registered = compile_player_state(
-            player_static_source(),
-            PlayerStateArgs {
-                league_template: &self.league_template,
-                player_template: &self.player_template,
-                mux_template: &self.fix.mux.hash,
-                routes_commitment: &routes_commitment(&packed_execution_route_templates(&self.fix)),
-                owner_hash: &player.owner_hash,
-                player_id: &player_id,
-                open_games: 0,
-                rating: self.base_rating,
-                games: 0,
-                wins: 0,
-                draws: 0,
-                losses: 0,
-            },
-        );
-
-        let league_input = TransactionInput {
-            previous_outpoint: TransactionOutpoint { transaction_id: TransactionId::from_bytes(txid), index },
-            signature_script: vec![],
-            sequence: 0,
-            compute_commit: SigopCount(1).into(),
+        let registered = PlayerStateData {
+            owner_hash: player.owner_hash,
+            player_id,
+            outpoint: self.league_outpoint,
+            value: 1_000,
+            open_games: 0,
+            rating: self.base_rating,
+            games: 0,
+            wins: 0,
+            draws: 0,
+            losses: 0,
         };
-        let placeholder = entry_sigscript(
-            &self.league,
-            "register_player",
-            vec![
-                Expr::bytes(vec![0u8; 65]),
-                Expr::bytes(player.pubkey_bytes.clone()),
-                Expr::bytes(self.player_prefix.clone()),
-                Expr::bytes(self.player_suffix.clone()),
-            ],
-        );
-        let outputs = vec![covenant_output(&self.league, 0, self.covenant_id), covenant_output(&registered, 0, self.covenant_id)];
-        let entries = vec![covenant_utxo(&self.league, self.covenant_id)];
-        let mut tx = Transaction::new(1, vec![league_input], outputs, 0, Default::default(), 0, vec![]);
-        tx.inputs[0].signature_script = placeholder;
-        let sig = sign_tx_input_schnorr(&tx, &entries, 0, player);
-        tx.inputs[0].signature_script = entry_sigscript(
-            &self.league,
-            "register_player",
-            vec![
-                Expr::bytes(sig),
-                Expr::bytes(player.pubkey_bytes.clone()),
-                Expr::bytes(self.player_prefix.clone()),
-                Expr::bytes(self.player_suffix.clone()),
-            ],
-        );
-        let executed_tx = tx.clone();
+        let executed_tx = {
+            let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+            let league_utxo = builder
+                .covenant_utxo("League", self.league_state.clone(), 1_000, 0, false, Some(self.covenant_id))
+                .map_err(orchestrator_builder_error("build League UTXO"))?;
+            let keypair = player.keypair;
+            let public_key = player.pubkey_bytes.clone();
+            let context = TxContext::new()
+                .actor_input(
+                    "League",
+                    self.league_state.clone(),
+                    EntryCall::new("register_player")
+                        .args_with(move |tx, input_index| args![sign_builder_input(tx, input_index, &keypair), public_key.clone()]),
+                    self.league_outpoint,
+                    league_utxo,
+                    0,
+                )
+                .actor_output("League", self.league_state.clone(), CovenantBinding::new(0, self.covenant_id), 1_000)
+                .actor_output("Player", player_source_state(&registered), CovenantBinding::new(0, self.covenant_id), registered.value);
+            builder.build(&context).map_err(orchestrator_builder_error("register player"))?
+        };
         let executed_txid = executed_tx.id();
-        execute_input_with_covenants(tx, entries, 0).map_err(|err| OrchestratorError(format!("register failed: {err}")))?;
+        self.league_outpoint = TransactionOutpoint::new(executed_txid, 0);
         self.transactions.push(executed_tx);
 
         player.player_id = Some(player_id);
         player.player_ref = Some(player_ref);
-        self.players.insert(
-            player.name.clone(),
-            PlayerStateData {
-                owner_hash: player.owner_hash,
-                player_id,
-                outpoint: TransactionOutpoint { transaction_id: executed_txid, index: 1 },
-                value: 1_000,
-                open_games: 0,
-                rating: self.base_rating,
-                games: 0,
-                wins: 0,
-                draws: 0,
-                losses: 0,
-            },
-        );
+        self.players
+            .insert(player.name.clone(), PlayerStateData { outpoint: TransactionOutpoint::new(executed_txid, 1), ..registered });
         self.history.push(SubmittedTx {
             recipe_name: "register_player",
             consumed: vec![],
@@ -2205,10 +2212,6 @@ fn load_static_contract_source(path: &'static str) -> &'static str {
     Box::leak(load_contract_source(path).into_boxed_str())
 }
 
-fn league_static_source() -> &'static str {
-    load_static_contract_source(league_contract_path())
-}
-
 fn player_static_source() -> &'static str {
     load_static_contract_source(player_contract_path())
 }
@@ -2537,26 +2540,6 @@ fn compile_player_state(source: &'static str, args: PlayerStateArgs<'_>) -> Comp
     compile_contract(source, &ctor, CompileOptions::default()).expect("compile player state")
 }
 
-fn compile_league_state(
-    source: &'static str,
-    league_template: &Hash,
-    player_template: &Hash,
-    mux_template: &Hash,
-    routes_commitment: &Hash,
-    base_rating: i64,
-    admin: &Hash,
-) -> CompiledContract<'static> {
-    let ctor = vec![
-        hash_expr(*league_template),
-        hash_expr(*player_template),
-        hash_expr(*mux_template),
-        hash_expr(*routes_commitment),
-        Expr::int(base_rating),
-        hash_expr(*admin),
-    ];
-    compile_contract(source, &ctor, CompileOptions::default()).expect("compile league state")
-}
-
 fn compile_settle_state(
     source: &'static str,
     player_template: &Hash,
@@ -2607,31 +2590,6 @@ fn covenant_utxo(compiled: &CompiledContract<'_>, covenant_id: Hash) -> UtxoEntr
     covenant_utxo_with_value(compiled, covenant_id, 1_000)
 }
 
-fn populate_single_output_genesis_covenant(compiled: &CompiledContract<'_>) -> Hash {
-    let input = TransactionInput {
-        previous_outpoint: TransactionOutpoint { transaction_id: TransactionId::from_bytes([0x77u8; 32]), index: 0 },
-        signature_script: vec![],
-        sequence: 0,
-        compute_commit: SigopCount(0).into(),
-    };
-    let covenant_id = kaspa_consensus_core::hashing::covenant_id::covenant_id(
-        input.previous_outpoint,
-        std::iter::once((
-            0u32,
-            &TransactionOutput { value: 1_000, script_public_key: pay_to_script_hash_script(&compiled.script), covenant: None },
-        )),
-    );
-    let output = TransactionOutput {
-        value: 1_000,
-        script_public_key: pay_to_script_hash_script(&compiled.script),
-        covenant: Some(CovenantBinding { authorizing_input: 0, covenant_id }),
-    };
-    let tx = Transaction::new(1, vec![input], vec![output], 0, Default::default(), 0, vec![]);
-    let populated = PopulatedTransaction::new(&tx, vec![UtxoEntry::new(1_000, Default::default(), 0, false, None)]);
-    CovenantsContext::from_tx(&populated).expect("validate genesis covenant bindings");
-    covenant_id
-}
-
 fn execute_input_with_covenants(tx: Transaction, entries: Vec<UtxoEntry>, input_idx: usize) -> Result<(), TxScriptError> {
     let reused_values = SigHashReusedValuesUnsync::new();
     let sig_cache = Cache::new(10_000);
@@ -2660,6 +2618,15 @@ fn sign_tx_input_schnorr(tx: &Transaction, entries: &[UtxoEntry], input_idx: usi
     signature.extend_from_slice(sig.as_ref());
     signature.push(SIG_HASH_ALL.to_u8());
     signature
+}
+
+fn sign_builder_input<T: AsRef<Transaction>>(tx: &MutableTransaction<T>, input_index: usize, keypair: &Keypair) -> Vec<u8> {
+    let reused_values = SigHashReusedValuesUnsync::new();
+    let sighash = calc_schnorr_signature_hash(&tx.as_verifiable(), input_index, SIG_HASH_ALL, &reused_values);
+    let signature = keypair.sign_schnorr(Message::from_digest(sighash.as_bytes()));
+    let mut encoded = signature.as_ref().to_vec();
+    encoded.push(SIG_HASH_ALL.to_u8());
+    encoded
 }
 
 fn load_template_family() -> Result<ChessTemplateFamily, OrchestratorError> {
