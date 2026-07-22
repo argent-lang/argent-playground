@@ -14,9 +14,18 @@ use secp256k1::{Keypair, Message, Secp256k1, SecretKey};
 
 const LIVE: i64 = 0;
 const BWIN: i64 = 2;
+const DRAW: i64 = 3;
 const WHITE: i64 = 0;
 const BLACK: i64 = 1;
+const CLEAR: i64 = 0;
+const OFFER: i64 = 1;
+const CLAIM: i64 = 2;
+const SURRENDER: i64 = 3;
+const ACCEPT: i64 = 4;
+const CLAIMED: i64 = 1;
 const NORMAL: i64 = 3;
+const WOFFER: i64 = 4;
+const BOFFER: i64 = 5;
 const MOVE_TIMEOUT: i64 = 600;
 const GAME_VALUE: u64 = 1_000;
 
@@ -63,8 +72,21 @@ impl GameStateData {
         }
     }
 
-    fn committed_move(&self, mv: MoveSpec) -> Self {
-        Self { pending_src_idx: mv.source_idx(), pending_dst_idx: mv.destination_idx(), pending_promo: mv.promo_piece, ..self.clone() }
+    fn committed_route(&self, target: &str, mv: MoveSpec, termination_action: i64) -> Self {
+        let mut next = self.clone();
+        next.pending_src_idx = mv.source_idx();
+        next.pending_dst_idx = mv.destination_idx();
+        next.pending_promo = mv.promo_piece;
+        if next.draw_state > NORMAL {
+            next.draw_state = NORMAL;
+        }
+        if termination_action == OFFER {
+            next.draw_state = WOFFER + self.turn;
+        }
+        if target != "ChessCastleChallengePrep" {
+            next.recent_castle = CLEAR;
+        }
+        next
     }
 
     fn completed_move(&self, mv: MoveSpec) -> Self {
@@ -187,9 +209,21 @@ fn route_to_worker(
     mv: MoveSpec,
     fixture_tag: u8,
 ) -> (GameStateData, CovenantOutput) {
+    route_to_worker_with_action(builder, player, worker, initial, mv, CLEAR, fixture_tag)
+}
+
+fn route_to_worker_with_action(
+    builder: &TxBuilder<'_>,
+    player: &TestPlayer,
+    worker: &str,
+    initial: &GameStateData,
+    mv: MoveSpec,
+    termination_action: i64,
+    fixture_tag: u8,
+) -> (GameStateData, CovenantOutput) {
     let covenant_id = Hash::from_bytes([fixture_tag; 32]);
     let mux_state = initial.source_state();
-    let worker_state = initial.committed_move(mv);
+    let worker_state = initial.committed_route(worker, mv, termination_action);
     let mux_outpoint = TransactionOutpoint::new(TransactionId::from_bytes([fixture_tag.wrapping_add(1); 32]), 0);
     let mux_utxo = builder
         .covenant_utxo("ChessMux", mux_state.clone(), GAME_VALUE, 0, false, Some(covenant_id))
@@ -211,7 +245,7 @@ fn route_to_worker(
                     mv.to_x,
                     mv.to_y,
                     mv.promo_piece,
-                    0,
+                    termination_action,
                     sign_input(tx, input_index, &keypair),
                     public_key.clone(),
                     player_id,
@@ -241,6 +275,38 @@ fn execute_actor_transition<'a>(
         .actor_output(target_actor, target_state.source_state(), CovenantBinding::new(0, source_output.covenant_id), GAME_VALUE);
     let tx = builder.build(&context).unwrap_or_else(|err| panic!("{source_actor} must transition to {target_actor}: {err}"));
     CovenantOutput::from_tx(&tx, 0).expect("actor transition output is a covenant UTXO")
+}
+
+fn execute_mux_terminate(
+    builder: &TxBuilder<'_>,
+    player: &TestPlayer,
+    initial: &GameStateData,
+    termination_action: i64,
+    expected: &GameStateData,
+    fixture_tag: u8,
+) {
+    let covenant_id = Hash::from_bytes([fixture_tag; 32]);
+    let mux_state = initial.source_state();
+    let outpoint = TransactionOutpoint::new(TransactionId::from_bytes([fixture_tag.wrapping_add(1); 32]), 0);
+    let utxo = builder
+        .covenant_utxo("ChessMux", mux_state.clone(), GAME_VALUE, 0, false, Some(covenant_id))
+        .expect("mux UTXO builds from source state");
+    let keypair = player.keypair;
+    let public_key = player.public_key.clone();
+    let player_id = player.player_id;
+    let context = TxContext::new()
+        .actor_input(
+            "ChessMux",
+            mux_state,
+            EntryCall::new("terminate").args_with(move |tx, input_index| {
+                args![termination_action, sign_input(tx, input_index, &keypair), public_key.clone(), player_id]
+            }),
+            outpoint,
+            utxo,
+            0,
+        )
+        .actor_output("ChessMux", expected.source_state(), CovenantBinding::new(0, covenant_id), GAME_VALUE);
+    builder.build(&context).unwrap_or_else(|err| panic!("mux terminate action {termination_action} must execute: {err}"));
 }
 
 #[test]
@@ -425,4 +491,44 @@ fn argent_castle_challenge_routes_through_prep_and_piece_worker() {
     let mut expected = pawn_state.completed_move(challenge_move);
     expected.status = BWIN;
     execute_actor_transition(&builder, "ChessPawn", &pawn_state, "apply", pawn_output, "ChessMux", &expected);
+}
+
+#[test]
+fn argent_draw_offer_survives_an_ordinary_worker_round_trip() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x51);
+    let move_spec = MoveSpec::new(4, 1, 4, 3);
+    let initial = GameStateData::live(white.player_ref, [0x52; 32], opening_board());
+    let (pawn_state, pawn_output) = route_to_worker_with_action(&builder, &white, "ChessPawn", &initial, move_spec, OFFER, 0x81);
+    assert_eq!(pawn_state.draw_state, WOFFER);
+
+    let mut expected = initial.completed_move(move_spec);
+    expected.en_passant_idx = 20;
+    expected.draw_state = WOFFER;
+    execute_actor_transition(&builder, "ChessPawn", &pawn_state, "apply", pawn_output, "ChessMux", &expected);
+}
+
+#[test]
+fn argent_mux_executes_claim_surrender_and_draw_acceptance() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x53);
+    let initial = GameStateData::live(white.player_ref, [0x54; 32], opening_board());
+
+    let mut claimed = initial.clone();
+    claimed.turn = BLACK;
+    claimed.draw_state = CLAIMED;
+    execute_mux_terminate(&builder, &white, &initial, CLAIM, &claimed, 0x83);
+
+    let mut surrendered = initial.clone();
+    surrendered.status = BWIN;
+    execute_mux_terminate(&builder, &white, &initial, SURRENDER, &surrendered, 0x85);
+
+    let mut offered = initial.clone();
+    offered.draw_state = BOFFER;
+    let mut accepted = offered.clone();
+    accepted.status = DRAW;
+    accepted.draw_state = NORMAL;
+    execute_mux_terminate(&builder, &white, &offered, ACCEPT, &accepted, 0x87);
 }
