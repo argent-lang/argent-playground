@@ -432,6 +432,14 @@ fn game_source_state(state: &GameStateData) -> BTreeMap<String, ArtifactValue> {
     }
 }
 
+fn settle_source_state(white_player: Hash, black_player: Hash, status: i64) -> BTreeMap<String, ArtifactValue> {
+    state! {
+        white_player: white_player,
+        black_player: black_player,
+        status: status,
+    }
+}
+
 fn orchestrator_builder_error(context: &'static str) -> impl FnOnce(argent_runtime::BuilderError) -> OrchestratorError {
     move |err| OrchestratorError(format!("{context}: {err}"))
 }
@@ -1530,41 +1538,33 @@ impl TxArena {
             return Err(OrchestratorError(format!("{} is not entitled to claim this timeout", claimer.name)));
         }
 
-        let worker_fixture = self.worker_fixture(active_worker.kind);
-        let worker_contract = self.compile_worker(worker_fixture.source, &active_worker.state);
-        let routed_settle = compile_settle_state(
-            self.fix.settle.source,
-            &self.player_template,
-            &active_worker.state.white_player,
-            &active_worker.state.black_player,
-            status,
-        );
-        let timeout_sigscript = entry_sigscript(
-            &worker_contract,
-            "timeout",
-            vec![
-                hash_expr(self.player_template),
-                Expr::bytes(self.fix.settle.prefix.clone()),
-                Expr::bytes(self.fix.settle.suffix.clone()),
-            ],
-        );
-        let tx = Transaction::new(
-            1,
-            vec![TransactionInput {
-                previous_outpoint: active_worker.outpoint,
-                signature_script: timeout_sigscript,
-                sequence: DEFAULT_MOVE_TIMEOUT as u64,
-                compute_commit: SigopCount(0).into(),
-            }],
-            vec![covenant_output(&routed_settle, 0, self.covenant_id)],
-            0,
-            Default::default(),
-            0,
-            vec![],
-        );
-        let executed_tx = tx.clone();
-        execute_input_with_covenants(tx, vec![covenant_utxo(&worker_contract, self.covenant_id)], 0)
-            .map_err(|err| OrchestratorError(format!("worker timeout failed: {err}")))?;
+        let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+        let worker_utxo = builder
+            .covenant_utxo(
+                worker_actor(active_worker.kind),
+                game_source_state(&active_worker.state),
+                1_000,
+                0,
+                false,
+                Some(self.covenant_id),
+            )
+            .map_err(orchestrator_builder_error("build timed-out worker UTXO"))?;
+        let context = TxContext::new()
+            .actor_input(
+                worker_actor(active_worker.kind),
+                game_source_state(&active_worker.state),
+                "timeout",
+                active_worker.outpoint,
+                worker_utxo,
+                DEFAULT_MOVE_TIMEOUT as u64,
+            )
+            .actor_output(
+                "ChessSettle",
+                settle_source_state(active_worker.state.white_player, active_worker.state.black_player, status),
+                CovenantBinding::new(0, self.covenant_id),
+                1_000,
+            );
+        let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("claim worker timeout"))?;
         self.transactions.push(executed_tx.clone());
         self.active_worker = None;
         self.active_settle = Some(ActiveSettleState {
@@ -2082,23 +2082,6 @@ impl TxArena {
 
     fn compile_mux(&self, state: &GameStateData) -> CompiledContract<'static> {
         compile_game_state(self.fix.mux.source, &self.fix, state)
-    }
-
-    fn compile_worker(&self, source: &'static str, state: &GameStateData) -> CompiledContract<'static> {
-        compile_game_state(source, &self.fix, state)
-    }
-
-    fn worker_fixture(&self, worker: WorkerKind) -> &TemplateFixture {
-        match worker {
-            WorkerKind::Pawn => &self.fix.pawn,
-            WorkerKind::Knight => &self.fix.knight,
-            WorkerKind::Vert => &self.fix.vert,
-            WorkerKind::Horiz => &self.fix.horiz,
-            WorkerKind::Diag => &self.fix.diag,
-            WorkerKind::King => &self.fix.king,
-            WorkerKind::Castle => &self.fix.castle,
-            WorkerKind::CastleChallenge => &self.fix.castle_challenge,
-        }
     }
 }
 
