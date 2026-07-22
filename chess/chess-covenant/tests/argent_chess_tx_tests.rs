@@ -508,6 +508,47 @@ fn execute_signed_rebalance(
     CovenantOutput::from_tx(&tx, 0).expect("rebalance output is a covenant UTXO")
 }
 
+fn fork_league(
+    builder: &TxBuilder<'_>,
+    league_state: BTreeMap<String, ArtifactValue>,
+    league: CovenantOutput,
+    admin: &TestPlayer,
+) -> (CovenantOutput, CovenantOutput) {
+    let value = league.utxo.amount;
+    let covenant_id = league.covenant_id;
+    let keypair = admin.keypair;
+    let public_key = admin.public_key.clone();
+    let context = TxContext::new()
+        .actor_input(
+            "League",
+            league_state.clone(),
+            EntryCall::new("fork").args_with(move |tx, input_index| args![sign_input(tx, input_index, &keypair), public_key.clone()]),
+            league.outpoint,
+            league.utxo,
+            0,
+        )
+        .actor_output("League", league_state.clone(), CovenantBinding::new(0, covenant_id), value)
+        .actor_output("League", league_state, CovenantBinding::new(0, covenant_id), value);
+    let tx = builder.build(&context).expect("league forks into two identical lanes");
+    let left = CovenantOutput::from_tx(&tx, 0).expect("left league lane is a covenant UTXO");
+    let right = CovenantOutput::from_tx(&tx, 1).expect("right league lane is a covenant UTXO");
+    (left, right)
+}
+
+fn retire_player(builder: &TxBuilder<'_>, player_state: &PlayerStateData, player_output: CovenantOutput, owner: &TestPlayer) {
+    let keypair = owner.keypair;
+    let public_key = owner.public_key.clone();
+    let context = TxContext::new().actor_input(
+        "Player",
+        player_state.source_state(),
+        EntryCall::new("retire").args_with(move |tx, input_index| args![sign_input(tx, input_index, &keypair), public_key.clone()]),
+        player_output.outpoint,
+        player_output.utxo,
+        0,
+    );
+    builder.build(&context).expect("idle player retires without a covenant output");
+}
+
 fn start_game(
     builder: &TxBuilder<'_>,
     leader: (&TestPlayer, &PlayerStateData, CovenantOutput),
@@ -904,6 +945,21 @@ fn argent_league_registers_a_spendable_player() {
 
     execute_signed_rebalance(&builder, "League", league_values, league, &admin);
     execute_signed_rebalance(&builder, "Player", player_state.source_state(), player_output, &owner);
+}
+
+#[test]
+fn argent_league_forks_and_idle_player_retires() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x79);
+    let league_values = league_state(admin.owner);
+    let league = launch_league(&builder, league_values.clone(), 5_000);
+    let (league, owner, player_state, player_output) = register_player(&builder, league_values.clone(), league, 0x7a, 2_000);
+
+    let (left, right) = fork_league(&builder, league_values.clone(), league, &admin);
+    execute_signed_rebalance(&builder, "League", league_values.clone(), left, &admin);
+    execute_signed_rebalance(&builder, "League", league_values, right, &admin);
+    retire_player(&builder, &player_state, player_output, &owner);
 }
 
 #[test]
