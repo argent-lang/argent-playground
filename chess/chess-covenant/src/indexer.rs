@@ -134,7 +134,7 @@ impl ChessIndexer {
                         };
                         players.remove(&player_ref(player));
                     }
-                    (ChessInputKind::Mux, "route") | (ChessInputKind::Worker(_), "apply") => {
+                    (ChessInputKind::Mux, "route" | "terminate") | (ChessInputKind::Worker(_), "apply") => {
                         let ChessState::Game(_) = &input.input_state else {
                             continue;
                         };

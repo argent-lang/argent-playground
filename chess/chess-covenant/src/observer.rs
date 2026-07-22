@@ -1445,7 +1445,7 @@ mod tests {
         }
 
         let surrender = emitter.observe_tx(&txs[5], covenant_id).expect("observe surrender");
-        assert_eq!(surrender.inputs[0].function, "route");
+        assert_eq!(surrender.inputs[0].function, "terminate");
         match &surrender.inputs[0].outputs[0].state {
             ChessState::Game(game) => assert_eq!(game.status, WWIN),
             other => panic!("expected terminal mux, got {other:?}"),

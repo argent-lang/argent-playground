@@ -147,6 +147,7 @@ const WWIN: i64 = 1;
 const BWIN: i64 = 2;
 const DRAW: i64 = 3;
 const CLEAR: i64 = 0;
+const SURRENDER: i64 = 3;
 const CLAIMED: i64 = 1;
 const DEFENSE: i64 = 2;
 
@@ -1613,7 +1614,6 @@ impl TxArena {
             return Err(OrchestratorError(format!("it is not {}'s turn", actor.name)));
         }
 
-        let active = self.compile_mux(&game);
         let next = GameStateData {
             white_player: game.white_player,
             black_player: game.black_player,
@@ -1630,63 +1630,33 @@ impl TxArena {
             draw_state: 3,
             move_log: game.move_log.clone(),
         };
-        let terminal = self.compile_mux(&next);
-        let placeholder = entry_sigscript(
-            &active,
-            "route",
-            vec![
-                Expr::int(8),
-                Expr::int(-1),
-                Expr::int(-1),
-                Expr::int(-1),
-                Expr::int(-1),
-                Expr::int(0),
-                Expr::int(3),
-                Expr::bytes(vec![0u8; 65]),
-                Expr::bytes(actor.pubkey_bytes.clone()),
-                hash_expr(actor.player_id.ok_or_else(|| OrchestratorError("missing player id".to_string()))?),
-                Expr::bytes(self.fix.mux.prefix.clone()),
-                Expr::bytes(self.fix.mux.suffix.clone()),
-            ],
-        );
-        let outputs = vec![covenant_output(&terminal, 0, self.covenant_id)];
-        let entries = vec![covenant_utxo(&active, self.covenant_id)];
-        let mut tx = Transaction::new(
-            1,
-            vec![tx_input(self.game_outpoint.ok_or_else(|| OrchestratorError("missing game outpoint".to_string()))?, placeholder, 1)],
-            outputs,
-            0,
-            Default::default(),
-            0,
-            vec![],
-        );
-        let sig = sign_tx_input_schnorr(&tx, &entries, 0, actor);
-        tx.inputs[0].signature_script = entry_sigscript(
-            &active,
-            "route",
-            vec![
-                Expr::int(8),
-                Expr::int(-1),
-                Expr::int(-1),
-                Expr::int(-1),
-                Expr::int(-1),
-                Expr::int(0),
-                Expr::int(3),
-                Expr::bytes(sig),
-                Expr::bytes(actor.pubkey_bytes.clone()),
-                hash_expr(actor.player_id.ok_or_else(|| OrchestratorError("missing player id".to_string()))?),
-                Expr::bytes(self.fix.mux.prefix.clone()),
-                Expr::bytes(self.fix.mux.suffix.clone()),
-            ],
-        );
-        let executed_tx = tx.clone();
-        execute_input_with_covenants(tx, entries, 0).map_err(|err| OrchestratorError(format!("surrender failed: {err}")))?;
+        let game_outpoint = self.game_outpoint.ok_or_else(|| OrchestratorError("missing game outpoint".to_string()))?;
+        let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+        let game_utxo = builder
+            .covenant_utxo("ChessMux", game_source_state(&game), 1_000, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build active ChessMux UTXO"))?;
+        let keypair = actor.keypair;
+        let public_key = actor.pubkey_bytes.clone();
+        let player_id = actor.player_id.ok_or_else(|| OrchestratorError("missing player id".to_string()))?;
+        let context = TxContext::new()
+            .actor_input(
+                "ChessMux",
+                game_source_state(&game),
+                EntryCall::new("terminate").args_with(move |tx, input_index| {
+                    args![SURRENDER, sign_builder_input(tx, input_index, &keypair), public_key.clone(), player_id]
+                }),
+                game_outpoint,
+                game_utxo,
+                0,
+            )
+            .actor_output("ChessMux", game_source_state(&next), CovenantBinding::new(0, self.covenant_id), 1_000);
+        let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("surrender game"))?;
         self.transactions.push(executed_tx);
         self.game = Some(next);
         self.game_outpoint =
             Some(TransactionOutpoint { transaction_id: self.transactions.last().expect("surrender tx exists").id(), index: 0 });
         self.history.push(SubmittedTx {
-            recipe_name: "route",
+            recipe_name: "terminate",
             consumed: vec![],
             produced: vec![],
             signer_names: vec![actor.name.clone()],
