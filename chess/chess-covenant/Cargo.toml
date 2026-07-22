@@ -5,6 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+argent-runtime.workspace = true
 blake2b_simd = "1.0.2"
 cozy-chess = "0.3.4"
 kaspa-consensus-core = { git = "https://github.com/kaspanet/rusty-kaspa", tag = "v2.0.1" }
