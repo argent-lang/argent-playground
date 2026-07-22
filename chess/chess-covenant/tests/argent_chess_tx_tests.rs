@@ -13,7 +13,9 @@ use kaspa_consensus_core::{
 use secp256k1::{Keypair, Message, Secp256k1, SecretKey};
 
 const LIVE: i64 = 0;
+const BWIN: i64 = 2;
 const WHITE: i64 = 0;
+const BLACK: i64 = 1;
 const NORMAL: i64 = 3;
 const MOVE_TIMEOUT: i64 = 600;
 const GAME_VALUE: u64 = 1_000;
@@ -173,9 +175,21 @@ fn execute_worker_round_trip(
     expected: &GameStateData,
     fixture_tag: u8,
 ) {
+    let (worker_state, worker_output) = route_to_worker(builder, player, worker, initial, mv, fixture_tag);
+    execute_actor_transition(builder, worker, &worker_state, "apply", worker_output, "ChessMux", expected);
+}
+
+fn route_to_worker(
+    builder: &TxBuilder<'_>,
+    player: &TestPlayer,
+    worker: &str,
+    initial: &GameStateData,
+    mv: MoveSpec,
+    fixture_tag: u8,
+) -> (GameStateData, CovenantOutput) {
     let covenant_id = Hash::from_bytes([fixture_tag; 32]);
     let mux_state = initial.source_state();
-    let worker_state = initial.committed_move(mv).source_state();
+    let worker_state = initial.committed_move(mv);
     let mux_outpoint = TransactionOutpoint::new(TransactionId::from_bytes([fixture_tag.wrapping_add(1); 32]), 0);
     let mux_utxo = builder
         .covenant_utxo("ChessMux", mux_state.clone(), GAME_VALUE, 0, false, Some(covenant_id))
@@ -207,14 +221,26 @@ fn execute_worker_round_trip(
             mux_utxo,
             0,
         )
-        .actor_output(worker, worker_state.clone(), CovenantBinding::new(0, covenant_id), GAME_VALUE);
+        .actor_output(worker, worker_state.source_state(), CovenantBinding::new(0, covenant_id), GAME_VALUE);
     let route_tx = builder.build(&route_context).unwrap_or_else(|err| panic!("mux must route a signed move to {worker}: {err}"));
     let worker_output = CovenantOutput::from_tx(&route_tx, 0).expect("route output is a covenant UTXO");
+    (worker_state, worker_output)
+}
 
-    let apply_context = TxContext::new()
-        .actor_input(worker, worker_state, "apply", worker_output.outpoint, worker_output.utxo, 0)
-        .actor_output("ChessMux", expected.source_state(), CovenantBinding::new(0, worker_output.covenant_id), GAME_VALUE);
-    builder.build(&apply_context).unwrap_or_else(|err| panic!("{worker} must validate the move and return to mux: {err}"));
+fn execute_actor_transition<'a>(
+    builder: &TxBuilder<'_>,
+    source_actor: &str,
+    source_state: &GameStateData,
+    entry: impl Into<EntryCall<'a>>,
+    source_output: CovenantOutput,
+    target_actor: &str,
+    target_state: &GameStateData,
+) -> CovenantOutput {
+    let context = TxContext::new()
+        .actor_input(source_actor, source_state.source_state(), entry, source_output.outpoint, source_output.utxo, 0)
+        .actor_output(target_actor, target_state.source_state(), CovenantBinding::new(0, source_output.covenant_id), GAME_VALUE);
+    let tx = builder.build(&context).unwrap_or_else(|err| panic!("{source_actor} must transition to {target_actor}: {err}"));
+    CovenantOutput::from_tx(&tx, 0).expect("actor transition output is a covenant UTXO")
 }
 
 #[test]
@@ -264,4 +290,139 @@ fn argent_ordinary_workers_round_trip_through_mux() {
     let mut king_expected = king_initial.completed_move(king_move);
     king_expected.castle_rights = [0, 0, 1, 1];
     execute_worker_round_trip(&builder, &white, "ChessKing", &king_initial, king_move, &king_expected, 0x6b);
+}
+
+#[test]
+fn argent_castles_all_four_shapes() {
+    struct CastleCase {
+        board: Vec<u8>,
+        turn: i64,
+        mv: MoveSpec,
+        expected_board: Vec<u8>,
+        expected_rights: [u8; 4],
+        expected_recent_castle: i64,
+        fixture_tag: u8,
+    }
+
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x31);
+    let black = player(0x32);
+
+    let mut white_kingside = vec![0; 64];
+    white_kingside[4] = 0x06;
+    white_kingside[7] = 0x04;
+    let mut white_kingside_expected = vec![0; 64];
+    white_kingside_expected[5] = 0x04;
+    white_kingside_expected[6] = 0x06;
+
+    let mut white_queenside = vec![0; 64];
+    white_queenside[0] = 0x04;
+    white_queenside[4] = 0x06;
+    let mut white_queenside_expected = vec![0; 64];
+    white_queenside_expected[2] = 0x06;
+    white_queenside_expected[3] = 0x04;
+
+    let mut black_kingside = vec![0; 64];
+    black_kingside[60] = 0x0e;
+    black_kingside[63] = 0x0c;
+    let mut black_kingside_expected = vec![0; 64];
+    black_kingside_expected[61] = 0x0c;
+    black_kingside_expected[62] = 0x0e;
+
+    let mut black_queenside = vec![0; 64];
+    black_queenside[56] = 0x0c;
+    black_queenside[60] = 0x0e;
+    let mut black_queenside_expected = vec![0; 64];
+    black_queenside_expected[58] = 0x0e;
+    black_queenside_expected[59] = 0x0c;
+
+    let cases = [
+        CastleCase {
+            board: white_kingside,
+            turn: WHITE,
+            mv: MoveSpec::new(4, 0, 6, 0),
+            expected_board: white_kingside_expected,
+            expected_rights: [0, 0, 1, 1],
+            expected_recent_castle: 1,
+            fixture_tag: 0x71,
+        },
+        CastleCase {
+            board: white_queenside,
+            turn: WHITE,
+            mv: MoveSpec::new(4, 0, 2, 0),
+            expected_board: white_queenside_expected,
+            expected_rights: [0, 0, 1, 1],
+            expected_recent_castle: 2,
+            fixture_tag: 0x73,
+        },
+        CastleCase {
+            board: black_kingside,
+            turn: BLACK,
+            mv: MoveSpec::new(4, 7, 6, 7),
+            expected_board: black_kingside_expected,
+            expected_rights: [1, 1, 0, 0],
+            expected_recent_castle: 3,
+            fixture_tag: 0x75,
+        },
+        CastleCase {
+            board: black_queenside,
+            turn: BLACK,
+            mv: MoveSpec::new(4, 7, 2, 7),
+            expected_board: black_queenside_expected,
+            expected_rights: [1, 1, 0, 0],
+            expected_recent_castle: 4,
+            fixture_tag: 0x77,
+        },
+    ];
+
+    for case in cases {
+        let mut initial = GameStateData::live(white.player_ref, black.player_ref, case.board);
+        initial.turn = case.turn;
+        let mut expected = initial.clone();
+        expected.board = case.expected_board;
+        expected.turn = 1 - case.turn;
+        expected.castle_rights = case.expected_rights;
+        expected.recent_castle = case.expected_recent_castle;
+        let mover = if case.turn == WHITE { &white } else { &black };
+        execute_worker_round_trip(&builder, mover, "ChessCastle", &initial, case.mv, &expected, case.fixture_tag);
+    }
+}
+
+#[test]
+fn argent_castle_challenge_routes_through_prep_and_piece_worker() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x41);
+    let black = player(0x42);
+
+    let mut post_castle_board = vec![0; 64];
+    post_castle_board[5] = 0x04;
+    post_castle_board[6] = 0x06;
+    post_castle_board[11] = 0x09;
+    let mut mux_state = GameStateData::live(white.player_ref, black.player_ref, post_castle_board);
+    mux_state.turn = BLACK;
+    mux_state.castle_rights = [0, 0, 1, 1];
+    mux_state.recent_castle = 1;
+    let challenge_move = MoveSpec::new(3, 1, 4, 0);
+
+    let (prep_state, prep_output) = route_to_worker(&builder, &black, "ChessCastleChallengePrep", &mux_state, challenge_move, 0x79);
+    let mut pawn_state = prep_state.clone();
+    pawn_state.board = vec![0; 64];
+    pawn_state.board[4] = 0x06;
+    pawn_state.board[7] = 0x04;
+    pawn_state.board[11] = 0x09;
+    let pawn_output = execute_actor_transition(
+        &builder,
+        "ChessCastleChallengePrep",
+        &prep_state,
+        EntryCall::new("apply").args(args![actor("ChessPawn")]),
+        prep_output,
+        "ChessPawn",
+        &pawn_state,
+    );
+
+    let mut expected = pawn_state.completed_move(challenge_move);
+    expected.status = BWIN;
+    execute_actor_transition(&builder, "ChessPawn", &pawn_state, "apply", pawn_output, "ChessMux", &expected);
 }
