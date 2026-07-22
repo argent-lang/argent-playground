@@ -760,6 +760,7 @@ dependencies = [
 name = "chess-covenant"
 version = "0.1.0"
 dependencies = [
+ "argent-artifact",
  "argent-runtime",
  "blake2b_simd",
  "cozy-chess",
