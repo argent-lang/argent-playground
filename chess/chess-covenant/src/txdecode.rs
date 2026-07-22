@@ -6,8 +6,6 @@ use kaspa_txscript::opcodes::codes::{
     Op0 as OP_0, Op1 as OP_1, Op16 as OP_16, Op1Negate as OP_1_NEGATE, OpPushData1 as OP_PUSHDATA1, OpPushData2 as OP_PUSHDATA2,
     OpPushData4 as OP_PUSHDATA4,
 };
-use silverscript_lang::ast::{ArrayDim, StructAst, StructFieldAst, TypeBase, TypeRef};
-use silverscript_lang::compiler::CompiledContract;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeValue {
@@ -107,42 +105,6 @@ pub enum DecodeError {
 }
 
 impl ContractTemplate {
-    pub fn from_compiled(compiled: &CompiledContract<'_>) -> Self {
-        let start = compiled.state_layout.start;
-        let end = start + compiled.state_layout.len;
-        let prefix = compiled.script[..start].to_vec();
-        let suffix = compiled.script[end..].to_vec();
-        let fields = compiled.ast.fields.iter().map(|field| (field.name.clone(), type_artifact(&field.type_ref))).collect();
-        let structs = compiled.ast.structs.iter().map(struct_spec).collect::<BTreeMap<_, _>>();
-        let entries = compiled
-            .abi
-            .iter()
-            .enumerate()
-            .map(|(index, entry)| EntryTemplate {
-                name: entry.name.clone(),
-                selector: (!compiled.without_selector).then_some(index as i64),
-                inputs: entry
-                    .inputs
-                    .iter()
-                    .map(|input| {
-                        let ty = silverscript_lang::ast::parse_type_ref(&input.type_name)
-                            .expect("compiled ABI contains valid Silverscript types");
-                        (input.name.clone(), type_artifact(&ty))
-                    })
-                    .collect(),
-            })
-            .collect();
-        Self {
-            contract_name: compiled.contract_name.clone(),
-            prefix,
-            suffix,
-            state_layout_len: compiled.state_layout.len,
-            entries,
-            fields,
-            structs,
-        }
-    }
-
     pub fn from_artifact(artifact: &Artifact, contract_name: &str) -> Result<Self, DecodeError> {
         let contract =
             artifact.sil_abi.contract(contract_name).ok_or_else(|| DecodeError::UnknownContract(contract_name.to_string()))?;
@@ -237,15 +199,6 @@ impl ContractTemplate {
 
         Ok(DecodedCall { function: entry.name.clone(), selector, args })
     }
-}
-
-fn struct_spec(item: &StructAst<'_>) -> (String, Vec<(String, TypeArtifact)>) {
-    let fields = item.fields.iter().map(struct_field_spec).collect::<Vec<_>>();
-    (item.name.clone(), fields)
-}
-
-fn struct_field_spec(field: &StructFieldAst<'_>) -> (String, TypeArtifact) {
-    (field.name.clone(), type_artifact(&field.type_ref))
 }
 
 pub fn decode_p2sh_call(signature_script: &[u8]) -> Result<P2shCall, DecodeError> {
@@ -365,29 +318,6 @@ fn decode_fixed_i64(bytes: &[u8]) -> Result<i64, DecodeError> {
         return Err(DecodeError::InvalidIntegerEncoding);
     }
     deserialize_i64(bytes, false).map_err(|_| DecodeError::InvalidIntegerEncoding)
-}
-
-fn type_artifact(ty: &TypeRef) -> TypeArtifact {
-    let mut artifact = match &ty.base {
-        TypeBase::Int => TypeArtifact::Int,
-        TypeBase::Bool => TypeArtifact::Bool,
-        TypeBase::String => TypeArtifact::Text,
-        TypeBase::Pubkey => TypeArtifact::Pubkey,
-        TypeBase::Sig => TypeArtifact::Sig,
-        TypeBase::Datasig => TypeArtifact::Datasig,
-        TypeBase::Byte => TypeArtifact::Byte,
-        TypeBase::Custom(name) => TypeArtifact::Struct { name: name.clone() },
-    };
-    for dim in &ty.array_dims {
-        artifact = match dim {
-            ArrayDim::Dynamic if matches!(artifact, TypeArtifact::Byte) => TypeArtifact::Bytes,
-            ArrayDim::Fixed(len) if matches!(artifact, TypeArtifact::Byte) => TypeArtifact::FixedBytes { len: *len },
-            ArrayDim::Dynamic => TypeArtifact::DynamicArray { item: Box::new(artifact) },
-            ArrayDim::Fixed(len) => TypeArtifact::FixedArray { item: Box::new(artifact), len: *len },
-            ArrayDim::Inferred | ArrayDim::Constant(_) => TypeArtifact::DynamicArray { item: Box::new(artifact) },
-        };
-    }
-    artifact
 }
 
 fn type_name(ty: &TypeArtifact) -> String {

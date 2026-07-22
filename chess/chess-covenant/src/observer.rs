@@ -4,17 +4,10 @@ use argent_artifact::Artifact;
 use blake2b_simd::Params as Blake2bParams;
 use kaspa_consensus_core::tx::Transaction;
 use kaspa_consensus_core::Hash;
-use silverscript_lang::ast::Expr;
-use silverscript_lang::compiler::{compile_contract, CompileOptions};
 
 use crate::orchestrator::WorkerKind;
 use crate::protocol_move::{apply_protocol_move, ProtocolMoveSpec, ProtocolState};
 use crate::txdecode::{decode_p2sh_call, ContractTemplate, DecodeError, DecodeValue, DecodedCall, DecodedObject};
-use crate::{
-    castle_challenge_contract_path, castle_contract_path, diag_contract_path, horiz_contract_path, king_contract_path,
-    knight_contract_path, league_contract_path, load_contract_source, mux_contract_path, pawn_contract_path, player_contract_path,
-    settle_contract_path, vert_contract_path,
-};
 
 const WHITE: i64 = 0;
 const BLACK: i64 = 1;
@@ -33,20 +26,8 @@ const DEFENSE: i64 = 2;
 const NORMAL: i64 = 3;
 const WOFFER: i64 = 4;
 
-fn hash_expr(value: Hash) -> Expr<'static> {
-    Expr::bytes(hash_bytes(value))
-}
-
 fn player_ref(owner: Hash, player_id: Hash) -> Hash {
     hash_pair(owner, player_id)
-}
-
-fn repeated_hash(byte: u8) -> Hash {
-    Hash::from_bytes([byte; 32])
-}
-
-fn hash_bytes(value: Hash) -> Vec<u8> {
-    value.as_bytes().to_vec()
 }
 
 fn hash_pair(left: Hash, right: Hash) -> Hash {
@@ -164,19 +145,7 @@ pub enum ChessEvent {
 
 #[derive(Debug, Clone)]
 struct ObserverTemplates {
-    league: ContractTemplate,
-    player: ContractTemplate,
-    mux: ContractTemplate,
-    settle: ContractTemplate,
-    pawn: ContractTemplate,
-    knight: ContractTemplate,
-    vert: ContractTemplate,
-    horiz: ContractTemplate,
-    diag: ContractTemplate,
-    king: ContractTemplate,
-    castle: ContractTemplate,
-    castle_challenge: ContractTemplate,
-    argent: Vec<(ChessInputKind, ContractTemplate)>,
+    contracts: Vec<(ChessInputKind, ContractTemplate)>,
 }
 
 #[derive(Debug, Clone)]
@@ -581,23 +550,10 @@ impl ChessEventEmitter {
     }
 
     fn match_template(&self, redeem_script: &[u8]) -> Option<(ChessInputKind, &ContractTemplate)> {
-        let candidates = [
-            (ChessInputKind::League, &self.templates.league),
-            (ChessInputKind::Player, &self.templates.player),
-            (ChessInputKind::Mux, &self.templates.mux),
-            (ChessInputKind::Settle, &self.templates.settle),
-            (ChessInputKind::Worker(WorkerKind::Pawn), &self.templates.pawn),
-            (ChessInputKind::Worker(WorkerKind::Knight), &self.templates.knight),
-            (ChessInputKind::Worker(WorkerKind::Vert), &self.templates.vert),
-            (ChessInputKind::Worker(WorkerKind::Horiz), &self.templates.horiz),
-            (ChessInputKind::Worker(WorkerKind::Diag), &self.templates.diag),
-            (ChessInputKind::Worker(WorkerKind::King), &self.templates.king),
-            (ChessInputKind::Worker(WorkerKind::Castle), &self.templates.castle),
-            (ChessInputKind::Worker(WorkerKind::CastleChallenge), &self.templates.castle_challenge),
-        ];
-        candidates
-            .into_iter()
-            .chain(self.templates.argent.iter().map(|(kind, template)| (*kind, template)))
+        self.templates
+            .contracts
+            .iter()
+            .map(|(kind, template)| (*kind, template))
             .find(|(_, template)| template.matches_redeem_script(redeem_script))
     }
 }
@@ -1134,87 +1090,10 @@ fn blake2b(bytes: &[u8]) -> Hash {
 }
 
 fn load_templates() -> Result<ObserverTemplates, ObserverError> {
-    let dummy = repeated_hash(0x11);
-    let game = GameState {
-        mux_template: dummy,
-        player_template: repeated_hash(0x66),
-        route_templates: vec![0x22; 288],
-        white_player: repeated_hash(0x33),
-        black_player: repeated_hash(0x44),
-        board: opening_board(),
-        turn: WHITE,
-        status: LIVE,
-        move_timeout: 600,
-        castle_rights: vec![1, 1, 1, 1],
-        en_passant_idx: -1,
-        pending_src_idx: -1,
-        pending_dst_idx: -1,
-        pending_promo: 0,
-        recent_castle: 0,
-        draw_state: NORMAL,
-    };
-    let player = PlayerState {
-        league_template: repeated_hash(0x55),
-        player_template: repeated_hash(0x66),
-        mux_template: dummy,
-        routes_commitment: repeated_hash(0x77),
-        owner: repeated_hash(0x88),
-        player_id: repeated_hash(0x99),
-        open_games: 0,
-        rating: 1200,
-        games: 0,
-        wins: 0,
-        draws: 0,
-        losses: 0,
-    };
-    let league = LeagueState {
-        admin: repeated_hash(0xaa),
-        league_template: repeated_hash(0xbb),
-        player_template: player.player_template,
-        mux_template: dummy,
-        routes_commitment: player.routes_commitment,
-        base_rating: 1200,
-    };
-    let settle = SettleState {
-        player_template: player.player_template,
-        white_player: repeated_hash(0xcc),
-        black_player: repeated_hash(0xdd),
-        status: LIVE,
-    };
-
-    let league_compiled = compile_league_template(&league)?;
-    let player_compiled = compile_player_template(&player)?;
-    let mux_compiled = compile_game_template(mux_contract_path(), &game)?;
-    let settle_compiled = compile_settle_template(&settle)?;
-    let pawn = compile_game_template(pawn_contract_path(), &game)?;
-    let knight = compile_game_template(knight_contract_path(), &game)?;
-    let vert = compile_game_template(vert_contract_path(), &game)?;
-    let horiz = compile_game_template(horiz_contract_path(), &game)?;
-    let diag = compile_game_template(diag_contract_path(), &game)?;
-    let king = compile_game_template(king_contract_path(), &game)?;
-    let castle = compile_game_template(castle_contract_path(), &game)?;
-    let castle_challenge = compile_game_template(castle_challenge_contract_path(), &game)?;
-
-    Ok(ObserverTemplates {
-        league: ContractTemplate::from_compiled(&league_compiled),
-        player: ContractTemplate::from_compiled(&player_compiled),
-        mux: ContractTemplate::from_compiled(&mux_compiled),
-        settle: ContractTemplate::from_compiled(&settle_compiled),
-        pawn: ContractTemplate::from_compiled(&pawn),
-        knight: ContractTemplate::from_compiled(&knight),
-        vert: ContractTemplate::from_compiled(&vert),
-        horiz: ContractTemplate::from_compiled(&horiz),
-        diag: ContractTemplate::from_compiled(&diag),
-        king: ContractTemplate::from_compiled(&king),
-        castle: ContractTemplate::from_compiled(&castle),
-        castle_challenge: ContractTemplate::from_compiled(&castle_challenge),
-        argent: load_argent_templates()?,
-    })
-}
-
-fn load_argent_templates() -> Result<Vec<(ChessInputKind, ContractTemplate)>, ObserverError> {
     let artifact: Artifact =
         serde_json::from_str(include_str!("../../build/argent/artifact.json")).map_err(|err| ObserverError(err.to_string()))?;
+    artifact.check_schema_version().map_err(|err| ObserverError(err.to_string()))?;
+    artifact.verify_id().map_err(|err| ObserverError(err.to_string()))?;
     let specs = [
         (ChessInputKind::League, "League"),
         (ChessInputKind::Player, "Player"),
@@ -1229,90 +1108,13 @@ fn load_argent_templates() -> Result<Vec<(ChessInputKind, ContractTemplate)>, Ob
         (ChessInputKind::Worker(WorkerKind::Castle), "ChessCastle"),
         (ChessInputKind::Worker(WorkerKind::CastleChallenge), "ChessCastleChallengePrep"),
     ];
-    specs
+    let contracts = specs
         .into_iter()
         .map(|(kind, contract)| {
             ContractTemplate::from_artifact(&artifact, contract).map(|template| (kind, template)).map_err(ObserverError::from)
         })
-        .collect()
-}
-
-fn compile_template(
-    source: &'static str,
-    args: &[Expr<'static>],
-) -> Result<silverscript_lang::compiler::CompiledContract<'static>, ObserverError> {
-    compile_contract(source, args, CompileOptions::default()).map_err(|err| ObserverError(err.to_string()))
-}
-
-fn leak_source(path: &str) -> &'static str {
-    Box::leak(load_contract_source(path).into_boxed_str())
-}
-
-fn compile_league_template(state: &LeagueState) -> Result<silverscript_lang::compiler::CompiledContract<'static>, ObserverError> {
-    compile_template(
-        leak_source(league_contract_path()),
-        &[
-            hash_expr(state.league_template),
-            hash_expr(state.player_template),
-            hash_expr(state.mux_template),
-            hash_expr(state.routes_commitment),
-            Expr::int(state.base_rating),
-            hash_expr(state.admin),
-        ],
-    )
-}
-
-fn compile_player_template(state: &PlayerState) -> Result<silverscript_lang::compiler::CompiledContract<'static>, ObserverError> {
-    compile_template(
-        leak_source(player_contract_path()),
-        &[
-            hash_expr(state.league_template),
-            hash_expr(state.player_template),
-            hash_expr(state.mux_template),
-            hash_expr(state.routes_commitment),
-            hash_expr(state.owner),
-            hash_expr(state.player_id),
-            Expr::int(state.open_games),
-            Expr::int(state.rating),
-            Expr::int(state.games),
-            Expr::int(state.wins),
-            Expr::int(state.draws),
-            Expr::int(state.losses),
-        ],
-    )
-}
-
-fn compile_game_template(
-    path: &str,
-    state: &GameState,
-) -> Result<silverscript_lang::compiler::CompiledContract<'static>, ObserverError> {
-    compile_template(
-        leak_source(path),
-        &[
-            hash_expr(state.mux_template),
-            Expr::bytes(state.route_templates.clone()),
-            hash_expr(state.white_player),
-            hash_expr(state.black_player),
-            Expr::bytes(state.board.clone()),
-            Expr::int(state.turn),
-            Expr::int(state.status),
-            Expr::int(state.move_timeout),
-            Expr::bytes(state.castle_rights.clone()),
-            Expr::int(state.en_passant_idx),
-            Expr::int(state.pending_src_idx),
-            Expr::int(state.pending_dst_idx),
-            Expr::int(state.pending_promo),
-            Expr::int(state.recent_castle),
-            Expr::int(state.draw_state),
-        ],
-    )
-}
-
-fn compile_settle_template(state: &SettleState) -> Result<silverscript_lang::compiler::CompiledContract<'static>, ObserverError> {
-    compile_template(
-        leak_source(settle_contract_path()),
-        &[hash_expr(state.player_template), hash_expr(state.white_player), hash_expr(state.black_player), Expr::int(state.status)],
-    )
+        .collect::<Result<_, _>>()?;
+    Ok(ObserverTemplates { contracts })
 }
 
 fn opening_board() -> Vec<u8> {
