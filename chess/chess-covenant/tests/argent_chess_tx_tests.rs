@@ -7,7 +7,7 @@ use kaspa_consensus_core::{
         sighash::{calc_schnorr_signature_hash, SigHashReusedValuesUnsync},
         sighash_type::SIG_HASH_ALL,
     },
-    tx::{CovenantBinding, MutableTransaction, Transaction, TransactionId, TransactionOutpoint},
+    tx::{CovenantBinding, MutableTransaction, ScriptPublicKey, Transaction, TransactionId, TransactionOutpoint, UtxoEntry},
     Hash,
 };
 use secp256k1::{Keypair, Message, Secp256k1, SecretKey};
@@ -28,12 +28,54 @@ const WOFFER: i64 = 4;
 const BOFFER: i64 = 5;
 const MOVE_TIMEOUT: i64 = 600;
 const GAME_VALUE: u64 = 1_000;
+const BASE_RATING: i64 = 1_200;
 
 struct TestPlayer {
     keypair: Keypair,
     public_key: Vec<u8>,
+    owner: [u8; 32],
     player_id: [u8; 32],
     player_ref: [u8; 32],
+}
+
+#[derive(Clone)]
+struct PlayerStateData {
+    owner: [u8; 32],
+    player_id: [u8; 32],
+    open_games: i64,
+    rating: i64,
+    games: i64,
+    wins: i64,
+    draws: i64,
+    losses: i64,
+}
+
+impl PlayerStateData {
+    fn registered(player: &TestPlayer) -> Self {
+        Self {
+            owner: player.owner,
+            player_id: player.player_id,
+            open_games: 0,
+            rating: BASE_RATING,
+            games: 0,
+            wins: 0,
+            draws: 0,
+            losses: 0,
+        }
+    }
+
+    fn source_state(&self) -> BTreeMap<String, ArtifactValue> {
+        state! {
+            owner: self.owner,
+            player_id: self.player_id,
+            open_games: self.open_games,
+            rating: self.rating,
+            games: self.games,
+            wins: self.wins,
+            draws: self.draws,
+            losses: self.losses,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -160,7 +202,14 @@ fn player(seed: u8) -> TestPlayer {
     let player_id = blake2b32(&[b"argent-chess-player".as_slice(), public_key.as_slice()].concat());
     let owner = blake2b32(&public_key);
     let player_ref = blake2b32(&[owner.as_slice(), player_id.as_slice()].concat());
-    TestPlayer { keypair, public_key, player_id, player_ref }
+    TestPlayer { keypair, public_key, owner, player_id, player_ref }
+}
+
+fn player_with_id(seed: u8, player_id: [u8; 32]) -> TestPlayer {
+    let mut player = player(seed);
+    player.player_id = player_id;
+    player.player_ref = blake2b32(&[player.owner.as_slice(), player.player_id.as_slice()].concat());
+    player
 }
 
 fn sign_input<T: AsRef<Transaction>>(tx: &MutableTransaction<T>, input_index: usize, keypair: &Keypair) -> Vec<u8> {
@@ -315,6 +364,87 @@ fn settle_state(white_player: [u8; 32], black_player: [u8; 32], status: i64) -> 
         black_player: black_player,
         status: status,
     }
+}
+
+fn league_state(admin: [u8; 32]) -> BTreeMap<String, ArtifactValue> {
+    state! {
+        base_rating: BASE_RATING,
+        admin: admin,
+    }
+}
+
+fn launch_league(builder: &TxBuilder<'_>, state: BTreeMap<String, ArtifactValue>, value: u64) -> CovenantOutput {
+    let funding_outpoint = TransactionOutpoint::new(TransactionId::from_bytes([0xa1; 32]), 0);
+    let funding_utxo = UtxoEntry::new(value, ScriptPublicKey::from_vec(0, vec![0x51]), 0, false, None);
+    let context = TxContext::new().input(funding_outpoint, funding_utxo, Vec::new(), 0).actor_genesis_output(
+        0,
+        "launch::league",
+        "League",
+        state,
+        value,
+    );
+    let tx = builder.build(&context).expect("league genesis transaction executes");
+    CovenantOutput::from_tx(&tx, 0).expect("league genesis output is a covenant UTXO")
+}
+
+fn register_player(
+    builder: &TxBuilder<'_>,
+    league_state: BTreeMap<String, ArtifactValue>,
+    league: CovenantOutput,
+    owner_seed: u8,
+    player_value: u64,
+) -> (CovenantOutput, TestPlayer, PlayerStateData, CovenantOutput) {
+    let mut unique_preimage = b"LeaguePlayerId".to_vec();
+    unique_preimage.extend_from_slice(league.outpoint.transaction_id.as_bytes().as_slice());
+    unique_preimage.extend_from_slice(&league.outpoint.index.to_le_bytes());
+    let owner = player_with_id(owner_seed, blake2b32(&unique_preimage));
+    let player_state = PlayerStateData::registered(&owner);
+    let league_value = league.utxo.amount;
+    let covenant_id = league.covenant_id;
+    let keypair = owner.keypair;
+    let public_key = owner.public_key.clone();
+    let context = TxContext::new()
+        .actor_input(
+            "League",
+            league_state.clone(),
+            EntryCall::new("register_player")
+                .args_with(move |tx, input_index| args![sign_input(tx, input_index, &keypair), public_key.clone()]),
+            league.outpoint,
+            league.utxo,
+            0,
+        )
+        .actor_output("League", league_state, CovenantBinding::new(0, covenant_id), league_value)
+        .actor_output("Player", player_state.source_state(), CovenantBinding::new(0, covenant_id), player_value);
+    let tx = builder.build(&context).expect("league registers a signed player");
+    let next_league = CovenantOutput::from_tx(&tx, 0).expect("league continuation is a covenant UTXO");
+    let player_output = CovenantOutput::from_tx(&tx, 1).expect("registered player is a covenant UTXO");
+    (next_league, owner, player_state, player_output)
+}
+
+fn execute_signed_rebalance(
+    builder: &TxBuilder<'_>,
+    actor: &str,
+    state: BTreeMap<String, ArtifactValue>,
+    source: CovenantOutput,
+    signer: &TestPlayer,
+) -> CovenantOutput {
+    let value = source.utxo.amount;
+    let covenant_id = source.covenant_id;
+    let keypair = signer.keypair;
+    let public_key = signer.public_key.clone();
+    let context = TxContext::new()
+        .actor_input(
+            actor,
+            state.clone(),
+            EntryCall::new("rebalance")
+                .args_with(move |tx, input_index| args![sign_input(tx, input_index, &keypair), public_key.clone()]),
+            source.outpoint,
+            source.utxo,
+            0,
+        )
+        .actor_output(actor, state, CovenantBinding::new(0, covenant_id), value);
+    let tx = builder.build(&context).unwrap_or_else(|err| panic!("{actor} rebalance must execute: {err}"));
+    CovenantOutput::from_tx(&tx, 0).expect("rebalance output is a covenant UTXO")
 }
 
 fn execute_to_settle<'a>(
@@ -587,4 +717,17 @@ fn argent_worker_and_mux_paths_exit_the_family_into_settlement() {
     let mut terminal = initial;
     terminal.status = BWIN;
     execute_to_settle(&builder, "ChessMux", &terminal, "settle", 0, BWIN, 0x95);
+}
+
+#[test]
+fn argent_league_registers_a_spendable_player() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x71);
+    let league_values = league_state(admin.owner);
+    let league = launch_league(&builder, league_values.clone(), 5_000);
+    let (league, owner, player_state, player_output) = register_player(&builder, league_values.clone(), league, 0x72, 2_000);
+
+    execute_signed_rebalance(&builder, "League", league_values, league, &admin);
+    execute_signed_rebalance(&builder, "Player", player_state.source_state(), player_output, &owner);
 }
