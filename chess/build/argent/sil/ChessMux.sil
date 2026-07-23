@@ -151,11 +151,11 @@ contract ChessMux(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one MoveActor
 
         require(status == LIVE);
-        byte[32] actor_ref = player_ref(blake2b(pk), player_id);
+        byte[32] player_ref = player_ref(blake2b(pk), player_id);
         if (turn == WHITE) {
-            require(actor_ref == white_player);
+            require(player_ref == white_player);
         } else {
-            require(actor_ref == black_player);
+            require(player_ref == black_player);
         }
         require(checkSig(s, pk));
         int selector = PAWN;
@@ -240,11 +240,11 @@ contract ChessMux(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one ChessMux
 
         require(status == LIVE);
-        byte[32] actor_ref = player_ref(blake2b(pk), player_id);
+        byte[32] player_ref = player_ref(blake2b(pk), player_id);
         if (turn == WHITE) {
-            require(actor_ref == white_player);
+            require(player_ref == white_player);
         } else {
-            require(actor_ref == black_player);
+            require(player_ref == black_player);
         }
         require(checkSig(s, pk));
         int next_status = status;
@@ -304,11 +304,11 @@ contract ChessMux(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
 
         require(status == LIVE);
-        byte[32] actor_ref = player_ref(blake2b(pk), player_id);
+        byte[32] player_ref = player_ref(blake2b(pk), player_id);
         if (turn == WHITE) {
-            require(actor_ref == black_player);
+            require(player_ref == black_player);
         } else {
-            require(actor_ref == white_player);
+            require(player_ref == white_player);
         }
         require(checkSig(s, pk));
         require(this.age >= move_timeout);
