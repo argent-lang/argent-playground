@@ -2,7 +2,8 @@ import "./types.ag";
 
 import actor ChessSettle from "./outer.ag";
 
-actor enum MoveActor {
+// Chess assumes the compiler maps these variants to integers in declaration order.
+actor enum Move {
     ChessPawn;
     ChessKnight;
     ChessVert;
@@ -15,7 +16,7 @@ actor enum MoveActor {
 
 actor ChessMux owns GameState {
     entry route(
-        target: MoveActor,
+        target: Move,
         from_x: int,
         from_y: int,
         to_x: int,
@@ -25,7 +26,7 @@ actor ChessMux owns GameState {
         s: sig,
         pk: pubkey,
         player_id: byte[32]
-    ) emits one MoveActor {
+    ) emits one Move {
         require(status == LIVE);
 
         byte[32] player_ref = player_ref(blake2b(pk), player_id);
@@ -36,34 +37,14 @@ actor ChessMux owns GameState {
         }
         require(checkSig(s, pk));
 
-        int selector = PAWN;
-        if (target == MoveActor::ChessPawn) {
-            selector = PAWN;
-        } else if (target == MoveActor::ChessKnight) {
-            selector = KNIGHT;
-        } else if (target == MoveActor::ChessVert) {
-            selector = VERT;
-        } else if (target == MoveActor::ChessHoriz) {
-            selector = HORIZ;
-        } else if (target == MoveActor::ChessDiag) {
-            selector = DIAG;
-        } else if (target == MoveActor::ChessKing) {
-            selector = KING;
-        } else if (target == MoveActor::ChessCastle) {
-            selector = CASTLE;
-        } else {
-            require(target == MoveActor::ChessCastleChallengePrep);
-            selector = PREP;
-        }
-
         require(termination_action == CLEAR || termination_action == OFFER);
 
         int next_draw_state = draw_state;
         require(from_x >= 0 && from_x < 8 && from_y >= 0 && from_y < 8);
         require(to_x >= 0 && to_x < 8 && to_y >= 0 && to_y < 8);
-        require(promo_piece == 0 || (selector == PAWN && promo_piece >= 2 && promo_piece <= 5));
-        require(draw_state >= NORMAL || selector <= KING);
-        require(termination_action == CLEAR || (selector <= CASTLE && draw_state >= NORMAL));
+        require(promo_piece == 0 || (target == Move::ChessPawn && promo_piece >= 2 && promo_piece <= 5));
+        require(draw_state >= NORMAL || target <= Move::ChessKing);
+        require(termination_action == CLEAR || (target <= Move::ChessCastle && draw_state >= NORMAL));
 
         if (draw_state > NORMAL) {
             next_draw_state = NORMAL;
@@ -73,7 +54,7 @@ actor ChessMux owns GameState {
         }
 
         int next_recent_castle = CLEAR;
-        if (selector == PREP) {
+        if (target == Move::ChessCastleChallengePrep) {
             require(recent_castle != CLEAR);
             next_recent_castle = recent_castle;
         }
@@ -1343,7 +1324,7 @@ actor ChessCastle owns GameState {
 }
 
 actor ChessCastleChallengePrep owns GameState {
-    entry apply(target: MoveActor) emits one MoveActor {
+    entry apply(target: Move) emits one Move {
         require(status == LIVE);
         require(draw_state == NORMAL);
         require(recent_castle >= 1 && recent_castle <= 4);
@@ -1451,31 +1432,31 @@ actor ChessCastleChallengePrep owns GameState {
         int moving_num = OpBin2Num(proof_board[from_idx]);
 
         if (moving_num == 1 || moving_num == 9) {
-            require(target == MoveActor::ChessPawn);
+            require(target == Move::ChessPawn);
         } else if (moving_num == 2 || moving_num == 10) {
-            require(target == MoveActor::ChessKnight);
+            require(target == Move::ChessKnight);
         } else if (moving_num == 3 || moving_num == 11) {
             require(abs_dx == abs_dy && abs_dx != 0);
-            require(target == MoveActor::ChessDiag);
+            require(target == Move::ChessDiag);
         } else if (moving_num == 4 || moving_num == 12) {
             if (dx == 0 && dy != 0) {
-                require(target == MoveActor::ChessVert);
+                require(target == Move::ChessVert);
             } else {
                 require(dy == 0 && dx != 0);
-                require(target == MoveActor::ChessHoriz);
+                require(target == Move::ChessHoriz);
             }
         } else if (moving_num == 5 || moving_num == 13) {
             if (dx == 0 && dy != 0) {
-                require(target == MoveActor::ChessVert);
+                require(target == Move::ChessVert);
             } else if (dy == 0 && dx != 0) {
-                require(target == MoveActor::ChessHoriz);
+                require(target == Move::ChessHoriz);
             } else {
                 require(abs_dx == abs_dy && abs_dx != 0);
-                require(target == MoveActor::ChessDiag);
+                require(target == Move::ChessDiag);
             }
         } else {
             require(moving_num == 6 || moving_num == 14);
-            require(target == MoveActor::ChessKing);
+            require(target == Move::ChessKing);
         }
 
         GameState next_state = {

@@ -14,16 +14,6 @@ const int CLAIM = 2;
 const int SURRENDER = 3;
 const int ACCEPT = 4;
 
-const int PAWN = 0;
-const int KNIGHT = 1;
-const int VERT = 2;
-const int HORIZ = 3;
-const int DIAG = 4;
-const int KING = 5;
-const int CASTLE = 6;
-const int PREP = 7;
-const int MUX = 8;
-
 const int CLAIMED = 1;
 const int DEFENSE = 2;
 const int NORMAL = 3;

@@ -33,15 +33,6 @@ contract ChessMux(
     int constant CLAIM = 2;
     int constant SURRENDER = 3;
     int constant ACCEPT = 4;
-    int constant PAWN = 0;
-    int constant KNIGHT = 1;
-    int constant VERT = 2;
-    int constant HORIZ = 3;
-    int constant DIAG = 4;
-    int constant KING = 5;
-    int constant CASTLE = 6;
-    int constant PREP = 7;
-    int constant MUX = 8;
     int constant CLAIMED = 1;
     int constant DEFENSE = 2;
     int constant NORMAL = 3;
@@ -148,7 +139,7 @@ contract ChessMux(
     ) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one MoveActor
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Move
 
         require(status == LIVE);
         byte[32] player_ref = player_ref(blake2b(pk), player_id);
@@ -158,32 +149,13 @@ contract ChessMux(
             require(player_ref == black_player);
         }
         require(checkSig(s, pk));
-        int selector = PAWN;
-        if (target == 0 /*CHESS_PAWN*/) {
-            selector = PAWN;
-        } else if (target == 1 /*CHESS_KNIGHT*/) {
-            selector = KNIGHT;
-        } else if (target == 2 /*CHESS_VERT*/) {
-            selector = VERT;
-        } else if (target == 3 /*CHESS_HORIZ*/) {
-            selector = HORIZ;
-        } else if (target == 4 /*CHESS_DIAG*/) {
-            selector = DIAG;
-        } else if (target == 5 /*CHESS_KING*/) {
-            selector = KING;
-        } else if (target == 6 /*CHESS_CASTLE*/) {
-            selector = CASTLE;
-        } else {
-            require(target == 7 /*CHESS_CASTLE_CHALLENGE_PREP*/);
-            selector = PREP;
-        }
         require(termination_action == CLEAR || termination_action == OFFER);
         int next_draw_state = draw_state;
         require(from_x >= 0 && from_x < 8 && from_y >= 0 && from_y < 8);
         require(to_x >= 0 && to_x < 8 && to_y >= 0 && to_y < 8);
-        require(promo_piece == 0 || (selector == PAWN && promo_piece >= 2 && promo_piece <= 5));
-        require(draw_state >= NORMAL || selector <= KING);
-        require(termination_action == CLEAR || (selector <= CASTLE && draw_state >= NORMAL));
+        require(promo_piece == 0 || (target == 0 /*CHESS_PAWN*/ && promo_piece >= 2 && promo_piece <= 5));
+        require(draw_state >= NORMAL || target <= 5 /*CHESS_KING*/);
+        require(termination_action == CLEAR || (target <= 6 /*CHESS_CASTLE*/ && draw_state >= NORMAL));
         if (draw_state > NORMAL) {
             next_draw_state = NORMAL;
         }
@@ -191,7 +163,7 @@ contract ChessMux(
             next_draw_state = WOFFER + turn;
         }
         int next_recent_castle = CLEAR;
-        if (selector == PREP) {
+        if (target == 7 /*CHESS_CASTLE_CHALLENGE_PREP*/) {
             require(recent_castle != CLEAR);
             next_recent_castle = recent_castle;
         }

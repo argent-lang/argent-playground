@@ -33,15 +33,6 @@ contract ChessKing(
     int constant CLAIM = 2;
     int constant SURRENDER = 3;
     int constant ACCEPT = 4;
-    int constant PAWN = 0;
-    int constant KNIGHT = 1;
-    int constant VERT = 2;
-    int constant HORIZ = 3;
-    int constant DIAG = 4;
-    int constant KING = 5;
-    int constant CASTLE = 6;
-    int constant PREP = 7;
-    int constant MUX = 8;
     int constant CLAIMED = 1;
     int constant DEFENSE = 2;
     int constant NORMAL = 3;

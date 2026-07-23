@@ -100,7 +100,7 @@
         {
           "name": "route",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["MoveActor"] },
+          "emits": { "kind": "one", "actors": ["Move"] },
           "consumes": [],
           "routes": [{ "output": null, "actor": "target", "state": "next_state" }]
         },
@@ -282,7 +282,7 @@
         {
           "name": "apply",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["MoveActor"] },
+          "emits": { "kind": "one", "actors": ["Move"] },
           "consumes": [],
           "routes": [{ "output": null, "actor": "target", "state": "next_state" }]
         },
