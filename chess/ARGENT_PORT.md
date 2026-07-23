@@ -14,8 +14,8 @@ this metadata.
 
 ## Contract Graph
 
-The application contains twelve actors: `League`, `Player`, `ChessMux`, eight
-move or challenge workers, and `ChessSettle`. They form one closed application.
+The application contains twelve actors: `League`, `Player`, `Mux`, eight
+move or challenge workers, and `Settle`. They form one closed application.
 
 The graph covers:
 
@@ -38,10 +38,10 @@ The Argent graph exposes these self-transitions as a separate `terminate` entry.
 
 The handwritten shared state stores a packed 288-byte route value. It contains
 eight worker templates and a settlement/player commitment. Argent generates a
-256-byte worker route table. It carries the downstream `Player`, `ChessMux`, and
-`ChessSettle` template information in typed hidden state fields.
+256-byte worker route table. It carries the downstream `Player`, `Mux`, and
+`Settle` template information in typed hidden state fields.
 
-`ChessCastleChallengePrep` receives a typed worker target. It derives the
+`CastleChallengePrep` receives a typed worker target. It derives the
 required worker from the moving piece and geometry. It then requires the supplied
 target to match before it routes to the generated template.
 

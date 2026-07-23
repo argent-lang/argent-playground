@@ -280,7 +280,7 @@ impl ChessEventEmitter {
                     }
 
                     let self_side = int_arg(&decoded.call, "self_side")?;
-                    let route_templates = bytes_arg_any(&decoded.call, &["route_templates", "gen__chess_mux_routes"])?;
+                    let route_templates = bytes_arg_any(&decoded.call, &["route_templates", "gen__mux_routes"])?;
                     let move_timeout = int_arg(&decoded.call, "move_timeout")?;
 
                     let self_ref = player_ref(self_state.owner, self_state.player_id);
@@ -714,8 +714,8 @@ fn league_from_decoded(object: &DecodedObject) -> Result<LeagueState, ObserverEr
         admin: hash_field(object, "admin")?,
         league_template: optional_hash_field(object, "league_template")?.unwrap_or_default(),
         player_template: hash_field_any(object, &["player_template", "gen__player_template"])?,
-        mux_template: hash_field_any(object, &["mux_template", "gen__chess_mux_template"])?,
-        routes_commitment: hash_field_any(object, &["routes_commitment", "gen__chess_mux_routes_digest"])?,
+        mux_template: hash_field_any(object, &["mux_template", "gen__mux_template"])?,
+        routes_commitment: hash_field_any(object, &["routes_commitment", "gen__mux_routes_digest"])?,
         base_rating: int_field(object, "base_rating")?,
     })
 }
@@ -724,8 +724,8 @@ fn player_from_decoded(object: &DecodedObject) -> Result<PlayerState, ObserverEr
     Ok(PlayerState {
         league_template: optional_hash_field(object, "league_template")?.unwrap_or_default(),
         player_template: hash_field_any(object, &["player_template", "gen__player_template"])?,
-        mux_template: hash_field_any(object, &["mux_template", "gen__chess_mux_template"])?,
-        routes_commitment: hash_field_any(object, &["routes_commitment", "gen__chess_mux_routes_digest"])?,
+        mux_template: hash_field_any(object, &["mux_template", "gen__mux_template"])?,
+        routes_commitment: hash_field_any(object, &["routes_commitment", "gen__mux_routes_digest"])?,
         owner: hash_field(object, "owner")?,
         player_id: hash_field(object, "player_id")?,
         open_games: int_field(object, "open_games")?,
@@ -739,9 +739,9 @@ fn player_from_decoded(object: &DecodedObject) -> Result<PlayerState, ObserverEr
 
 fn game_from_decoded(object: &DecodedObject) -> Result<GameState, ObserverError> {
     Ok(GameState {
-        mux_template: hash_field_any(object, &["mux_template", "gen__chess_mux_template"])?,
+        mux_template: hash_field_any(object, &["mux_template", "gen__mux_template"])?,
         player_template: optional_hash_field(object, "gen__player_template")?.unwrap_or_default(),
-        route_templates: bytes_field_any(object, &["route_templates", "gen__chess_mux_routes"])?,
+        route_templates: bytes_field_any(object, &["route_templates", "gen__mux_routes"])?,
         white_player: hash_field(object, "white_player")?,
         black_player: hash_field(object, "black_player")?,
         board: bytes_field(object, "board")?,
@@ -1097,16 +1097,16 @@ fn load_templates() -> Result<ObserverTemplates, ObserverError> {
     let specs = [
         (ChessInputKind::League, "League"),
         (ChessInputKind::Player, "Player"),
-        (ChessInputKind::Mux, "ChessMux"),
-        (ChessInputKind::Settle, "ChessSettle"),
-        (ChessInputKind::Worker(WorkerKind::Pawn), "ChessPawn"),
-        (ChessInputKind::Worker(WorkerKind::Knight), "ChessKnight"),
-        (ChessInputKind::Worker(WorkerKind::Vert), "ChessVert"),
-        (ChessInputKind::Worker(WorkerKind::Horiz), "ChessHoriz"),
-        (ChessInputKind::Worker(WorkerKind::Diag), "ChessDiag"),
-        (ChessInputKind::Worker(WorkerKind::King), "ChessKing"),
-        (ChessInputKind::Worker(WorkerKind::Castle), "ChessCastle"),
-        (ChessInputKind::Worker(WorkerKind::CastleChallenge), "ChessCastleChallengePrep"),
+        (ChessInputKind::Mux, "Mux"),
+        (ChessInputKind::Settle, "Settle"),
+        (ChessInputKind::Worker(WorkerKind::Pawn), "Pawn"),
+        (ChessInputKind::Worker(WorkerKind::Knight), "Knight"),
+        (ChessInputKind::Worker(WorkerKind::Vert), "Vert"),
+        (ChessInputKind::Worker(WorkerKind::Horiz), "Horiz"),
+        (ChessInputKind::Worker(WorkerKind::Diag), "Diag"),
+        (ChessInputKind::Worker(WorkerKind::King), "King"),
+        (ChessInputKind::Worker(WorkerKind::Castle), "Castle"),
+        (ChessInputKind::Worker(WorkerKind::CastleChallenge), "CastleChallengePrep"),
     ];
     let contracts = specs
         .into_iter()
@@ -1157,11 +1157,10 @@ mod tests {
             draw_state: NORMAL,
         };
         let outpoint = TransactionOutpoint::new(TransactionId::from_bytes([0x94; 32]), 0);
-        let utxo = builder
-            .covenant_utxo("ChessMux", game_state.clone(), 1_000, 0, false, Some(covenant_id))
-            .expect("terminal mux UTXO builds");
-        let context = TxContext::new().actor_input("ChessMux", game_state, "settle", outpoint, utxo, 0).actor_output(
-            "ChessSettle",
+        let utxo =
+            builder.covenant_utxo("Mux", game_state.clone(), 1_000, 0, false, Some(covenant_id)).expect("terminal mux UTXO builds");
+        let context = TxContext::new().actor_input("Mux", game_state, "settle", outpoint, utxo, 0).actor_output(
+            "Settle",
             state! {
                 white_player: white_player,
                 black_player: black_player,

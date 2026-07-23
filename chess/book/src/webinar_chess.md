@@ -12,7 +12,7 @@ flowchart LR
     P1["Player"]
     P2["Player"]
     G["Game family"]
-    S["ChessSettle"]
+    S["Settle"]
 
     L -- "register" --> P1
     L -- "register" --> P2
@@ -28,7 +28,7 @@ Role split:
 - `League`: root allocator and public registration lane
 - `Player`: durable identity, funds shell, and score record
 - `Game`: episodic chess state machine
-- `ChessSettle`: terminal worker for payout and score updates
+- `Settle`: terminal worker for payout and score updates
 
 This is the core MCF message:
 
@@ -41,7 +41,7 @@ Inside the game lane, the system narrows again into mux plus workers.
 
 ```mermaid
 flowchart TD
-    M["ChessMux"]
+    M["Mux"]
     P["Pawn"]
     N["Knight"]
     V["Vert"]
@@ -50,7 +50,7 @@ flowchart TD
     K["King"]
     C["Castle"]
     CC["Castle Challenge"]
-    S["ChessSettle"]
+    S["Settle"]
 
     M --> P
     M --> N
@@ -119,7 +119,7 @@ flowchart LR
     W -->|"apply"| G1["Game"]
     G1 -->|"route"| W
 
-    G1 -->|"terminal route / timeout"| S["ChessSettle"]
+    G1 -->|"terminal route / timeout"| S["Settle"]
     S -->|"settle"| P1S["Player A"]
     S -->|"settle"| P2S["Player B"]
     P1G -->|"settle"| P1S
@@ -139,7 +139,7 @@ What changes in each phase:
 
 - both durable player states are recreated
 - both increment `open_games`
-- one opening `ChessMux` state is created
+- one opening `Mux` state is created
 - game funding is defined here by mutual consent
 
 Illustrative Argent excerpt:
@@ -159,13 +159,13 @@ PlayerState next_self = {
 become {
     self_out <- Player(next_self);
     other_out <- Player(next_other);
-    game <- ChessMux(next_game);
+    game <- Mux(next_game);
 };
 ```
 
 ### `1 -> 1` Game step
 
-- `ChessMux` authenticates the side to move
+- `Mux` authenticates the side to move
 - commits the pending move into game state
 - routes into the selected worker as `1 -> 1`
 - the worker applies one bounded transition as `1 -> 1`
@@ -214,7 +214,7 @@ Settlement has two outputs:
 - KAS value settlement
 - rating / score settlement
 
-`ChessSettle` enforces both:
+`Settle` enforces both:
 
 - objective payout split
   - winner takes all

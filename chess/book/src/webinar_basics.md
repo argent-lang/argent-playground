@@ -37,9 +37,9 @@ One shared covenant id is used across the chess family:
 
 - `League`
 - `Player`
-- `ChessMux`
+- `Mux`
 - workers
-- `ChessSettle`
+- `Settle`
 
 That gives us family membership, but not role identity.
 
@@ -51,7 +51,7 @@ So the design uses two layers:
 
 That is why the generated contracts carry hidden fields such as:
 
-- the `Player`, `ChessMux`, and `ChessSettle` templates
+- the `Player`, `Mux`, and `Settle` templates
 - the worker route table
 - the worker-table digest
 
@@ -101,10 +101,10 @@ Chess is not doing that. Chess stays inside one shared covenant family and uses
 internal role separation instead:
 
 - `League` mint `Player`
-- `Player` mint `ChessMux`
-- `ChessMux` route into workers
-- `ChessMux` route terminal state into `ChessSettle`
-- `ChessSettle` settle back into `Player`
+- `Player` mint `Mux`
+- `Mux` route into workers
+- `Mux` route terminal state into `Settle`
+- `Settle` settle back into `Player`
 
 ## MCF: Multi-Contract Flows
 
@@ -128,9 +128,9 @@ Use different contracts for different durable and episodic roles:
 
 - `League`: root allocator and public entry lane
 - `Player`: durable identity and score shell
-- `ChessMux`: episodic game checkpoint
+- `Mux`: episodic game checkpoint
 - workers: bounded move and challenge validators
-- `ChessSettle`: terminal settlement worker
+- `Settle`: terminal settlement worker
 
 That is the larger chess-system pattern.
 

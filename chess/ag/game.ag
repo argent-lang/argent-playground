@@ -1,20 +1,20 @@
 import "./types.ag";
 
-import actor ChessSettle from "./outer.ag";
+import actor Settle from "./outer.ag";
 
 // Chess assumes the compiler maps these variants to integers in declaration order.
 actor enum Move {
-    ChessPawn;
-    ChessKnight;
-    ChessVert;
-    ChessHoriz;
-    ChessDiag;
-    ChessKing;
-    ChessCastle;
-    ChessCastleChallengePrep;
+    Pawn;
+    Knight;
+    Vert;
+    Horiz;
+    Diag;
+    King;
+    Castle;
+    CastleChallengePrep;
 }
 
-actor ChessMux owns GameState {
+actor Mux owns GameState {
     entry route(
         target: Move,
         from_x: int,
@@ -42,9 +42,9 @@ actor ChessMux owns GameState {
         int next_draw_state = draw_state;
         require(from_x >= 0 && from_x < 8 && from_y >= 0 && from_y < 8);
         require(to_x >= 0 && to_x < 8 && to_y >= 0 && to_y < 8);
-        require(promo_piece == 0 || (target == Move::ChessPawn && promo_piece >= 2 && promo_piece <= 5));
-        require(draw_state >= NORMAL || target <= Move::ChessKing);
-        require(termination_action == CLEAR || (target <= Move::ChessCastle && draw_state >= NORMAL));
+        require(promo_piece == 0 || (target == Move::Pawn && promo_piece >= 2 && promo_piece <= 5));
+        require(draw_state >= NORMAL || target <= Move::King);
+        require(termination_action == CLEAR || (target <= Move::Castle && draw_state >= NORMAL));
 
         if (draw_state > NORMAL) {
             next_draw_state = NORMAL;
@@ -54,7 +54,7 @@ actor ChessMux owns GameState {
         }
 
         int next_recent_castle = CLEAR;
-        if (target == Move::ChessCastleChallengePrep) {
+        if (target == Move::CastleChallengePrep) {
             require(recent_castle != CLEAR);
             next_recent_castle = recent_castle;
         }
@@ -84,7 +84,7 @@ actor ChessMux owns GameState {
         s: sig,
         pk: pubkey,
         player_id: byte[32]
-    ) emits one ChessMux {
+    ) emits one Mux {
         require(status == LIVE);
 
         byte[32] player_ref = player_ref(blake2b(pk), player_id);
@@ -130,14 +130,14 @@ actor ChessMux owns GameState {
         };
 
         require(next.value == self.value);
-        become ChessMux(next_state);
+        become Mux(next_state);
     }
 
     entry timeout(
         s: sig,
         pk: pubkey,
         player_id: byte[32]
-    ) emits one ChessSettle {
+    ) emits one Settle {
         require(status == LIVE);
 
         byte[32] player_ref = player_ref(blake2b(pk), player_id);
@@ -156,10 +156,10 @@ actor ChessMux owns GameState {
         };
 
         require(next.value == self.value);
-        become ChessSettle(next_state);
+        become Settle(next_state);
     }
 
-    entry settle() emits one ChessSettle {
+    entry settle() emits one Settle {
         require(status != LIVE);
         SettleState next_state = {
             white_player: white_player,
@@ -168,12 +168,12 @@ actor ChessMux owns GameState {
         };
 
         require(next.value == self.value);
-        become ChessSettle(next_state);
+        become Settle(next_state);
     }
 }
 
-actor ChessPawn owns GameState {
-    entry apply() emits one ChessMux {
+actor Pawn owns GameState {
+    entry apply() emits one Mux {
         require(status == LIVE);
 
         int from_idx = OpBin2Num(pending_src_idx);
@@ -381,10 +381,10 @@ actor ChessPawn owns GameState {
         };
 
         require(next.value == self.value);
-        become ChessMux(next_state);
+        become Mux(next_state);
     }
 
-    entry timeout() emits one ChessSettle {
+    entry timeout() emits one Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -393,12 +393,12 @@ actor ChessPawn owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become ChessSettle(next_state);
+        become Settle(next_state);
     }
 }
 
-actor ChessKnight owns GameState {
-    entry apply() emits one ChessMux {
+actor Knight owns GameState {
+    entry apply() emits one Mux {
         require(status == LIVE);
 
         int from_idx = OpBin2Num(pending_src_idx);
@@ -516,10 +516,10 @@ actor ChessKnight owns GameState {
         };
 
         require(next.value == self.value);
-        become ChessMux(next_state);
+        become Mux(next_state);
     }
 
-    entry timeout() emits one ChessSettle {
+    entry timeout() emits one Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -528,12 +528,12 @@ actor ChessKnight owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become ChessSettle(next_state);
+        become Settle(next_state);
     }
 }
 
-actor ChessVert owns GameState {
-    entry apply() emits one ChessMux {
+actor Vert owns GameState {
+    entry apply() emits one Mux {
         require(status == LIVE);
 
         int from_idx = OpBin2Num(pending_src_idx);
@@ -686,10 +686,10 @@ actor ChessVert owns GameState {
         };
 
         require(next.value == self.value);
-        become ChessMux(next_state);
+        become Mux(next_state);
     }
 
-    entry timeout() emits one ChessSettle {
+    entry timeout() emits one Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -698,12 +698,12 @@ actor ChessVert owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become ChessSettle(next_state);
+        become Settle(next_state);
     }
 }
 
-actor ChessHoriz owns GameState {
-    entry apply() emits one ChessMux {
+actor Horiz owns GameState {
+    entry apply() emits one Mux {
         require(status == LIVE);
 
         int from_idx = OpBin2Num(pending_src_idx);
@@ -856,10 +856,10 @@ actor ChessHoriz owns GameState {
         };
 
         require(next.value == self.value);
-        become ChessMux(next_state);
+        become Mux(next_state);
     }
 
-    entry timeout() emits one ChessSettle {
+    entry timeout() emits one Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -868,12 +868,12 @@ actor ChessHoriz owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become ChessSettle(next_state);
+        become Settle(next_state);
     }
 }
 
-actor ChessDiag owns GameState {
-    entry apply() emits one ChessMux {
+actor Diag owns GameState {
+    entry apply() emits one Mux {
         require(status == LIVE);
         int from_idx = OpBin2Num(pending_src_idx);
         int to_idx = OpBin2Num(pending_dst_idx);
@@ -1011,10 +1011,10 @@ actor ChessDiag owns GameState {
         };
 
         require(next.value == self.value);
-        become ChessMux(next_state);
+        become Mux(next_state);
     }
 
-    entry timeout() emits one ChessSettle {
+    entry timeout() emits one Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -1023,12 +1023,12 @@ actor ChessDiag owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become ChessSettle(next_state);
+        become Settle(next_state);
     }
 }
 
-actor ChessKing owns GameState {
-    entry apply() emits one ChessMux {
+actor King owns GameState {
+    entry apply() emits one Mux {
         require(status == LIVE);
         int from_idx = OpBin2Num(pending_src_idx);
         int to_idx = OpBin2Num(pending_dst_idx);
@@ -1161,10 +1161,10 @@ actor ChessKing owns GameState {
         };
 
         require(next.value == self.value);
-        become ChessMux(next_state);
+        become Mux(next_state);
     }
 
-    entry timeout() emits one ChessSettle {
+    entry timeout() emits one Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -1173,12 +1173,12 @@ actor ChessKing owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become ChessSettle(next_state);
+        become Settle(next_state);
     }
 }
 
-actor ChessCastle owns GameState {
-    entry apply() emits one ChessMux {
+actor Castle owns GameState {
+    entry apply() emits one Mux {
         require(status == LIVE);
         require(draw_state >= NORMAL);
 
@@ -1307,10 +1307,10 @@ actor ChessCastle owns GameState {
         };
 
         require(next.value == self.value);
-        become ChessMux(next_state);
+        become Mux(next_state);
     }
 
-    entry timeout() emits one ChessSettle {
+    entry timeout() emits one Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -1319,11 +1319,11 @@ actor ChessCastle owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become ChessSettle(next_state);
+        become Settle(next_state);
     }
 }
 
-actor ChessCastleChallengePrep owns GameState {
+actor CastleChallengePrep owns GameState {
     entry apply(target: Move) emits one Move {
         require(status == LIVE);
         require(draw_state == NORMAL);
@@ -1432,31 +1432,31 @@ actor ChessCastleChallengePrep owns GameState {
         int moving_num = OpBin2Num(proof_board[from_idx]);
 
         if (moving_num == 1 || moving_num == 9) {
-            require(target == Move::ChessPawn);
+            require(target == Move::Pawn);
         } else if (moving_num == 2 || moving_num == 10) {
-            require(target == Move::ChessKnight);
+            require(target == Move::Knight);
         } else if (moving_num == 3 || moving_num == 11) {
             require(abs_dx == abs_dy && abs_dx != 0);
-            require(target == Move::ChessDiag);
+            require(target == Move::Diag);
         } else if (moving_num == 4 || moving_num == 12) {
             if (dx == 0 && dy != 0) {
-                require(target == Move::ChessVert);
+                require(target == Move::Vert);
             } else {
                 require(dy == 0 && dx != 0);
-                require(target == Move::ChessHoriz);
+                require(target == Move::Horiz);
             }
         } else if (moving_num == 5 || moving_num == 13) {
             if (dx == 0 && dy != 0) {
-                require(target == Move::ChessVert);
+                require(target == Move::Vert);
             } else if (dy == 0 && dx != 0) {
-                require(target == Move::ChessHoriz);
+                require(target == Move::Horiz);
             } else {
                 require(abs_dx == abs_dy && abs_dx != 0);
-                require(target == Move::ChessDiag);
+                require(target == Move::Diag);
             }
         } else {
             require(moving_num == 6 || moving_num == 14);
-            require(target == Move::ChessKing);
+            require(target == Move::King);
         }
 
         GameState next_state = {
@@ -1479,7 +1479,7 @@ actor ChessCastleChallengePrep owns GameState {
         become target(next_state);
     }
 
-    entry timeout() emits one ChessSettle {
+    entry timeout() emits one Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -1488,6 +1488,6 @@ actor ChessCastleChallengePrep owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become ChessSettle(next_state);
+        become Settle(next_state);
     }
 }

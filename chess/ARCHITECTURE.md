@@ -2,11 +2,11 @@
 
 This document is about the **inner mux/worker game engine only**.
 
-It describes the `ChessMux` plus move-worker family, their shared game-state
+It describes the `Mux` plus move-worker family, their shared game-state
 layout, and the bounded-verification philosophy behind that split.
 
 It does **not** try to describe the newer outer durable layer
-`League -> Player -> ChessMux -> ChessSettle`. Those notes now live in the
+`League -> Player -> Mux -> Settle`. Those notes now live in the
 book under `book/`.
 
 This example uses a **multiplexer pattern**.
@@ -14,7 +14,7 @@ This example uses a **multiplexer pattern**.
 Chess is too large and too entangled to force through one giant covenant. The
 protocol is therefore split into:
 
-- one canonical checkpoint contract: `ChessMux`
+- one canonical checkpoint contract: `Mux`
 - many small worker contracts for bounded move families and challenge flows
 
 The point is not to minimize transaction count. The point is to make the state
@@ -22,7 +22,7 @@ machine modular enough to compile, reason about, and extend.
 
 ## Core Pattern
 
-`ChessMux` is the durable owner of game state.
+`Mux` is the durable owner of game state.
 
 Workers are transient validators. A move is routed through mux into the
 relevant worker, the worker checks one bounded claim, and control returns to
@@ -178,7 +178,7 @@ The board is not physically flipped. The protocol flips interpretation:
 
 The flow is:
 
-1. the claimant calls `ChessMux.terminate` with `termination_action = 2`; this flips `turn` and enters `draw_state = 1`
+1. the claimant calls `Mux.terminate` with `termination_action = 2`; this flips `turn` and enters `draw_state = 1`
 2. the opponent tries to find a saving move for the claimant side using an ordinary worker
 3. if that succeeds, play continues in `draw_state = 2`
 4. if phase 2 ends without a decisive king capture, the original claimant loses
@@ -197,7 +197,7 @@ The flow is:
 
 1. the mover routes into an ordinary worker and sets a draw-offer bit in mux state
 2. the worker applies the move and returns to mux with `draw_state = 4` or `5`
-3. on the opponent's turn, they may accept through `ChessMux.terminate` with `termination_action = 4`
+3. on the opponent's turn, they may accept through `Mux.terminate` with `termination_action = 4`
 4. any ordinary reply implicitly rejects the offer and clears the draw-offer state
 
 This keeps draw agreement asynchronous without adding a second timeout model or

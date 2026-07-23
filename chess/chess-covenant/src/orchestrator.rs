@@ -1227,7 +1227,7 @@ impl TxArena {
             )
             .actor_output("Player", player_source_state(&next_white), CovenantBinding::new(0, self.covenant_id), next_white.value)
             .actor_output("Player", player_source_state(&next_black), CovenantBinding::new(0, self.covenant_id), next_black.value)
-            .actor_output("ChessMux", game_source_state(&opening), CovenantBinding::new(0, self.covenant_id), 1_000);
+            .actor_output("Mux", game_source_state(&opening), CovenantBinding::new(0, self.covenant_id), 1_000);
         let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("start game"))?;
         let executed_txid = executed_tx.id();
         self.transactions.push(executed_tx);
@@ -1297,15 +1297,15 @@ impl TxArena {
         let game_outpoint = self.game_outpoint.ok_or_else(|| OrchestratorError("missing game outpoint".to_string()))?;
         let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
         let game_utxo = builder
-            .covenant_utxo("ChessMux", game_source_state(&game), 1_000, 0, false, Some(self.covenant_id))
-            .map_err(orchestrator_builder_error("build active ChessMux UTXO"))?;
+            .covenant_utxo("Mux", game_source_state(&game), 1_000, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build active Mux UTXO"))?;
         let selected_worker = worker_actor(worker).to_string();
         let keypair = actor.keypair;
         let public_key = actor.pubkey_bytes.clone();
         let player_id = actor.player_id.ok_or_else(|| OrchestratorError("missing player id".to_string()))?;
         let route_context = TxContext::new()
             .actor_input(
-                "ChessMux",
+                "Mux",
                 game_source_state(&game),
                 EntryCall::new("route").args_with(move |tx, input_index| {
                     args![
@@ -1333,7 +1333,7 @@ impl TxArena {
         let next = apply_worker_state(worker, &pending, mv, allow_partial_commit)?;
         let apply_context = TxContext::new()
             .actor_input(worker_actor(worker), game_source_state(&pending), "apply", worker_output.outpoint, worker_output.utxo, 0)
-            .actor_output("ChessMux", game_source_state(&next), CovenantBinding::new(0, self.covenant_id), 1_000);
+            .actor_output("Mux", game_source_state(&next), CovenantBinding::new(0, self.covenant_id), 1_000);
         let apply_result = builder.build(&apply_context);
         let executed_apply_tx = match apply_result {
             Ok(tx) => tx,
@@ -1452,7 +1452,7 @@ impl TxArena {
                 DEFAULT_MOVE_TIMEOUT as u64,
             )
             .actor_output(
-                "ChessSettle",
+                "Settle",
                 settle_source_state(active_worker.state.white_player, active_worker.state.black_player, status),
                 CovenantBinding::new(0, self.covenant_id),
                 1_000,
@@ -1520,14 +1520,14 @@ impl TxArena {
         let game_outpoint = self.game_outpoint.ok_or_else(|| OrchestratorError("missing game outpoint".to_string()))?;
         let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
         let game_utxo = builder
-            .covenant_utxo("ChessMux", game_source_state(&game), 1_000, 0, false, Some(self.covenant_id))
-            .map_err(orchestrator_builder_error("build active ChessMux UTXO"))?;
+            .covenant_utxo("Mux", game_source_state(&game), 1_000, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build active Mux UTXO"))?;
         let keypair = actor.keypair;
         let public_key = actor.pubkey_bytes.clone();
         let player_id = actor.player_id.ok_or_else(|| OrchestratorError("missing player id".to_string()))?;
         let context = TxContext::new()
             .actor_input(
-                "ChessMux",
+                "Mux",
                 game_source_state(&game),
                 EntryCall::new("terminate").args_with(move |tx, input_index| {
                     args![SURRENDER, sign_builder_input(tx, input_index, &keypair), public_key.clone(), player_id]
@@ -1536,7 +1536,7 @@ impl TxArena {
                 game_utxo,
                 0,
             )
-            .actor_output("ChessMux", game_source_state(&next), CovenantBinding::new(0, self.covenant_id), 1_000);
+            .actor_output("Mux", game_source_state(&next), CovenantBinding::new(0, self.covenant_id), 1_000);
         let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("surrender game"))?;
         self.transactions.push(executed_tx);
         self.game = Some(next);
@@ -1610,14 +1610,14 @@ impl TxArena {
             let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
             let utxo = builder
                 .covenant_utxo(
-                    "ChessSettle",
+                    "Settle",
                     settle_source_state(white_ref, black_ref, expected_status),
                     1_000,
                     0,
                     false,
                     Some(self.covenant_id),
                 )
-                .map_err(orchestrator_builder_error("build active ChessSettle UTXO"))?;
+                .map_err(orchestrator_builder_error("build active Settle UTXO"))?;
             (CovenantOutput { index: 0, covenant_id: self.covenant_id, outpoint: active_settle.outpoint, utxo }, None)
         } else {
             let game = self.game.clone().ok_or_else(|| OrchestratorError("missing game".to_string()))?;
@@ -1630,18 +1630,17 @@ impl TxArena {
             let game_outpoint = self.game_outpoint.ok_or_else(|| OrchestratorError("missing game outpoint".to_string()))?;
             let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
             let game_utxo = builder
-                .covenant_utxo("ChessMux", game_source_state(&game), 1_000, 0, false, Some(self.covenant_id))
-                .map_err(orchestrator_builder_error("build terminal ChessMux UTXO"))?;
-            let context = TxContext::new()
-                .actor_input("ChessMux", game_source_state(&game), "settle", game_outpoint, game_utxo, 0)
-                .actor_output(
-                    "ChessSettle",
+                .covenant_utxo("Mux", game_source_state(&game), 1_000, 0, false, Some(self.covenant_id))
+                .map_err(orchestrator_builder_error("build terminal Mux UTXO"))?;
+            let context =
+                TxContext::new().actor_input("Mux", game_source_state(&game), "settle", game_outpoint, game_utxo, 0).actor_output(
+                    "Settle",
                     settle_source_state(white_ref, black_ref, expected_status),
                     CovenantBinding::new(0, self.covenant_id),
                     1_000,
                 );
             let tx = builder.build(&context).map_err(orchestrator_builder_error("route terminal game to settlement"))?;
-            let settlement = CovenantOutput::from_tx(&tx, 0).map_err(orchestrator_builder_error("read ChessSettle output"))?;
+            let settlement = CovenantOutput::from_tx(&tx, 0).map_err(orchestrator_builder_error("read Settle output"))?;
             (settlement, Some(tx))
         };
         if let Some(tx) = mux_settle_tx.as_ref() {
@@ -1706,7 +1705,7 @@ impl TxArena {
             .map_err(orchestrator_builder_error("build black settlement Player UTXO"))?;
         let context = TxContext::new()
             .actor_input(
-                "ChessSettle",
+                "Settle",
                 settle_source_state(white_ref, black_ref, expected_status),
                 "settle",
                 settlement.outpoint,
@@ -1822,14 +1821,14 @@ fn square_idx(x: i64, y: i64) -> i64 {
 
 fn worker_actor(worker: WorkerKind) -> &'static str {
     match worker {
-        WorkerKind::Pawn => "ChessPawn",
-        WorkerKind::Knight => "ChessKnight",
-        WorkerKind::Vert => "ChessVert",
-        WorkerKind::Horiz => "ChessHoriz",
-        WorkerKind::Diag => "ChessDiag",
-        WorkerKind::King => "ChessKing",
-        WorkerKind::Castle => "ChessCastle",
-        WorkerKind::CastleChallenge => "ChessCastleChallengePrep",
+        WorkerKind::Pawn => "Pawn",
+        WorkerKind::Knight => "Knight",
+        WorkerKind::Vert => "Vert",
+        WorkerKind::Horiz => "Horiz",
+        WorkerKind::Diag => "Diag",
+        WorkerKind::King => "King",
+        WorkerKind::Castle => "Castle",
+        WorkerKind::CastleChallenge => "CastleChallengePrep",
     }
 }
 
@@ -2076,37 +2075,37 @@ fn load_template_family() -> Result<ChessTemplateFamily, OrchestratorError> {
     let artifact = load_argent_artifact()?;
     let league = artifact_template_witness(&artifact, "League")?;
     let player = artifact_template_witness(&artifact, "Player")?;
-    let mux = artifact_template_witness(&artifact, "ChessMux")?;
-    let settle = artifact_template_witness(&artifact, "ChessSettle")?;
-    let pawn = artifact_template_witness(&artifact, "ChessPawn")?;
-    let knight = artifact_template_witness(&artifact, "ChessKnight")?;
-    let vert = artifact_template_witness(&artifact, "ChessVert")?;
-    let horiz = artifact_template_witness(&artifact, "ChessHoriz")?;
-    let diag = artifact_template_witness(&artifact, "ChessDiag")?;
-    let king = artifact_template_witness(&artifact, "ChessKing")?;
-    let castle = artifact_template_witness(&artifact, "ChessCastle")?;
-    let castle_challenge = artifact_template_witness(&artifact, "ChessCastleChallengePrep")?;
+    let mux = artifact_template_witness(&artifact, "Mux")?;
+    let settle = artifact_template_witness(&artifact, "Settle")?;
+    let pawn = artifact_template_witness(&artifact, "Pawn")?;
+    let knight = artifact_template_witness(&artifact, "Knight")?;
+    let vert = artifact_template_witness(&artifact, "Vert")?;
+    let horiz = artifact_template_witness(&artifact, "Horiz")?;
+    let diag = artifact_template_witness(&artifact, "Diag")?;
+    let king = artifact_template_witness(&artifact, "King")?;
+    let castle = artifact_template_witness(&artifact, "Castle")?;
+    let castle_challenge = artifact_template_witness(&artifact, "CastleChallengePrep")?;
 
     let route_table = artifact
         .argent
         .template_plan
         .route_tables
         .iter()
-        .find(|table| table.state == "GameState" && table.field == "gen__chess_mux_routes")
-        .ok_or_else(|| OrchestratorError("Argent artifact has no ChessMux route table".to_string()))?;
+        .find(|table| table.state == "GameState" && table.field == "gen__mux_routes")
+        .ok_or_else(|| OrchestratorError("Argent artifact has no Mux route table".to_string()))?;
     let expected_routes = [
-        ("ChessPawn", &pawn),
-        ("ChessKnight", &knight),
-        ("ChessVert", &vert),
-        ("ChessHoriz", &horiz),
-        ("ChessDiag", &diag),
-        ("ChessKing", &king),
-        ("ChessCastle", &castle),
-        ("ChessCastleChallengePrep", &castle_challenge),
+        ("Pawn", &pawn),
+        ("Knight", &knight),
+        ("Vert", &vert),
+        ("Horiz", &horiz),
+        ("Diag", &diag),
+        ("King", &king),
+        ("Castle", &castle),
+        ("CastleChallengePrep", &castle_challenge),
     ];
     if route_table.byte_len != expected_routes.len() * 32 || route_table.entries.len() != expected_routes.len() {
         return Err(OrchestratorError(format!(
-            "unexpected ChessMux route table size: {} bytes across {} entries",
+            "unexpected Mux route table size: {} bytes across {} entries",
             route_table.byte_len,
             route_table.entries.len()
         )));
@@ -2118,13 +2117,13 @@ fn load_template_family() -> Result<ChessTemplateFamily, OrchestratorError> {
             .entries
             .iter()
             .find(|entry| entry.index == index)
-            .ok_or_else(|| OrchestratorError(format!("ChessMux route table has no entry at index {index}")))?;
+            .ok_or_else(|| OrchestratorError(format!("Mux route table has no entry at index {index}")))?;
         let RouteTemplateLeafArtifact::Template { actor, .. } = &entry.leaf else {
-            return Err(OrchestratorError(format!("ChessMux route table entry {index} is not a template")));
+            return Err(OrchestratorError(format!("Mux route table entry {index} is not a template")));
         };
         if actor != expected_actor || entry.offset != index * 32 {
             return Err(OrchestratorError(format!(
-                "unexpected ChessMux route table entry {index}: actor {actor}, offset {}",
+                "unexpected Mux route table entry {index}: actor {actor}, offset {}",
                 entry.offset
             )));
         }

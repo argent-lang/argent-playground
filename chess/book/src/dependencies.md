@@ -86,7 +86,7 @@ and `Player` carry the worker-table digest. `Player.start_game` receives the
 matching 256-byte worker table through a generated witness and stores it in the
 game state.
 
-The game state also carries direct `ChessMux`, `ChessSettle`, and `Player`
+The game state also carries direct `Mux`, `Settle`, and `Player`
 template fields. These fields let the game return to mux or enter settlement
 without adding non-worker entries to the worker table.
 

@@ -6,11 +6,11 @@ Target transaction:
 
 The intended auth split is:
 
-- `ChessMux` routes terminal state into `ChessSettle`
-- generated hidden state carries the `ChessSettle` and `Player` templates
-- `ChessSettle` is the settlement leader
+- `Mux` routes terminal state into `Settle`
+- generated hidden state carries the `Settle` and `Player` templates
+- `Settle` is the settlement leader
 - both `Player` inputs are delegates
-- `ChessSettle` validates both `Player` outputs and the objective payout split
+- `Settle` validates both `Player` outputs and the objective payout split
 - player delegates only verify that the leader is the expected terminal settle contract
 
 ```mermaid
@@ -46,10 +46,10 @@ sequenceDiagram
 
 What is implemented now:
 
-- `ChessMux` routes a terminal mux state into `ChessSettle`
-- generated template fields authenticate the `ChessSettle` output and later
+- `Mux` routes a terminal mux state into `Settle`
+- generated template fields authenticate the `Settle` output and later
   `Player` inputs and outputs
-- `ChessSettle` settles into two `Player` outputs
+- `Settle` settles into two `Player` outputs
 - settlement requires both players to have `open_games > 0`
 - settlement decrements `open_games` for both players
 - settlement increments `games`

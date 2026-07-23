@@ -1,6 +1,6 @@
 import "./types.ag";
 
-import actor ChessMux from "./game.ag";
+import actor Mux from "./game.ag";
 
 actor League owns LeagueState {
     entry register_player(owner_sig: sig, owner_pk: pubkey) emits {
@@ -58,7 +58,7 @@ actor Player owns PlayerState {
     } emits {
         self_out: Player;
         other_out: Player;
-        game: ChessMux;
+        game: Mux;
     } {
         require(self_side == WHITE || self_side == BLACK);
         require(move_timeout > 0);
@@ -116,7 +116,7 @@ actor Player owns PlayerState {
         become {
             self_out <- Player(next_self);
             other_out <- Player(next_other);
-            game <- ChessMux(next_game);
+            game <- Mux(next_game);
         };
     }
 
@@ -134,7 +134,7 @@ actor Player owns PlayerState {
     }
 
     delegate delegate_settle() consumes {
-        settlement: ChessSettle;
+        settlement: Settle;
     } {
         require(settlement.status != LIVE);
         byte[32] self_ref = player_ref(owner, player_id);
@@ -154,7 +154,7 @@ actor Player owns PlayerState {
     }
 }
 
-actor ChessSettle owns SettleState {
+actor Settle owns SettleState {
     entry settle() consumes {
         white_in: Player;
         black_in: Player;

@@ -24,8 +24,8 @@ The small mux example establishes the base MCF pattern.
 
 Chess is the full system demo.
 
-- `League -> Player -> ChessMux -> ChessSettle`
-- zoom into `ChessMux -> workers -> ChessMux`
+- `League -> Player -> Mux -> Settle`
+- zoom into `Mux -> workers -> Mux`
 - point out the timeout edge on every worker
 - point out that terminal game value and rating update both settle back into
   `Player`

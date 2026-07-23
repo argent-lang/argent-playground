@@ -84,7 +84,7 @@ centralized kill switch.
 
 ## Leader / Delegate Split
 
-`Player.start_game` and `ChessSettle.settle` both use a leader-plus-delegates
+`Player.start_game` and `Settle.settle` both use a leader-plus-delegates
 shape.
 
 Pattern:
@@ -96,7 +96,7 @@ Settlement adds a useful refinement:
 
 - delegates do not need to sign if the terminal payout is validated
   objectively on chain
-- once funds are checked in `ChessSettle`, player delegates can stay fully
+- once funds are checked in `Settle`, player delegates can stay fully
   passive
 
 ## Shared State Layout Across A Contract Family

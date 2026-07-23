@@ -42,7 +42,7 @@ This example applies the multiplexer pattern to chess.
 Instead of one giant contract that tries to enforce the whole game at once, the
 protocol is split into:
 
-- `ChessMux`: the durable checkpoint contract that owns the full game state
+- `Mux`: the durable checkpoint contract that owns the full game state
 - worker contracts: narrow validators for bounded move families and challenge flows
 
 All of these contracts share the same serialized state layout.
@@ -71,7 +71,7 @@ Layout:
 - `COVERAGE.md`: audit matrix for current classical-rule coverage vs protocol behavior.
 
 The current prototype already covers the core mux/worker chess engine and a
-real outer `League -> Player -> ChessMux -> ChessSettle` flow.
+real outer `League -> Player -> Mux -> Settle` flow.
 
 ## Tasks
 
@@ -97,7 +97,7 @@ here in the same change that updates their status.
 ### Outer Layer
 
 - [✓] Define the outer covenant and game-entry/settlement protocol needed to represent and update scores on chain.
-- [✓] Build an outer durable layer with `League` registration, `Player` accounts, `ChessMux` game start, `ChessSettle` settlement, and `Player` retirement guarded by `open_games`.
+- [✓] Build an outer durable layer with `League` registration, `Player` accounts, `Mux` game start, `Settle` settlement, and `Player` retirement guarded by `open_games`.
 - [✓] Keep admin control limited to `League` lane funding and fan-out, while leaving game progression and settlement permissionless once a game is open.
 - [ ] Build full chess server logic with persistent player scoring based on game results.
 

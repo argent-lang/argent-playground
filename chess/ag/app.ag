@@ -5,14 +5,14 @@ import "./game.ag";
 app Chess {
     actor League;
     actor Player;
-    actor ChessMux;
-    actor ChessPawn;
-    actor ChessKnight;
-    actor ChessVert;
-    actor ChessHoriz;
-    actor ChessDiag;
-    actor ChessKing;
-    actor ChessCastle;
-    actor ChessCastleChallengePrep;
-    actor ChessSettle;
+    actor Mux;
+    actor Pawn;
+    actor Knight;
+    actor Vert;
+    actor Horiz;
+    actor Diag;
+    actor King;
+    actor Castle;
+    actor CastleChallengePrep;
+    actor Settle;
 }

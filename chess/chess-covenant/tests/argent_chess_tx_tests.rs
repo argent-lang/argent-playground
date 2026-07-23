@@ -141,7 +141,7 @@ impl GameStateData {
         if termination_action == OFFER {
             next.draw_state = WOFFER + self.turn;
         }
-        if target != "ChessCastleChallengePrep" {
+        if target != "CastleChallengePrep" {
             next.recent_castle = CLEAR;
         }
         next
@@ -263,7 +263,7 @@ fn execute_worker_round_trip(
     fixture_tag: u8,
 ) {
     let (worker_state, worker_output) = route_to_worker(builder, player, worker, initial, mv, fixture_tag);
-    execute_actor_transition(builder, worker, &worker_state, "apply", worker_output, "ChessMux", expected);
+    execute_actor_transition(builder, worker, &worker_state, "apply", worker_output, "Mux", expected);
 }
 
 fn route_to_worker(
@@ -290,7 +290,7 @@ fn route_to_worker_with_action(
     let mux_state = initial.source_state();
     let mux_outpoint = TransactionOutpoint::new(TransactionId::from_bytes([fixture_tag.wrapping_add(1); 32]), 0);
     let mux_utxo = builder
-        .covenant_utxo("ChessMux", mux_state.clone(), GAME_VALUE, 0, false, Some(covenant_id))
+        .covenant_utxo("Mux", mux_state.clone(), GAME_VALUE, 0, false, Some(covenant_id))
         .unwrap_or_else(|err| panic!("{worker} mux UTXO must build: {err}"));
     route_mux_output_to_worker(
         builder,
@@ -323,7 +323,7 @@ fn route_mux_output_to_worker(
 
     let route_context = TxContext::new()
         .actor_input(
-            "ChessMux",
+            "Mux",
             mux_state,
             EntryCall::new("route").args_with(move |tx, input_index| {
                 args![
@@ -377,7 +377,7 @@ fn execute_mux_terminate(
     let mux_state = initial.source_state();
     let outpoint = TransactionOutpoint::new(TransactionId::from_bytes([fixture_tag.wrapping_add(1); 32]), 0);
     let utxo = builder
-        .covenant_utxo("ChessMux", mux_state.clone(), GAME_VALUE, 0, false, Some(covenant_id))
+        .covenant_utxo("Mux", mux_state.clone(), GAME_VALUE, 0, false, Some(covenant_id))
         .expect("mux UTXO builds from source state");
     terminate_mux_output(
         builder,
@@ -405,7 +405,7 @@ fn terminate_mux_output(
     let player_id = player.player_id;
     let context = TxContext::new()
         .actor_input(
-            "ChessMux",
+            "Mux",
             mux_state,
             EntryCall::new("terminate").args_with(move |tx, input_index| {
                 args![termination_action, sign_input(tx, input_index, &keypair), public_key.clone(), player_id]
@@ -414,7 +414,7 @@ fn terminate_mux_output(
             mux_output.utxo,
             0,
         )
-        .actor_output("ChessMux", expected.source_state(), CovenantBinding::new(0, covenant_id), output_value);
+        .actor_output("Mux", expected.source_state(), CovenantBinding::new(0, covenant_id), output_value);
     let tx = builder.build(&context).unwrap_or_else(|err| panic!("mux terminate action {termination_action} must execute: {err}"));
     CovenantOutput::from_tx(&tx, 0).expect("mux termination output is a covenant UTXO")
 }
@@ -600,7 +600,7 @@ fn start_game(
         )
         .actor_output("Player", next_leader.source_state(), CovenantBinding::new(0, covenant_id), leader_value)
         .actor_output("Player", next_other.source_state(), CovenantBinding::new(0, covenant_id), other_value)
-        .actor_output("ChessMux", game_state.source_state(), CovenantBinding::new(0, covenant_id), GAME_VALUE);
+        .actor_output("Mux", game_state.source_state(), CovenantBinding::new(0, covenant_id), GAME_VALUE);
     let tx = builder.build(&context).expect("two registered players start a signed game");
     let leader_output = CovenantOutput::from_tx(&tx, 0).expect("leader continuation is a covenant UTXO");
     let other_output = CovenantOutput::from_tx(&tx, 1).expect("other continuation is a covenant UTXO");
@@ -612,9 +612,9 @@ fn route_game_to_settle(builder: &TxBuilder<'_>, game_state: &GameStateData, gam
     let covenant_id = game_output.covenant_id;
     let game_value = game_output.utxo.amount;
     let context = TxContext::new()
-        .actor_input("ChessMux", game_state.source_state(), "settle", game_output.outpoint, game_output.utxo, 0)
+        .actor_input("Mux", game_state.source_state(), "settle", game_output.outpoint, game_output.utxo, 0)
         .actor_output(
-            "ChessSettle",
+            "Settle",
             settle_state(game_state.white_player, game_state.black_player, game_state.status),
             CovenantBinding::new(0, covenant_id),
             game_value,
@@ -651,7 +651,7 @@ fn settle_black_win(
         BWIN,
     );
     let context = TxContext::new()
-        .actor_input("ChessSettle", settlement_state, "settle", settlement.outpoint, settlement.utxo, 0)
+        .actor_input("Settle", settlement_state, "settle", settlement.outpoint, settlement.utxo, 0)
         .actor_input("Player", white_state.source_state(), "delegate_settle", white_output.outpoint, white_output.utxo, 0)
         .actor_input("Player", black_state.source_state(), "delegate_settle", black_output.outpoint, black_output.utxo, 0)
         .actor_output("Player", next_white.source_state(), CovenantBinding::new(0, covenant_id), white_value)
@@ -678,12 +678,12 @@ fn execute_to_settle<'a>(
         .covenant_utxo(source_actor, source_values.clone(), GAME_VALUE, 0, false, Some(covenant_id))
         .unwrap_or_else(|err| panic!("{source_actor} UTXO must build: {err}"));
     let context = TxContext::new().actor_input(source_actor, source_values, entry, outpoint, utxo, sequence).actor_output(
-        "ChessSettle",
+        "Settle",
         settle_state(source_state.white_player, source_state.black_player, settle_status),
         CovenantBinding::new(0, covenant_id),
         GAME_VALUE,
     );
-    builder.build(&context).unwrap_or_else(|err| panic!("{source_actor} must transition to ChessSettle: {err}"));
+    builder.build(&context).unwrap_or_else(|err| panic!("{source_actor} must transition to Settle: {err}"));
 }
 
 #[test]
@@ -697,12 +697,12 @@ fn argent_ordinary_workers_round_trip_through_mux() {
     let pawn_initial = GameStateData::live(white.player_ref, black_player_ref, opening_board());
     let mut pawn_expected = pawn_initial.completed_move(pawn_move);
     pawn_expected.en_passant_idx = 20;
-    execute_worker_round_trip(&builder, &white, "ChessPawn", &pawn_initial, pawn_move, &pawn_expected, 0x61);
+    execute_worker_round_trip(&builder, &white, "Pawn", &pawn_initial, pawn_move, &pawn_expected, 0x61);
 
     let knight_move = MoveSpec::new(1, 0, 2, 2);
     let knight_initial = GameStateData::live(white.player_ref, black_player_ref, opening_board());
     let knight_expected = knight_initial.completed_move(knight_move);
-    execute_worker_round_trip(&builder, &white, "ChessKnight", &knight_initial, knight_move, &knight_expected, 0x63);
+    execute_worker_round_trip(&builder, &white, "Knight", &knight_initial, knight_move, &knight_expected, 0x63);
 
     let mut vert_board = vec![0; 64];
     vert_board[0] = 0x04;
@@ -710,21 +710,21 @@ fn argent_ordinary_workers_round_trip_through_mux() {
     let vert_initial = GameStateData::live(white.player_ref, black_player_ref, vert_board);
     let mut vert_expected = vert_initial.completed_move(vert_move);
     vert_expected.castle_rights = [1, 0, 1, 1];
-    execute_worker_round_trip(&builder, &white, "ChessVert", &vert_initial, vert_move, &vert_expected, 0x65);
+    execute_worker_round_trip(&builder, &white, "Vert", &vert_initial, vert_move, &vert_expected, 0x65);
 
     let mut horiz_board = vec![0; 64];
     horiz_board[24] = 0x04;
     let horiz_move = MoveSpec::new(0, 3, 3, 3);
     let horiz_initial = GameStateData::live(white.player_ref, black_player_ref, horiz_board);
     let horiz_expected = horiz_initial.completed_move(horiz_move);
-    execute_worker_round_trip(&builder, &white, "ChessHoriz", &horiz_initial, horiz_move, &horiz_expected, 0x67);
+    execute_worker_round_trip(&builder, &white, "Horiz", &horiz_initial, horiz_move, &horiz_expected, 0x67);
 
     let mut diag_board = vec![0; 64];
     diag_board[0] = 0x03;
     let diag_move = MoveSpec::new(0, 0, 3, 3);
     let diag_initial = GameStateData::live(white.player_ref, black_player_ref, diag_board);
     let diag_expected = diag_initial.completed_move(diag_move);
-    execute_worker_round_trip(&builder, &white, "ChessDiag", &diag_initial, diag_move, &diag_expected, 0x69);
+    execute_worker_round_trip(&builder, &white, "Diag", &diag_initial, diag_move, &diag_expected, 0x69);
 
     let mut king_board = vec![0; 64];
     king_board[4] = 0x06;
@@ -732,7 +732,7 @@ fn argent_ordinary_workers_round_trip_through_mux() {
     let king_initial = GameStateData::live(white.player_ref, black_player_ref, king_board);
     let mut king_expected = king_initial.completed_move(king_move);
     king_expected.castle_rights = [0, 0, 1, 1];
-    execute_worker_round_trip(&builder, &white, "ChessKing", &king_initial, king_move, &king_expected, 0x6b);
+    execute_worker_round_trip(&builder, &white, "King", &king_initial, king_move, &king_expected, 0x6b);
 }
 
 #[test]
@@ -828,7 +828,7 @@ fn argent_castles_all_four_shapes() {
         expected.castle_rights = case.expected_rights;
         expected.recent_castle = case.expected_recent_castle;
         let mover = if case.turn == WHITE { &white } else { &black };
-        execute_worker_round_trip(&builder, mover, "ChessCastle", &initial, case.mv, &expected, case.fixture_tag);
+        execute_worker_round_trip(&builder, mover, "Castle", &initial, case.mv, &expected, case.fixture_tag);
     }
 }
 
@@ -849,7 +849,7 @@ fn argent_castle_challenge_routes_through_prep_and_piece_worker() {
     mux_state.recent_castle = 1;
     let challenge_move = MoveSpec::new(3, 1, 4, 0);
 
-    let (prep_state, prep_output) = route_to_worker(&builder, &black, "ChessCastleChallengePrep", &mux_state, challenge_move, 0x79);
+    let (prep_state, prep_output) = route_to_worker(&builder, &black, "CastleChallengePrep", &mux_state, challenge_move, 0x79);
     let mut pawn_state = prep_state.clone();
     pawn_state.board = vec![0; 64];
     pawn_state.board[4] = 0x06;
@@ -857,17 +857,17 @@ fn argent_castle_challenge_routes_through_prep_and_piece_worker() {
     pawn_state.board[11] = 0x09;
     let pawn_output = execute_actor_transition(
         &builder,
-        "ChessCastleChallengePrep",
+        "CastleChallengePrep",
         &prep_state,
-        EntryCall::new("apply").args(args![actor("ChessPawn")]),
+        EntryCall::new("apply").args(args![actor("Pawn")]),
         prep_output,
-        "ChessPawn",
+        "Pawn",
         &pawn_state,
     );
 
     let mut expected = pawn_state.completed_move(challenge_move);
     expected.status = BWIN;
-    execute_actor_transition(&builder, "ChessPawn", &pawn_state, "apply", pawn_output, "ChessMux", &expected);
+    execute_actor_transition(&builder, "Pawn", &pawn_state, "apply", pawn_output, "Mux", &expected);
 }
 
 #[test]
@@ -877,13 +877,13 @@ fn argent_draw_offer_survives_an_ordinary_worker_round_trip() {
     let white = player(0x51);
     let move_spec = MoveSpec::new(4, 1, 4, 3);
     let initial = GameStateData::live(white.player_ref, [0x52; 32], opening_board());
-    let (pawn_state, pawn_output) = route_to_worker_with_action(&builder, &white, "ChessPawn", &initial, move_spec, OFFER, 0x81);
+    let (pawn_state, pawn_output) = route_to_worker_with_action(&builder, &white, "Pawn", &initial, move_spec, OFFER, 0x81);
     assert_eq!(pawn_state.draw_state, WOFFER);
 
     let mut expected = initial.completed_move(move_spec);
     expected.en_passant_idx = 20;
     expected.draw_state = WOFFER;
-    execute_actor_transition(&builder, "ChessPawn", &pawn_state, "apply", pawn_output, "ChessMux", &expected);
+    execute_actor_transition(&builder, "Pawn", &pawn_state, "apply", pawn_output, "Mux", &expected);
 }
 
 #[test]
@@ -919,19 +919,19 @@ fn argent_worker_and_mux_paths_exit_the_family_into_settlement() {
 
     let initial = GameStateData::live(white.player_ref, black.player_ref, opening_board());
     let invalid_knight_move = MoveSpec::new(0, 1, 0, 2);
-    let knight_state = initial.committed_route("ChessKnight", invalid_knight_move, CLEAR);
-    execute_to_settle(&builder, "ChessKnight", &knight_state, "timeout", MOVE_TIMEOUT as u64, BWIN, 0x91);
+    let knight_state = initial.committed_route("Knight", invalid_knight_move, CLEAR);
+    execute_to_settle(&builder, "Knight", &knight_state, "timeout", MOVE_TIMEOUT as u64, BWIN, 0x91);
 
     let keypair = black.keypair;
     let public_key = black.public_key.clone();
     let player_id = black.player_id;
     let mux_timeout = EntryCall::new("timeout")
         .args_with(move |tx, input_index| args![sign_input(tx, input_index, &keypair), public_key.clone(), player_id]);
-    execute_to_settle(&builder, "ChessMux", &initial, mux_timeout, MOVE_TIMEOUT as u64, BWIN, 0x93);
+    execute_to_settle(&builder, "Mux", &initial, mux_timeout, MOVE_TIMEOUT as u64, BWIN, 0x93);
 
     let mut terminal = initial;
     terminal.status = BWIN;
-    execute_to_settle(&builder, "ChessMux", &terminal, "settle", 0, BWIN, 0x95);
+    execute_to_settle(&builder, "Mux", &terminal, "settle", 0, BWIN, 0x95);
 }
 
 #[test]
@@ -980,10 +980,10 @@ fn argent_registered_players_start_a_spendable_game() {
 
     let move_spec = MoveSpec::new(4, 1, 4, 3);
     let (pawn_state, pawn_output) =
-        route_mux_output_to_worker(&builder, &white, "ChessPawn", &started.game_state, started.game_output, move_spec, CLEAR);
+        route_mux_output_to_worker(&builder, &white, "Pawn", &started.game_state, started.game_output, move_spec, CLEAR);
     let mut expected = started.game_state.completed_move(move_spec);
     expected.en_passant_idx = 20;
-    execute_actor_transition(&builder, "ChessPawn", &pawn_state, "apply", pawn_output, "ChessMux", &expected);
+    execute_actor_transition(&builder, "Pawn", &pawn_state, "apply", pawn_output, "Mux", &expected);
 }
 
 #[test]

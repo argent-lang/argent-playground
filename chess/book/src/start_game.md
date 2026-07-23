@@ -9,7 +9,7 @@ The current start-game split is:
 - one `Player` input leads
 - the other `Player` input delegates
 - the leader recreates both durable players and materializes one opening
-  `ChessMux` state
+  `Mux` state
 - both recreated players increment `open_games`
 
 ```mermaid

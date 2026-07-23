@@ -10,16 +10,16 @@
   "templates": [
     { "actor": "League", "symbol": "gen__league_template", "hash": null },
     { "actor": "Player", "symbol": "gen__player_template", "hash": null },
-    { "actor": "ChessMux", "symbol": "gen__chess_mux_template", "hash": null },
-    { "actor": "ChessPawn", "symbol": "gen__chess_pawn_template", "hash": null },
-    { "actor": "ChessKnight", "symbol": "gen__chess_knight_template", "hash": null },
-    { "actor": "ChessVert", "symbol": "gen__chess_vert_template", "hash": null },
-    { "actor": "ChessHoriz", "symbol": "gen__chess_horiz_template", "hash": null },
-    { "actor": "ChessDiag", "symbol": "gen__chess_diag_template", "hash": null },
-    { "actor": "ChessKing", "symbol": "gen__chess_king_template", "hash": null },
-    { "actor": "ChessCastle", "symbol": "gen__chess_castle_template", "hash": null },
-    { "actor": "ChessCastleChallengePrep", "symbol": "gen__chess_castle_challenge_prep_template", "hash": null },
-    { "actor": "ChessSettle", "symbol": "gen__chess_settle_template", "hash": null }
+    { "actor": "Mux", "symbol": "gen__mux_template", "hash": null },
+    { "actor": "Pawn", "symbol": "gen__pawn_template", "hash": null },
+    { "actor": "Knight", "symbol": "gen__knight_template", "hash": null },
+    { "actor": "Vert", "symbol": "gen__vert_template", "hash": null },
+    { "actor": "Horiz", "symbol": "gen__horiz_template", "hash": null },
+    { "actor": "Diag", "symbol": "gen__diag_template", "hash": null },
+    { "actor": "King", "symbol": "gen__king_template", "hash": null },
+    { "actor": "Castle", "symbol": "gen__castle_template", "hash": null },
+    { "actor": "CastleChallengePrep", "symbol": "gen__castle_challenge_prep_template", "hash": null },
+    { "actor": "Settle", "symbol": "gen__settle_template", "hash": null }
   ],
   "actors": [
     {
@@ -58,9 +58,9 @@
         {
           "name": "start_game",
           "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "self_out", "auth_index": 0, "actors": ["Player"] }, { "name": "other_out", "auth_index": 1, "actors": ["Player"] }, { "name": "game", "auth_index": 2, "actors": ["ChessMux"] }] },
+          "emits": { "kind": "outputs", "outputs": [{ "name": "self_out", "auth_index": 0, "actors": ["Player"] }, { "name": "other_out", "auth_index": 1, "actors": ["Player"] }, { "name": "game", "auth_index": 2, "actors": ["Mux"] }] },
           "consumes": [{ "name": "other", "actor": "Player" }],
-          "routes": [{ "output": "self_out", "actor": "Player", "state": "next_self" }, { "output": "other_out", "actor": "Player", "state": "next_other" }, { "output": "game", "actor": "ChessMux", "state": "next_game" }]
+          "routes": [{ "output": "self_out", "actor": "Player", "state": "next_self" }, { "output": "other_out", "actor": "Player", "state": "next_other" }, { "output": "game", "actor": "Mux", "state": "next_game" }]
         },
         {
           "name": "delegate_start_game",
@@ -73,7 +73,7 @@
           "name": "delegate_settle",
           "kind": "delegate",
           "emits": { "kind": "none" },
-          "consumes": [{ "name": "settlement", "actor": "ChessSettle" }],
+          "consumes": [{ "name": "settlement", "actor": "Settle" }],
           "routes": []
         },
         {
@@ -93,9 +93,9 @@
       ]
     },
     {
-      "name": "ChessMux",
+      "name": "Mux",
       "state": "GameState",
-      "sil": "sil/ChessMux.sil",
+      "sil": "sil/Mux.sil",
       "entries": [
         {
           "name": "route",
@@ -107,177 +107,177 @@
         {
           "name": "terminate",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessMux"] },
+          "emits": { "kind": "one", "actors": ["Mux"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessMux", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Mux", "state": "next_state" }]
         },
         {
           "name": "timeout",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessSettle"] },
+          "emits": { "kind": "one", "actors": ["Settle"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessSettle", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Settle", "state": "next_state" }]
         },
         {
           "name": "settle",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessSettle"] },
+          "emits": { "kind": "one", "actors": ["Settle"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessSettle", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Settle", "state": "next_state" }]
         }
       ]
     },
     {
-      "name": "ChessPawn",
+      "name": "Pawn",
       "state": "GameState",
-      "sil": "sil/ChessPawn.sil",
+      "sil": "sil/Pawn.sil",
       "entries": [
         {
           "name": "apply",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessMux"] },
+          "emits": { "kind": "one", "actors": ["Mux"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessMux", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Mux", "state": "next_state" }]
         },
         {
           "name": "timeout",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessSettle"] },
+          "emits": { "kind": "one", "actors": ["Settle"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessSettle", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Settle", "state": "next_state" }]
         }
       ]
     },
     {
-      "name": "ChessKnight",
+      "name": "Knight",
       "state": "GameState",
-      "sil": "sil/ChessKnight.sil",
+      "sil": "sil/Knight.sil",
       "entries": [
         {
           "name": "apply",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessMux"] },
+          "emits": { "kind": "one", "actors": ["Mux"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessMux", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Mux", "state": "next_state" }]
         },
         {
           "name": "timeout",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessSettle"] },
+          "emits": { "kind": "one", "actors": ["Settle"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessSettle", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Settle", "state": "next_state" }]
         }
       ]
     },
     {
-      "name": "ChessVert",
+      "name": "Vert",
       "state": "GameState",
-      "sil": "sil/ChessVert.sil",
+      "sil": "sil/Vert.sil",
       "entries": [
         {
           "name": "apply",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessMux"] },
+          "emits": { "kind": "one", "actors": ["Mux"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessMux", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Mux", "state": "next_state" }]
         },
         {
           "name": "timeout",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessSettle"] },
+          "emits": { "kind": "one", "actors": ["Settle"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessSettle", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Settle", "state": "next_state" }]
         }
       ]
     },
     {
-      "name": "ChessHoriz",
+      "name": "Horiz",
       "state": "GameState",
-      "sil": "sil/ChessHoriz.sil",
+      "sil": "sil/Horiz.sil",
       "entries": [
         {
           "name": "apply",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessMux"] },
+          "emits": { "kind": "one", "actors": ["Mux"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessMux", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Mux", "state": "next_state" }]
         },
         {
           "name": "timeout",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessSettle"] },
+          "emits": { "kind": "one", "actors": ["Settle"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessSettle", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Settle", "state": "next_state" }]
         }
       ]
     },
     {
-      "name": "ChessDiag",
+      "name": "Diag",
       "state": "GameState",
-      "sil": "sil/ChessDiag.sil",
+      "sil": "sil/Diag.sil",
       "entries": [
         {
           "name": "apply",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessMux"] },
+          "emits": { "kind": "one", "actors": ["Mux"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessMux", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Mux", "state": "next_state" }]
         },
         {
           "name": "timeout",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessSettle"] },
+          "emits": { "kind": "one", "actors": ["Settle"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessSettle", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Settle", "state": "next_state" }]
         }
       ]
     },
     {
-      "name": "ChessKing",
+      "name": "King",
       "state": "GameState",
-      "sil": "sil/ChessKing.sil",
+      "sil": "sil/King.sil",
       "entries": [
         {
           "name": "apply",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessMux"] },
+          "emits": { "kind": "one", "actors": ["Mux"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessMux", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Mux", "state": "next_state" }]
         },
         {
           "name": "timeout",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessSettle"] },
+          "emits": { "kind": "one", "actors": ["Settle"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessSettle", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Settle", "state": "next_state" }]
         }
       ]
     },
     {
-      "name": "ChessCastle",
+      "name": "Castle",
       "state": "GameState",
-      "sil": "sil/ChessCastle.sil",
+      "sil": "sil/Castle.sil",
       "entries": [
         {
           "name": "apply",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessMux"] },
+          "emits": { "kind": "one", "actors": ["Mux"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessMux", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Mux", "state": "next_state" }]
         },
         {
           "name": "timeout",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessSettle"] },
+          "emits": { "kind": "one", "actors": ["Settle"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessSettle", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Settle", "state": "next_state" }]
         }
       ]
     },
     {
-      "name": "ChessCastleChallengePrep",
+      "name": "CastleChallengePrep",
       "state": "GameState",
-      "sil": "sil/ChessCastleChallengePrep.sil",
+      "sil": "sil/CastleChallengePrep.sil",
       "entries": [
         {
           "name": "apply",
@@ -289,16 +289,16 @@
         {
           "name": "timeout",
           "kind": "leader",
-          "emits": { "kind": "one", "actors": ["ChessSettle"] },
+          "emits": { "kind": "one", "actors": ["Settle"] },
           "consumes": [],
-          "routes": [{ "output": null, "actor": "ChessSettle", "state": "next_state" }]
+          "routes": [{ "output": null, "actor": "Settle", "state": "next_state" }]
         }
       ]
     },
     {
-      "name": "ChessSettle",
+      "name": "Settle",
       "state": "SettleState",
-      "sil": "sil/ChessSettle.sil",
+      "sil": "sil/Settle.sil",
       "entries": [
         {
           "name": "settle",
