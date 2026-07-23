@@ -10,7 +10,7 @@ state CounterState {
 }
 
 actor Counter owns CounterState {
-    entry bump(owner_sig: sig, delta: int) emits one Counter {
+    entry bump(sig owner_sig, int delta) emits one Counter {
         require(checkSig(owner_sig, owner));
 
         CounterState next = {

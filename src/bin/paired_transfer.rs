@@ -9,11 +9,11 @@ state BoxState {
 }
 
 actor Left owns BoxState {
-    entry shift(amount: int) consumes {
-        peer: Right;
+    entry shift(int amount) consumes {
+        peer: Right,
     } emits {
-        left_out: Left;
-        peer_out: Right;
+        left_out: Left,
+        peer_out: Right,
     } {
         require(amount > 0);
         require(units >= amount);
@@ -30,15 +30,15 @@ actor Left owns BoxState {
         require(peer_out.value == peer.value);
 
         become {
-            left_out <- Left(next_left);
-            peer_out <- Right(next_peer);
+            left_out <- Left(next_left),
+            peer_out <- Right(next_peer),
         };
     }
 }
 
 actor Right owns BoxState {
     delegate accept_shift() consumes {
-        leader: Left;
+        leader: Left,
     } {
         require(leader.units >= 0);
     }

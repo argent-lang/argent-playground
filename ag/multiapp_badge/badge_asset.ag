@@ -1,11 +1,11 @@
 state BadgeState {
-    covid controller_id;
+    cov_id controller_id;
     int balance;
 }
 
 actor Badge owns BadgeState {
-    entry apply(next_balance: int) emits {
-        badge: Badge;
+    entry apply(int next_balance) emits {
+        badge: Badge,
     } {
         require(controller_id.co_spent());
 

@@ -12,14 +12,14 @@ state FixedTokenState expands AssetCapsule {
 // the complete UTXO amount; this demo intentionally has no split or merge path.
 actor FixedToken owns FixedTokenState {
     entry transfer(
-        next_owner: byte[32],
-        next_owner_kind: byte,
-        owner_sig: sig
+        byte[32] next_owner,
+        byte next_owner_kind,
+        sig owner_sig
     ) emits one FixedToken {
         if (owner_kind == OWNER_KEY) {
             require(checkSig(owner_sig, owner));
         } else if (owner_kind == OWNER_COVID) {
-            require(covid(owner).co_spent());
+            require(cov_id(owner).co_spent());
         } else {
             require(false);
         }

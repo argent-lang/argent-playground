@@ -29,7 +29,7 @@ actor enum Target {
 }
 
 actor Router owns RouteState {
-    entry choose(target: Target) emits one Target {
+    entry choose(Target target) emits one Target {
         if (target == Target::Beta) {
             require(nonce >= 0);
         }
@@ -64,7 +64,7 @@ fn main() -> PlaygroundResult<()> {
 
     // Choose Alpha.
     let router_utxo = builder.covenant_utxo("Router", router_state.clone(), value, 0, false, Some(covenant_id))?;
-    // `choose` takes `target: Target` in the Argent source, so the user arg is
+    // `choose` takes `Target target` in the Argent source, so the user arg is
     // the actor variant name from that enum.
     let alpha_context = TxContext::new()
         .actor_input(

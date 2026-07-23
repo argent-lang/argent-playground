@@ -14,21 +14,21 @@ state PairRegistry {
     int count;
 }
 
-fn pair_record_id(records: byte[384], index: int) -> covid {
+fn pair_record_id(byte[384] records, int index) -> cov_id {
     require(index >= 0);
     require(index < MAX_PAIRS);
     int offset = index * PAIR_RECORD_BYTES;
     return byte[32](records.slice(offset, offset + 32));
 }
 
-fn pair_record_quote_id(records: byte[384], index: int) -> covid {
+fn pair_record_quote_id(byte[384] records, int index) -> cov_id {
     require(index >= 0);
     require(index < MAX_PAIRS);
     int offset = index * PAIR_RECORD_BYTES + 32;
     return byte[32](records.slice(offset, offset + 32));
 }
 
-fn pair_record_base_id(records: byte[384], index: int) -> covid {
+fn pair_record_base_id(byte[384] records, int index) -> cov_id {
     require(index >= 0);
     require(index < MAX_PAIRS);
     int offset = index * PAIR_RECORD_BYTES + 64;
@@ -36,9 +36,9 @@ fn pair_record_base_id(records: byte[384], index: int) -> covid {
 }
 
 fn registry_contains_pair(
-    records: byte[384],
-    count: int,
-    pair_id: covid
+    byte[384] records,
+    int count,
+    cov_id pair_id
 ) -> bool {
     bool found = false;
     for(i, 0, count, MAX_PAIRS) {
@@ -50,10 +50,10 @@ fn registry_contains_pair(
 }
 
 fn registry_authorizes_asset(
-    registry: byte[392],
-    index: int,
-    pair_id: covid,
-    asset_id: covid
+    byte[392] registry,
+    int index,
+    cov_id pair_id,
+    cov_id asset_id
 ) -> bool {
     byte[384] records = byte[384](registry.slice(0, PAIR_RECORDS_BYTES));
     int count = OpBin2Num(registry.slice(PAIR_RECORDS_BYTES, PAIR_REGISTRY_BYTES));
