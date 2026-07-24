@@ -31,7 +31,7 @@ mux.
 In concrete terms:
 
 1. mux authenticates the side to move
-2. mux uses the typed `MoveActor` target as the worker choice
+2. mux uses the typed `Move` target as the worker choice
 3. mux commits the pending move into shared state when a worker route is chosen
 4. the worker proves one bounded rule and rewrites the board
 5. the worker returns to mux with cleared pending fields
