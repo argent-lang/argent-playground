@@ -388,12 +388,12 @@ fn assert_actor_transition_rejected<'a>(
     source_actor: &str,
     source_state: &GameStateData,
     entry: impl Into<EntryCall<'a>>,
-    source_output: CovenantOutput,
+    source_output: &CovenantOutput,
     target_actor: &str,
     target_state: &GameStateData,
 ) {
     let context = TxContext::new()
-        .actor_input(source_actor, source_state.source_state(), entry, source_output.outpoint, source_output.utxo, 0)
+        .actor_input(source_actor, source_state.source_state(), entry, source_output.outpoint, source_output.utxo.clone(), 0)
         .actor_output(target_actor, target_state.source_state(), CovenantBinding::new(0, source_output.covenant_id), GAME_VALUE);
     assert!(builder.build(&context).is_err(), "{source_actor} must reject the proposed transition to {target_actor}");
 }
@@ -719,6 +719,52 @@ fn execute_to_settle<'a>(
     builder.build(&context).unwrap_or_else(|err| panic!("{source_actor} must transition to Settle: {err}"));
 }
 
+struct CastleChallengeSpec<'a> {
+    worker: &'a str,
+    proof_board: Vec<u8>,
+    mv: MoveSpec,
+    expected_status: i64,
+    fixture_tag: u8,
+}
+
+fn execute_castle_challenge(builder: &TxBuilder<'_>, challenger: &TestPlayer, initial: &GameStateData, spec: CastleChallengeSpec<'_>) {
+    let (prep_state, prep_output) = route_to_worker(builder, challenger, "CastleChallengePrep", initial, spec.mv, spec.fixture_tag);
+    let mut worker_state = prep_state.clone();
+    worker_state.board = spec.proof_board;
+    let worker_output = execute_actor_transition(
+        builder,
+        "CastleChallengePrep",
+        &prep_state,
+        EntryCall::new("apply").args(args![actor(spec.worker)]),
+        prep_output,
+        spec.worker,
+        &worker_state,
+    );
+
+    let mut expected = worker_state.completed_move(spec.mv);
+    expected.status = spec.expected_status;
+    execute_actor_transition(builder, spec.worker, &worker_state, "apply", worker_output, "Mux", &expected);
+}
+
+fn execute_worker_timeout(
+    builder: &TxBuilder<'_>,
+    worker: &str,
+    worker_state: &GameStateData,
+    worker_output: CovenantOutput,
+    expected_status: i64,
+) {
+    let output_value = worker_output.utxo.amount;
+    let context = TxContext::new()
+        .actor_input(worker, worker_state.source_state(), "timeout", worker_output.outpoint, worker_output.utxo, MOVE_TIMEOUT as u64)
+        .actor_output(
+            "Settle",
+            settle_state(worker_state.white_player, worker_state.black_player, expected_status),
+            CovenantBinding::new(0, worker_output.covenant_id),
+            output_value,
+        );
+    builder.build(&context).unwrap_or_else(|err| panic!("{worker} timeout must transition to Settle: {err}"));
+}
+
 #[test]
 fn argent_ordinary_workers_round_trip_through_mux() {
     let artifact = chess_artifact();
@@ -875,7 +921,7 @@ fn legal_interposition_blocks_the_immediate_king_capture_route() {
     let (rook_state, rook_output) = route_mux_output_to_worker(&builder, &black, "Vert", &after_white, mux_output, black_move, CLEAR);
     let mut invalid = after_white.clone();
     invalid.turn = WHITE;
-    assert_actor_transition_rejected(&builder, "Vert", &rook_state, "apply", rook_output, "Mux", &invalid);
+    assert_actor_transition_rejected(&builder, "Vert", &rook_state, "apply", &rook_output, "Mux", &invalid);
 }
 
 #[test]
@@ -929,7 +975,7 @@ fn pawn_promotion_requires_choice() {
     let mv = MoveSpec::new(4, 6, 4, 7);
     let invalid = initial.completed_move(mv);
     let (pawn_state, pawn_output) = route_to_worker(&builder, &white, "Pawn", &initial, mv, 0x78);
-    assert_actor_transition_rejected(&builder, "Pawn", &pawn_state, "apply", pawn_output, "Mux", &invalid);
+    assert_actor_transition_rejected(&builder, "Pawn", &pawn_state, "apply", &pawn_output, "Mux", &invalid);
 }
 
 #[test]
@@ -944,7 +990,7 @@ fn non_promotion_pawn_move_rejects_promotion_choice() {
     let mv = MoveSpec::with_promotion(4, 1, 4, 2, 5);
     let invalid = initial.completed_move(mv);
     let (pawn_state, pawn_output) = route_to_worker(&builder, &white, "Pawn", &initial, mv, 0x7a);
-    assert_actor_transition_rejected(&builder, "Pawn", &pawn_state, "apply", pawn_output, "Mux", &invalid);
+    assert_actor_transition_rejected(&builder, "Pawn", &pawn_state, "apply", &pawn_output, "Mux", &invalid);
 }
 
 #[test]
@@ -1026,7 +1072,7 @@ fn pawn_double_step_blocked_by_occupied_middle_square_fails() {
     let mut invalid = initial.completed_move(mv);
     invalid.en_passant_idx = 20;
     let (pawn_state, pawn_output) = route_to_worker(&builder, &white, "Pawn", &initial, mv, 0x84);
-    assert_actor_transition_rejected(&builder, "Pawn", &pawn_state, "apply", pawn_output, "Mux", &invalid);
+    assert_actor_transition_rejected(&builder, "Pawn", &pawn_state, "apply", &pawn_output, "Mux", &invalid);
 }
 
 #[test]
@@ -1041,7 +1087,7 @@ fn pawn_diagonal_move_into_empty_square_fails_without_en_passant() {
     let mv = MoveSpec::new(4, 4, 5, 5);
     let invalid = initial.completed_move(mv);
     let (pawn_state, pawn_output) = route_to_worker(&builder, &white, "Pawn", &initial, mv, 0x86);
-    assert_actor_transition_rejected(&builder, "Pawn", &pawn_state, "apply", pawn_output, "Mux", &invalid);
+    assert_actor_transition_rejected(&builder, "Pawn", &pawn_state, "apply", &pawn_output, "Mux", &invalid);
 }
 
 #[test]
@@ -1058,11 +1104,11 @@ fn expired_en_passant_attempt_fails() {
     let mut invalid = initial.completed_move(mv);
     invalid.board[35] = 0;
     let (pawn_state, pawn_output) = route_to_worker(&builder, &white, "Pawn", &initial, mv, 0x88);
-    assert_actor_transition_rejected(&builder, "Pawn", &pawn_state, "apply", pawn_output, "Mux", &invalid);
+    assert_actor_transition_rejected(&builder, "Pawn", &pawn_state, "apply", &pawn_output, "Mux", &invalid);
 }
 
 #[test]
-fn argent_castles_all_four_shapes() {
+fn all_castle_shapes_rewrite_expected_board() {
     struct CastleCase {
         board: Vec<u8>,
         turn: i64,
@@ -1159,7 +1205,7 @@ fn argent_castles_all_four_shapes() {
 }
 
 #[test]
-fn argent_castle_challenge_routes_through_prep_and_piece_worker() {
+fn castle_start_square_challenge_by_pawn_succeeds() {
     let artifact = chess_artifact();
     let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
     let white = player(0x41);
@@ -1175,25 +1221,201 @@ fn argent_castle_challenge_routes_through_prep_and_piece_worker() {
     mux_state.recent_castle = 1;
     let challenge_move = MoveSpec::new(3, 1, 4, 0);
 
-    let (prep_state, prep_output) = route_to_worker(&builder, &black, "CastleChallengePrep", &mux_state, challenge_move, 0x79);
-    let mut pawn_state = prep_state.clone();
-    pawn_state.board = vec![0; 64];
-    pawn_state.board[4] = 0x06;
-    pawn_state.board[7] = 0x04;
-    pawn_state.board[11] = 0x09;
-    let pawn_output = execute_actor_transition(
+    let mut proof_board = vec![0; 64];
+    proof_board[4] = 0x06;
+    proof_board[7] = 0x04;
+    proof_board[11] = 0x09;
+    execute_castle_challenge(
+        &builder,
+        &black,
+        &mux_state,
+        CastleChallengeSpec { worker: "Pawn", proof_board, mv: challenge_move, expected_status: BWIN, fixture_tag: 0x79 },
+    );
+}
+
+#[test]
+fn ordinary_reply_after_castle_clears_recent_castle() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let black = player(0x3a);
+    let mut board = vec![0; 64];
+    board[5] = 0x04;
+    board[6] = 0x06;
+    board[62] = 0x0a;
+
+    let mut initial = GameStateData::live([0x50; 32], black.player_ref, board);
+    initial.turn = BLACK;
+    initial.castle_rights = [0, 0, 1, 1];
+    initial.recent_castle = 1;
+    let mv = MoveSpec::new(6, 7, 5, 5);
+    let expected = initial.completed_move(mv);
+    execute_worker_round_trip(&builder, &black, "Knight", &initial, mv, &expected, 0x8a);
+}
+
+#[test]
+fn castle_transit_square_challenge_by_rook_succeeds() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let black = player(0x3b);
+    let mut board = vec![0; 64];
+    board[5] = 0x04;
+    board[6] = 0x06;
+    board[61] = 0x0c;
+    let mut initial = GameStateData::live([0x51; 32], black.player_ref, board);
+    initial.turn = BLACK;
+    initial.castle_rights = [0, 0, 1, 1];
+    initial.recent_castle = 1;
+
+    let mut proof_board = vec![0; 64];
+    proof_board[5] = 0x06;
+    proof_board[7] = 0x04;
+    proof_board[61] = 0x0c;
+    execute_castle_challenge(
+        &builder,
+        &black,
+        &initial,
+        CastleChallengeSpec { worker: "Vert", proof_board, mv: MoveSpec::new(5, 7, 5, 0), expected_status: BWIN, fixture_tag: 0x8c },
+    );
+}
+
+#[test]
+fn castle_destination_square_challenge_by_rook_succeeds() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let black = player(0x3c);
+    let mut board = vec![0; 64];
+    board[5] = 0x04;
+    board[6] = 0x06;
+    board[62] = 0x0c;
+    let mut initial = GameStateData::live([0x52; 32], black.player_ref, board);
+    initial.turn = BLACK;
+    initial.castle_rights = [0, 0, 1, 1];
+    initial.recent_castle = 1;
+
+    execute_castle_challenge(
+        &builder,
+        &black,
+        &initial,
+        CastleChallengeSpec {
+            worker: "Vert",
+            proof_board: initial.board.clone(),
+            mv: MoveSpec::new(6, 7, 6, 0),
+            expected_status: BWIN,
+            fixture_tag: 0x8e,
+        },
+    );
+}
+
+#[test]
+fn white_queenside_castle_destination_challenge_succeeds() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let black = player(0x3d);
+    let mut board = vec![0; 64];
+    board[2] = 0x06;
+    board[3] = 0x04;
+    board[58] = 0x0c;
+    let mut initial = GameStateData::live([0x53; 32], black.player_ref, board);
+    initial.turn = BLACK;
+    initial.castle_rights = [0, 0, 1, 1];
+    initial.recent_castle = 2;
+
+    execute_castle_challenge(
+        &builder,
+        &black,
+        &initial,
+        CastleChallengeSpec {
+            worker: "Vert",
+            proof_board: initial.board.clone(),
+            mv: MoveSpec::new(2, 7, 2, 0),
+            expected_status: BWIN,
+            fixture_tag: 0x90,
+        },
+    );
+}
+
+#[test]
+fn black_kingside_castle_start_challenge_by_pawn_succeeds() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x3e);
+    let mut board = vec![0; 64];
+    board[61] = 0x0c;
+    board[62] = 0x0e;
+    board[51] = 0x01;
+    let mut initial = GameStateData::live(white.player_ref, [0x54; 32], board);
+    initial.castle_rights = [1, 1, 0, 0];
+    initial.recent_castle = 3;
+
+    let mut proof_board = vec![0; 64];
+    proof_board[60] = 0x0e;
+    proof_board[63] = 0x0c;
+    proof_board[51] = 0x01;
+    execute_castle_challenge(
+        &builder,
+        &white,
+        &initial,
+        CastleChallengeSpec { worker: "Pawn", proof_board, mv: MoveSpec::new(3, 6, 4, 7), expected_status: WWIN, fixture_tag: 0x92 },
+    );
+}
+
+#[test]
+fn black_queenside_castle_transit_challenge_by_rook_succeeds() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x3f);
+    let mut board = vec![0; 64];
+    board[58] = 0x0e;
+    board[59] = 0x0c;
+    board[3] = 0x04;
+    let mut initial = GameStateData::live(white.player_ref, [0x55; 32], board);
+    initial.castle_rights = [1, 1, 0, 0];
+    initial.recent_castle = 4;
+
+    let mut proof_board = vec![0; 64];
+    proof_board[56] = 0x0c;
+    proof_board[59] = 0x0e;
+    proof_board[3] = 0x04;
+    execute_castle_challenge(
+        &builder,
+        &white,
+        &initial,
+        CastleChallengeSpec { worker: "Vert", proof_board, mv: MoveSpec::new(3, 0, 3, 7), expected_status: WWIN, fixture_tag: 0x94 },
+    );
+}
+
+#[test]
+fn invalid_castle_destination_challenge_loses_by_worker_timeout() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let black = player(0x40);
+    let mut board = vec![0; 64];
+    board[5] = 0x04;
+    board[6] = 0x06;
+    board[38] = 0x09;
+    board[62] = 0x0c;
+    let mut initial = GameStateData::live([0x56; 32], black.player_ref, board);
+    initial.turn = BLACK;
+    initial.castle_rights = [0, 0, 1, 1];
+    initial.recent_castle = 1;
+    let mv = MoveSpec::new(6, 7, 6, 0);
+
+    let (prep_state, prep_output) = route_to_worker(&builder, &black, "CastleChallengePrep", &initial, mv, 0x96);
+    let worker_state = prep_state.clone();
+    let worker_output = execute_actor_transition(
         &builder,
         "CastleChallengePrep",
         &prep_state,
-        EntryCall::new("apply").args(args![actor("Pawn")]),
+        EntryCall::new("apply").args(args![actor("Vert")]),
         prep_output,
-        "Pawn",
-        &pawn_state,
+        "Vert",
+        &worker_state,
     );
 
-    let mut expected = pawn_state.completed_move(challenge_move);
-    expected.status = BWIN;
-    execute_actor_transition(&builder, "Pawn", &pawn_state, "apply", pawn_output, "Mux", &expected);
+    let mut impossible = worker_state.completed_move(mv);
+    impossible.status = BWIN;
+    assert_actor_transition_rejected(&builder, "Vert", &worker_state, "apply", &worker_output, "Mux", &impossible);
+    execute_worker_timeout(&builder, "Vert", &worker_state, worker_output, WWIN);
 }
 
 #[test]
