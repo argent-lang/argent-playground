@@ -164,6 +164,14 @@ impl LocalWebController {
                 let mv = parse_move_label(action.move_label.as_deref().ok_or("missing move label")?)?;
                 self.player(action.actor.as_deref().ok_or("missing actor")?)?.force_move(mv)?;
             }
+            "challenge_castle" => {
+                let mv = parse_move_label(action.move_label.as_deref().ok_or("missing move label")?)?;
+                self.player(action.actor.as_deref().ok_or("missing actor")?)?.challenge_castle(mv)?;
+            }
+            "force_castle_challenge" => {
+                let mv = parse_move_label(action.move_label.as_deref().ok_or("missing move label")?)?;
+                self.player(action.actor.as_deref().ok_or("missing actor")?)?.force_castle_challenge(mv)?;
+            }
             "claim_draw" => self.player(action.actor.as_deref().ok_or("missing actor")?)?.claim_draw()?,
             "accept_draw" => self.player(action.actor.as_deref().ok_or("missing actor")?)?.accept_draw()?,
             "surrender" => self.player(action.actor.as_deref().ok_or("missing actor")?)?.surrender()?,
@@ -516,7 +524,7 @@ fn format_message(owner: &str, message: &OffchainMessage) -> String {
         OffchainMessageKind::DrawClaimed { actor } => format!("{owner} inbox: {actor} claimed a draw"),
         OffchainMessageKind::DrawAccepted { actor } => format!("{owner} inbox: {actor} accepted the draw"),
         OffchainMessageKind::TimeoutClaimAvailable { result, worker, move_label } => {
-            format!("{owner} inbox: {move_label} entered {:?}; timeout win {:?} can now be claimed", worker, result)
+            format!("{owner} inbox: {move_label} entered {:?}; timeout result {:?} can now be claimed", worker, result)
         }
         OffchainMessageKind::SettlementRequest { result } => format!("{owner} inbox: settlement request {:?}", result),
         OffchainMessageKind::SettlementNotice { result } => format!("{owner} inbox: settlement complete {:?}", result),
@@ -945,6 +953,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
             <div class="button-row">
               <button onclick="claimDraw()">Claim Draw</button>
               <button onclick="acceptDraw()">Accept Draw</button>
+              <button onclick="challengeCastle()">Challenge Castle</button>
+              <button onclick="forceCastleChallenge()">Force Challenge</button>
             </div>
             <div class="form-row">
               <select id="surrenderActor">
@@ -1129,6 +1139,20 @@ const INDEX_HTML: &str = r#"<!doctype html>
       act({
         action: 'accept_draw',
         actor: document.getElementById('moveActor').value
+      });
+    }
+    function challengeCastle() {
+      act({
+        action: 'challenge_castle',
+        actor: document.getElementById('moveActor').value,
+        move_label: document.getElementById('moveLabel').value
+      });
+    }
+    function forceCastleChallenge() {
+      act({
+        action: 'force_castle_challenge',
+        actor: document.getElementById('moveActor').value,
+        move_label: document.getElementById('moveLabel').value
       });
     }
     function submitSurrender() {
@@ -1486,6 +1510,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
 mod tests {
     use super::*;
 
+    fn controller_move(app: &mut LocalWebController, action: &str, actor: &str, move_label: &str) {
+        app.handle_action(ActionRequest {
+            action: action.to_string(),
+            actor: Some(actor.to_string()),
+            move_label: Some(move_label.to_string()),
+            result: None,
+        })
+        .unwrap_or_else(|err| panic!("{action} {actor} {move_label} failed: {err}"));
+    }
+
     #[test]
     fn controller_can_drive_a_short_local_game() {
         let mut app = LocalWebController::new().expect("controller builds");
@@ -1700,5 +1734,43 @@ mod tests {
         assert_eq!(timed_out.observer.active_settles.len(), 1);
         assert_eq!(timed_out.observer.active_settles[0].status, "black_win");
         assert!(timed_out.observer.warnings.is_empty(), "observer warnings: {:?}", timed_out.observer.warnings);
+    }
+
+    #[test]
+    fn controller_executes_and_observes_a_castle_challenge() {
+        let mut app = LocalWebController::new().expect("controller builds");
+        app.handle_action(ActionRequest { action: "register".into(), actor: Some("white".into()), move_label: None, result: None })
+            .expect("white registers");
+        app.handle_action(ActionRequest { action: "register".into(), actor: Some("black".into()), move_label: None, result: None })
+            .expect("black registers");
+        app.handle_action(ActionRequest { action: "start_game".into(), actor: None, move_label: None, result: None })
+            .expect("game starts");
+
+        controller_move(&mut app, "move", "white", "e2e3");
+        controller_move(&mut app, "move", "black", "e7e5");
+        controller_move(&mut app, "move", "white", "g1f3");
+        controller_move(&mut app, "move", "black", "a7a6");
+        controller_move(&mut app, "move", "white", "f1e2");
+        controller_move(&mut app, "move", "black", "a6a5");
+        controller_move(&mut app, "move", "white", "d2d4");
+        controller_move(&mut app, "move", "black", "f8b4");
+        controller_move(&mut app, "force_move", "white", "e1g1");
+        controller_move(&mut app, "challenge_castle", "black", "b4e1");
+
+        let challenged = app.snapshot();
+        let game = challenged.game.as_ref().expect("terminal challenged game remains active");
+        assert_eq!(game.status, "black_win");
+        assert_eq!(game.recent_castle, 0);
+        assert_eq!(
+            challenged.history[challenged.history.len() - 3..].iter().map(|submission| submission.action.as_str()).collect::<Vec<_>>(),
+            ["castle_challenge_route", "castle_challenge_prepare", "castle_challenge_apply"]
+        );
+        assert!(challenged.observer.warnings.is_empty(), "observer warnings: {:?}", challenged.observer.warnings);
+        assert!(challenged
+            .observer
+            .transactions
+            .iter()
+            .flat_map(|tx| &tx.event_lines)
+            .any(|event| event.contains("worker CastleChallenge applied")));
     }
 }
