@@ -457,7 +457,7 @@ fn piece_char(piece: u8) -> char {
 }
 
 fn history_view(tx: &SubmittedTx) -> HistoryView {
-    HistoryView { recipe_name: tx.recipe_name.to_string(), signer_names: tx.signer_names.clone() }
+    HistoryView { txid: short_txid(tx.transaction_id), action: tx.action.to_string(), signer_names: tx.signer_names.clone() }
 }
 
 fn format_message(owner: &str, message: &OffchainMessage) -> String {
@@ -586,7 +586,8 @@ struct GameView {
 
 #[derive(Serialize)]
 struct HistoryView {
-    recipe_name: String,
+    txid: String,
+    action: String,
     signer_names: Vec<String>,
 }
 
@@ -1338,7 +1339,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         ? state.notices.map(n => `<div class="list-item"><div class="list-sub">${n}</div></div>`).join('')
         : `<div class="list-item"><div class="list-sub">No notices yet.</div></div>`;
       document.getElementById('history').innerHTML = state.history.length
-        ? state.history.map(h => `<div class="list-item"><div class="list-title">${h.recipe_name}</div><div class="list-sub">${h.signer_names.join(', ') || 'unsigned'}</div></div>`).join('')
+        ? state.history.map(h => `<div class="list-item"><div class="list-title">${h.action}</div><div class="list-sub">${h.txid} · ${h.signer_names.join(', ') || 'unsigned'}</div></div>`).join('')
         : `<div class="list-item"><div class="list-sub">No submitted transactions yet.</div></div>`;
       const observer = state.observer;
       const suggestedResult = currentSettlementResult(state);

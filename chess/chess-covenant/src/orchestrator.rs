@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use argent_artifact::RouteTemplateLeafArtifact;
 use argent_runtime::{actor as actor_arg, args, state, Artifact, ArtifactValue, CovenantOutput, EntryCall, TxBuilder, TxContext};
 use blake2b_simd::Params as Blake2bParams;
 use kaspa_consensus_core::hashing::sighash::calc_schnorr_signature_hash;
@@ -15,31 +14,6 @@ use kaspa_consensus_core::Hash;
 use secp256k1::{Keypair, Message, Secp256k1, SecretKey};
 
 use crate::protocol_move::{apply_protocol_move, apply_standard_chess_move, ProtocolMoveSpec, ProtocolState};
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TemplateWitness {
-    pub prefix: Vec<u8>,
-    pub suffix: Vec<u8>,
-    pub hash: Hash,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ChessTemplateFamily {
-    pub league: TemplateWitness,
-    pub player: TemplateWitness,
-    pub mux: TemplateWitness,
-    pub settle: TemplateWitness,
-    pub pawn: TemplateWitness,
-    pub knight: TemplateWitness,
-    pub vert: TemplateWitness,
-    pub horiz: TemplateWitness,
-    pub diag: TemplateWitness,
-    pub king: TemplateWitness,
-    pub castle: TemplateWitness,
-    pub castle_challenge: TemplateWitness,
-    pub route_templates: Vec<u8>,
-    pub routes_commitment: Hash,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorkerKind {
@@ -58,54 +32,6 @@ pub enum GameResult {
     WhiteWin,
     BlackWin,
     Draw,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SignerRequirement {
-    None,
-    Owner,
-    SideToMove,
-    WaitingOpponent,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ContractRole {
-    League,
-    Player,
-    Mux,
-    Settle,
-    Worker(WorkerKind),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PlannedCall {
-    pub role: ContractRole,
-    pub function: &'static str,
-    pub signer: SignerRequirement,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PlannedOutput {
-    pub role: ContractRole,
-    pub count: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TxRecipe {
-    pub name: &'static str,
-    pub calls: Vec<PlannedCall>,
-    pub outputs: Vec<PlannedOutput>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SettlementRecipe {
-    pub mux_step: TxRecipe,
-    pub settle_step: TxRecipe,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ChessTxPlanner {
-    pub family: ChessTemplateFamily,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,24 +86,6 @@ impl Side {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PlayerHandle {
-    pub name: String,
-    pub pubkey_bytes: Vec<u8>,
-    pub owner_hash: Hash,
-    pub player_id: Option<Hash>,
-    pub player_ref: Option<Hash>,
-}
-
-impl PlayerHandle {
-    pub fn new(name: impl Into<String>, seed: u8) -> Self {
-        let name = name.into();
-        let pubkey_bytes = vec![seed; 32];
-        let owner_hash = blake2b([name.as_bytes(), pubkey_bytes.as_slice()].concat().as_slice());
-        Self { name, pubkey_bytes, owner_hash, player_id: None, player_ref: None }
-    }
-}
-
 impl SigningPlayer {
     pub fn from_seed(name: impl Into<String>, seed: u8) -> Self {
         let name = name.into();
@@ -207,41 +115,6 @@ pub struct PlayerAccount {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GameSession {
-    pub white_player_ref: Hash,
-    pub black_player_ref: Hash,
-    pub turn: Side,
-    pub move_log: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WorkerTransit {
-    pub kind: WorkerKind,
-    pub actor: Side,
-    pub move_label: String,
-    pub white_player_ref: Hash,
-    pub black_player_ref: Hash,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SettlementTicket {
-    pub result: GameResult,
-    pub white_player_ref: Hash,
-    pub black_player_ref: Hash,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum LocalUtxo {
-    LeagueLane,
-    Player(PlayerAccount),
-    Mux(GameSession),
-    Worker(WorkerTransit),
-    Settle(SettlementTicket),
-}
-
-pub type LocalUtxoId = u64;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OffchainMessageKind {
     GameInvite { proposed_white: String, proposed_black: String },
     InviteAccepted { white: String, black: String },
@@ -261,10 +134,27 @@ pub struct OffchainMessage {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SubmittedTx {
-    pub recipe_name: &'static str,
-    pub consumed: Vec<LocalUtxoId>,
-    pub produced: Vec<LocalUtxoId>,
+    pub action: &'static str,
+    pub transaction_id: TransactionId,
+    pub input_outpoints: Vec<TransactionOutpoint>,
+    pub output_outpoints: Vec<TransactionOutpoint>,
     pub signer_names: Vec<String>,
+}
+
+fn submitted_tx(action: &'static str, tx: &Transaction, signer_names: Vec<String>) -> SubmittedTx {
+    let transaction_id = tx.id();
+    SubmittedTx {
+        action,
+        transaction_id,
+        input_outpoints: tx.inputs.iter().map(|input| input.previous_outpoint).collect(),
+        output_outpoints: tx
+            .outputs
+            .iter()
+            .enumerate()
+            .map(|(index, _)| TransactionOutpoint::new(transaction_id, index as u32))
+            .collect(),
+        signer_names,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -309,17 +199,6 @@ pub struct SigningPlayer {
     pub owner_hash: Hash,
     pub player_id: Option<Hash>,
     pub player_ref: Option<Hash>,
-}
-
-#[derive(Clone, Debug)]
-pub struct LocalArena {
-    pub planner: ChessTxPlanner,
-    utxos: BTreeMap<LocalUtxoId, LocalUtxo>,
-    mailboxes: BTreeMap<String, Vec<OffchainMessage>>,
-    history: Vec<SubmittedTx>,
-    next_utxo_id: LocalUtxoId,
-    next_player_nonce: u32,
-    base_rating: i64,
 }
 
 #[derive(Clone)]
@@ -439,494 +318,6 @@ pub struct TxArena {
 pub struct TxOrchestrator {
     pub player: SigningPlayer,
     arena: Rc<RefCell<TxArena>>,
-}
-
-impl ChessTxPlanner {
-    pub fn load() -> Result<Self, OrchestratorError> {
-        Ok(Self { family: load_template_family()? })
-    }
-
-    pub fn register_player_recipe(&self) -> TxRecipe {
-        TxRecipe {
-            name: "register_player",
-            calls: vec![PlannedCall { role: ContractRole::League, function: "register_player", signer: SignerRequirement::Owner }],
-            outputs: vec![
-                PlannedOutput { role: ContractRole::League, count: 1 },
-                PlannedOutput { role: ContractRole::Player, count: 1 },
-            ],
-        }
-    }
-
-    pub fn start_game_recipe(&self) -> TxRecipe {
-        TxRecipe {
-            name: "start_game",
-            calls: vec![
-                PlannedCall { role: ContractRole::Player, function: "start_game", signer: SignerRequirement::Owner },
-                PlannedCall { role: ContractRole::Player, function: "delegate_start_game", signer: SignerRequirement::Owner },
-            ],
-            outputs: vec![PlannedOutput { role: ContractRole::Player, count: 2 }, PlannedOutput { role: ContractRole::Mux, count: 1 }],
-        }
-    }
-
-    pub fn route_recipe(&self, worker: WorkerKind) -> TxRecipe {
-        TxRecipe {
-            name: "route",
-            calls: vec![PlannedCall { role: ContractRole::Mux, function: "route", signer: SignerRequirement::SideToMove }],
-            outputs: vec![PlannedOutput { role: ContractRole::Worker(worker), count: 1 }],
-        }
-    }
-
-    pub fn worker_apply_recipe(&self, worker: WorkerKind) -> TxRecipe {
-        TxRecipe {
-            name: "worker_apply",
-            calls: vec![PlannedCall { role: ContractRole::Worker(worker), function: "apply", signer: SignerRequirement::None }],
-            outputs: vec![PlannedOutput { role: ContractRole::Mux, count: 1 }],
-        }
-    }
-
-    pub fn mux_timeout_recipe(&self) -> TxRecipe {
-        TxRecipe {
-            name: "mux_timeout",
-            calls: vec![PlannedCall { role: ContractRole::Mux, function: "timeout", signer: SignerRequirement::WaitingOpponent }],
-            outputs: vec![PlannedOutput { role: ContractRole::Settle, count: 1 }],
-        }
-    }
-
-    pub fn worker_timeout_recipe(&self, worker: WorkerKind) -> TxRecipe {
-        TxRecipe {
-            name: "worker_timeout",
-            calls: vec![PlannedCall { role: ContractRole::Worker(worker), function: "timeout", signer: SignerRequirement::None }],
-            outputs: vec![PlannedOutput { role: ContractRole::Settle, count: 1 }],
-        }
-    }
-
-    pub fn settlement_recipe(&self, _result: GameResult) -> SettlementRecipe {
-        SettlementRecipe {
-            mux_step: TxRecipe {
-                name: "mux_settle",
-                calls: vec![PlannedCall { role: ContractRole::Mux, function: "settle", signer: SignerRequirement::None }],
-                outputs: vec![PlannedOutput { role: ContractRole::Settle, count: 1 }],
-            },
-            settle_step: TxRecipe {
-                name: "settle",
-                calls: vec![
-                    PlannedCall { role: ContractRole::Settle, function: "settle", signer: SignerRequirement::None },
-                    PlannedCall { role: ContractRole::Player, function: "delegate_settle", signer: SignerRequirement::None },
-                    PlannedCall { role: ContractRole::Player, function: "delegate_settle", signer: SignerRequirement::None },
-                ],
-                outputs: vec![PlannedOutput { role: ContractRole::Player, count: 2 }],
-            },
-        }
-    }
-
-    pub fn retire_recipe(&self) -> TxRecipe {
-        TxRecipe {
-            name: "retire",
-            calls: vec![PlannedCall { role: ContractRole::Player, function: "retire", signer: SignerRequirement::Owner }],
-            outputs: vec![],
-        }
-    }
-}
-
-impl LocalArena {
-    pub fn new(planner: ChessTxPlanner) -> Self {
-        let mut utxos = BTreeMap::new();
-        utxos.insert(1, LocalUtxo::LeagueLane);
-        Self {
-            planner,
-            utxos,
-            mailboxes: BTreeMap::new(),
-            history: Vec::new(),
-            next_utxo_id: 2,
-            next_player_nonce: 0,
-            base_rating: 1200,
-        }
-    }
-
-    pub fn history(&self) -> &[SubmittedTx] {
-        &self.history
-    }
-
-    pub fn inbox(&self, player: &PlayerHandle) -> &[OffchainMessage] {
-        self.mailboxes.get(&player.name).map(Vec::as_slice).unwrap_or(&[])
-    }
-
-    pub fn drain_inbox(&mut self, player: &PlayerHandle) -> Vec<OffchainMessage> {
-        self.mailboxes.remove(&player.name).unwrap_or_default()
-    }
-
-    pub fn register_player(&mut self, player: &mut PlayerHandle) -> Result<SubmittedTx, OrchestratorError> {
-        if player.player_ref.is_some() {
-            return Err(OrchestratorError(format!("{} is already registered", player.name)));
-        }
-
-        let league_id = self
-            .utxos
-            .iter()
-            .find_map(|(id, utxo)| matches!(utxo, LocalUtxo::LeagueLane).then_some(*id))
-            .ok_or_else(|| OrchestratorError("missing league lane".to_string()))?;
-
-        let player_id = derive_player_id(self.next_player_nonce, &player.owner_hash);
-        self.next_player_nonce += 1;
-        let player_ref = player_ref_hash(player.owner_hash, player_id);
-
-        let account = PlayerAccount {
-            owner_name: player.name.clone(),
-            owner_hash: player.owner_hash,
-            player_id,
-            player_ref,
-            value: 1_000,
-            open_games: 0,
-            rating: self.base_rating,
-            games: 0,
-            wins: 0,
-            draws: 0,
-            losses: 0,
-        };
-
-        player.player_id = Some(player_id);
-        player.player_ref = Some(player_ref);
-
-        let next_league_id = self.alloc_utxo(LocalUtxo::LeagueLane);
-        let next_player_id = self.alloc_utxo(LocalUtxo::Player(account));
-        self.utxos.remove(&league_id);
-
-        let submission = SubmittedTx {
-            recipe_name: self.planner.register_player_recipe().name,
-            consumed: vec![league_id],
-            produced: vec![next_league_id, next_player_id],
-            signer_names: vec![player.name.clone()],
-        };
-        self.history.push(submission.clone());
-        Ok(submission)
-    }
-
-    pub fn send_game_invite(&mut self, white: &PlayerHandle, black: &PlayerHandle) -> Result<(), OrchestratorError> {
-        self.require_registered(white)?;
-        self.require_registered(black)?;
-        self.push_message(
-            &black.name,
-            OffchainMessage {
-                from: white.name.clone(),
-                to: black.name.clone(),
-                kind: OffchainMessageKind::GameInvite { proposed_white: white.name.clone(), proposed_black: black.name.clone() },
-            },
-        );
-        Ok(())
-    }
-
-    pub fn start_game(&mut self, white: &PlayerHandle, black: &PlayerHandle) -> Result<SubmittedTx, OrchestratorError> {
-        let white_ref = white.player_ref.ok_or_else(|| OrchestratorError("white player is not registered".to_string()))?;
-        let black_ref = black.player_ref.ok_or_else(|| OrchestratorError("black player is not registered".to_string()))?;
-
-        let white_id = self.find_player_utxo_id(white_ref)?;
-        let black_id = self.find_player_utxo_id(black_ref)?;
-        let mut white_account = self.player_account(white_ref)?;
-        let mut black_account = self.player_account(black_ref)?;
-
-        white_account.open_games += 1;
-        black_account.open_games += 1;
-
-        self.utxos.remove(&white_id);
-        self.utxos.remove(&black_id);
-
-        let next_white_id = self.alloc_utxo(LocalUtxo::Player(white_account));
-        let next_black_id = self.alloc_utxo(LocalUtxo::Player(black_account));
-        let mux_id = self.alloc_utxo(LocalUtxo::Mux(GameSession {
-            white_player_ref: white_ref,
-            black_player_ref: black_ref,
-            turn: Side::White,
-            move_log: Vec::new(),
-        }));
-
-        let submission = SubmittedTx {
-            recipe_name: self.planner.start_game_recipe().name,
-            consumed: vec![white_id, black_id],
-            produced: vec![next_white_id, next_black_id, mux_id],
-            signer_names: vec![white.name.clone(), black.name.clone()],
-        };
-        self.history.push(submission.clone());
-        Ok(submission)
-    }
-
-    pub fn submit_move(
-        &mut self,
-        actor: &PlayerHandle,
-        worker: WorkerKind,
-        move_label: impl Into<String>,
-    ) -> Result<Vec<SubmittedTx>, OrchestratorError> {
-        let actor_ref = actor.player_ref.ok_or_else(|| OrchestratorError(format!("{} is not registered", actor.name)))?;
-        let move_label = move_label.into();
-        let (mux_id, mux) = self.active_mux()?;
-
-        let actor_side = if actor_ref == mux.white_player_ref {
-            Side::White
-        } else if actor_ref == mux.black_player_ref {
-            Side::Black
-        } else {
-            return Err(OrchestratorError(format!("{} is not part of the current game", actor.name)));
-        };
-
-        if actor_side != mux.turn {
-            return Err(OrchestratorError(format!("it is not {}'s turn", actor.name)));
-        }
-
-        self.utxos.remove(&mux_id);
-        let worker_id = self.alloc_utxo(LocalUtxo::Worker(WorkerTransit {
-            kind: worker,
-            actor: actor_side,
-            move_label: move_label.clone(),
-            white_player_ref: mux.white_player_ref,
-            black_player_ref: mux.black_player_ref,
-        }));
-        let route_tx = SubmittedTx {
-            recipe_name: self.planner.route_recipe(worker).name,
-            consumed: vec![mux_id],
-            produced: vec![worker_id],
-            signer_names: vec![actor.name.clone()],
-        };
-        self.history.push(route_tx.clone());
-
-        let worker_state = match self.utxos.remove(&worker_id) {
-            Some(LocalUtxo::Worker(worker_state)) => worker_state,
-            _ => return Err(OrchestratorError("missing worker transit".to_string())),
-        };
-
-        let next_turn = worker_state.actor.other();
-        let mut move_log = mux.move_log.clone();
-        move_log.push(format!("{}:{:?}:{}", actor.name, worker, move_label));
-        let next_mux_id = self.alloc_utxo(LocalUtxo::Mux(GameSession {
-            white_player_ref: worker_state.white_player_ref,
-            black_player_ref: worker_state.black_player_ref,
-            turn: next_turn,
-            move_log,
-        }));
-        let apply_tx = SubmittedTx {
-            recipe_name: self.planner.worker_apply_recipe(worker).name,
-            consumed: vec![worker_id],
-            produced: vec![next_mux_id],
-            signer_names: vec![],
-        };
-        self.history.push(apply_tx.clone());
-
-        let recipient = if actor_side == Side::White {
-            self.owner_name(worker_state.black_player_ref)?
-        } else {
-            self.owner_name(worker_state.white_player_ref)?
-        };
-        self.push_message(
-            &recipient,
-            OffchainMessage {
-                from: actor.name.clone(),
-                to: recipient.clone(),
-                kind: OffchainMessageKind::MoveNotice {
-                    actor: actor.name.clone(),
-                    worker,
-                    move_label,
-                    mv: MoveSpec::new(-1, -1, -1, -1),
-                },
-            },
-        );
-
-        Ok(vec![route_tx, apply_tx])
-    }
-
-    pub fn settle_game(
-        &mut self,
-        white: &PlayerHandle,
-        black: &PlayerHandle,
-        result: GameResult,
-    ) -> Result<Vec<SubmittedTx>, OrchestratorError> {
-        self.require_registered(white)?;
-        self.require_registered(black)?;
-        let (mux_id, mux) = self.active_mux()?;
-        let white_ref = white.player_ref.ok_or_else(|| OrchestratorError("white player is not registered".to_string()))?;
-        let black_ref = black.player_ref.ok_or_else(|| OrchestratorError("black player is not registered".to_string()))?;
-        if mux.white_player_ref != white_ref || mux.black_player_ref != black_ref {
-            return Err(OrchestratorError("active mux does not match provided players".to_string()));
-        }
-
-        self.utxos.remove(&mux_id);
-        let settle_id = self.alloc_utxo(LocalUtxo::Settle(SettlementTicket {
-            result,
-            white_player_ref: mux.white_player_ref,
-            black_player_ref: mux.black_player_ref,
-        }));
-        let mux_tx = SubmittedTx {
-            recipe_name: self.planner.settlement_recipe(result).mux_step.name,
-            consumed: vec![mux_id],
-            produced: vec![settle_id],
-            signer_names: vec![],
-        };
-        self.history.push(mux_tx.clone());
-
-        let white_player_id = self.find_player_utxo_id(white_ref)?;
-        let black_player_id = self.find_player_utxo_id(black_ref)?;
-        let mut white_account = self.player_account(white_ref)?;
-        let mut black_account = self.player_account(black_ref)?;
-        if white_account.open_games <= 0 || black_account.open_games <= 0 {
-            return Err(OrchestratorError("cannot settle players without open games".to_string()));
-        }
-
-        white_account.open_games -= 1;
-        black_account.open_games -= 1;
-        white_account.games += 1;
-        black_account.games += 1;
-
-        let (white_actual, black_actual) = match result {
-            GameResult::WhiteWin => {
-                white_account.wins += 1;
-                black_account.losses += 1;
-                (1000, 0)
-            }
-            GameResult::BlackWin => {
-                white_account.losses += 1;
-                black_account.wins += 1;
-                (0, 1000)
-            }
-            GameResult::Draw => {
-                white_account.draws += 1;
-                black_account.draws += 1;
-                (500, 500)
-            }
-        };
-
-        let white_old_rating = white_account.rating;
-        let black_old_rating = black_account.rating;
-        white_account.rating = approx_updated_rating(white_old_rating, black_old_rating, white_actual);
-        black_account.rating = approx_updated_rating(black_old_rating, white_old_rating, black_actual);
-
-        let stake = 1_000u64;
-        match result {
-            GameResult::WhiteWin => {
-                white_account.value += stake;
-            }
-            GameResult::BlackWin => {
-                black_account.value += stake;
-            }
-            GameResult::Draw => {
-                let white_share = stake / 2;
-                let black_share = stake - white_share;
-                white_account.value += white_share;
-                black_account.value += black_share;
-            }
-        }
-
-        self.utxos.remove(&settle_id);
-        self.utxos.remove(&white_player_id);
-        self.utxos.remove(&black_player_id);
-
-        let next_white_id = self.alloc_utxo(LocalUtxo::Player(white_account));
-        let next_black_id = self.alloc_utxo(LocalUtxo::Player(black_account));
-        let settle_tx = SubmittedTx {
-            recipe_name: self.planner.settlement_recipe(result).settle_step.name,
-            consumed: vec![settle_id, white_player_id, black_player_id],
-            produced: vec![next_white_id, next_black_id],
-            signer_names: vec![],
-        };
-        self.history.push(settle_tx.clone());
-
-        self.push_message(
-            &white.name,
-            OffchainMessage {
-                from: "arena".to_string(),
-                to: white.name.clone(),
-                kind: OffchainMessageKind::SettlementNotice { result },
-            },
-        );
-        self.push_message(
-            &black.name,
-            OffchainMessage {
-                from: "arena".to_string(),
-                to: black.name.clone(),
-                kind: OffchainMessageKind::SettlementNotice { result },
-            },
-        );
-
-        Ok(vec![mux_tx, settle_tx])
-    }
-
-    pub fn retire_player(&mut self, player: &PlayerHandle) -> Result<SubmittedTx, OrchestratorError> {
-        let player_ref = player.player_ref.ok_or_else(|| OrchestratorError(format!("{} is not registered", player.name)))?;
-        let player_id = self.find_player_utxo_id(player_ref)?;
-        let account = self.player_account(player_ref)?;
-        if account.open_games != 0 {
-            return Err(OrchestratorError(format!("{} still has open games", player.name)));
-        }
-        self.utxos.remove(&player_id);
-        let submission = SubmittedTx {
-            recipe_name: self.planner.retire_recipe().name,
-            consumed: vec![player_id],
-            produced: vec![],
-            signer_names: vec![player.name.clone()],
-        };
-        self.history.push(submission.clone());
-        Ok(submission)
-    }
-
-    pub fn player_account_snapshot(&self, player: &PlayerHandle) -> Result<PlayerAccount, OrchestratorError> {
-        let player_ref = player.player_ref.ok_or_else(|| OrchestratorError(format!("{} is not registered", player.name)))?;
-        self.player_account(player_ref)
-    }
-
-    pub fn active_game_snapshot(&self) -> Option<GameSession> {
-        self.utxos.values().find_map(|utxo| match utxo {
-            LocalUtxo::Mux(game) => Some(game.clone()),
-            _ => None,
-        })
-    }
-
-    fn alloc_utxo(&mut self, utxo: LocalUtxo) -> LocalUtxoId {
-        let id = self.next_utxo_id;
-        self.next_utxo_id += 1;
-        self.utxos.insert(id, utxo);
-        id
-    }
-
-    fn push_message(&mut self, recipient: &str, message: OffchainMessage) {
-        self.mailboxes.entry(recipient.to_string()).or_default().push(message);
-    }
-
-    fn require_registered(&self, player: &PlayerHandle) -> Result<(), OrchestratorError> {
-        if player.player_ref.is_none() || player.player_id.is_none() {
-            return Err(OrchestratorError(format!("{} is not registered", player.name)));
-        }
-        Ok(())
-    }
-
-    fn find_player_utxo_id(&self, player_ref: Hash) -> Result<LocalUtxoId, OrchestratorError> {
-        self.utxos
-            .iter()
-            .find_map(|(id, utxo)| match utxo {
-                LocalUtxo::Player(account) if account.player_ref == player_ref => Some(*id),
-                _ => None,
-            })
-            .ok_or_else(|| OrchestratorError("missing player UTXO".to_string()))
-    }
-
-    fn player_account(&self, player_ref: Hash) -> Result<PlayerAccount, OrchestratorError> {
-        self.utxos
-            .values()
-            .find_map(|utxo| match utxo {
-                LocalUtxo::Player(account) if account.player_ref == player_ref => Some(account.clone()),
-                _ => None,
-            })
-            .ok_or_else(|| OrchestratorError("missing player account".to_string()))
-    }
-
-    fn active_mux(&self) -> Result<(LocalUtxoId, GameSession), OrchestratorError> {
-        self.utxos
-            .iter()
-            .find_map(|(id, utxo)| match utxo {
-                LocalUtxo::Mux(game) => Some((*id, game.clone())),
-                _ => None,
-            })
-            .ok_or_else(|| OrchestratorError("missing active mux".to_string()))
-    }
-
-    fn owner_name(&self, player_ref: Hash) -> Result<String, OrchestratorError> {
-        Ok(self.player_account(player_ref)?.owner_name)
-    }
 }
 
 impl TxOrchestrator {
@@ -1122,6 +513,7 @@ impl TxArena {
             builder.build(&context).map_err(orchestrator_builder_error("register player"))?
         };
         let executed_txid = executed_tx.id();
+        let submission = submitted_tx("register_player", &executed_tx, vec![player.name.clone()]);
         self.league_outpoint = TransactionOutpoint::new(executed_txid, 0);
         self.transactions.push(executed_tx);
 
@@ -1129,12 +521,7 @@ impl TxArena {
         player.player_ref = Some(player_ref);
         self.players
             .insert(player.name.clone(), PlayerStateData { outpoint: TransactionOutpoint::new(executed_txid, 1), ..registered });
-        self.history.push(SubmittedTx {
-            recipe_name: "register_player",
-            consumed: vec![],
-            produced: vec![],
-            signer_names: vec![player.name.clone()],
-        });
+        self.history.push(submission);
         Ok(())
     }
 
@@ -1230,6 +617,7 @@ impl TxArena {
             .actor_output("Mux", game_source_state(&opening), CovenantBinding::new(0, self.covenant_id), 1_000);
         let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("start game"))?;
         let executed_txid = executed_tx.id();
+        let submission = submitted_tx("start_game", &executed_tx, vec![white.name.clone(), black.name.clone()]);
         self.transactions.push(executed_tx);
 
         self.players.insert(white.name.clone(), next_white);
@@ -1256,12 +644,7 @@ impl TxArena {
                 kind: OffchainMessageKind::GameStarted { white: white.name.clone(), black: black.name.clone() },
             },
         );
-        self.history.push(SubmittedTx {
-            recipe_name: "start_game",
-            consumed: vec![],
-            produced: vec![],
-            signer_names: vec![white.name.clone(), black.name.clone()],
-        });
+        self.history.push(submission);
         Ok(())
     }
 
@@ -1341,6 +724,7 @@ impl TxArena {
                 if !allow_partial_commit {
                     return Err(OrchestratorError(format!("apply failed: {err}")));
                 }
+                let route_submission = submitted_tx("route", &executed_route_tx, vec![actor.name.clone()]);
                 self.transactions.push(executed_route_tx);
                 self.game = None;
                 self.game_outpoint = None;
@@ -1371,13 +755,13 @@ impl TxArena {
                         kind: OffchainMessageKind::TimeoutClaimAvailable { result, worker, move_label: mv.label() },
                     },
                 );
-                let route_submission =
-                    SubmittedTx { recipe_name: "route", consumed: vec![], produced: vec![], signer_names: vec![actor.name.clone()] };
                 self.history.push(route_submission.clone());
                 return Ok(vec![route_submission]);
             }
         };
 
+        let route_submission = submitted_tx("route", &executed_route_tx, vec![actor.name.clone()]);
+        let apply_submission = submitted_tx("worker_apply", &executed_apply_tx, vec![]);
         self.transactions.push(executed_route_tx);
         self.transactions.push(executed_apply_tx);
 
@@ -1409,10 +793,7 @@ impl TxArena {
         self.game_outpoint =
             Some(TransactionOutpoint { transaction_id: self.transactions.last().expect("apply tx exists").id(), index: 0 });
 
-        let submissions = vec![
-            SubmittedTx { recipe_name: "route", consumed: vec![], produced: vec![], signer_names: vec![actor.name.clone()] },
-            SubmittedTx { recipe_name: "worker_apply", consumed: vec![], produced: vec![], signer_names: vec![] },
-        ];
+        let submissions = vec![route_submission, apply_submission];
         self.history.extend(submissions.clone());
         Ok(submissions)
     }
@@ -1458,6 +839,7 @@ impl TxArena {
                 1_000,
             );
         let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("claim worker timeout"))?;
+        let submission = submitted_tx("worker_timeout", &executed_tx, vec![]);
         self.transactions.push(executed_tx.clone());
         self.active_worker = None;
         self.active_settle = Some(ActiveSettleState {
@@ -1483,7 +865,7 @@ impl TxArena {
                 kind: OffchainMessageKind::SettlementRequest { result },
             },
         );
-        self.history.push(SubmittedTx { recipe_name: "worker_timeout", consumed: vec![], produced: vec![], signer_names: vec![] });
+        self.history.push(submission);
         Ok(())
     }
 
@@ -1538,16 +920,12 @@ impl TxArena {
             )
             .actor_output("Mux", game_source_state(&next), CovenantBinding::new(0, self.covenant_id), 1_000);
         let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("surrender game"))?;
+        let submission = submitted_tx("terminate", &executed_tx, vec![actor.name.clone()]);
         self.transactions.push(executed_tx);
         self.game = Some(next);
         self.game_outpoint =
             Some(TransactionOutpoint { transaction_id: self.transactions.last().expect("surrender tx exists").id(), index: 0 });
-        self.history.push(SubmittedTx {
-            recipe_name: "terminate",
-            consumed: vec![],
-            produced: vec![],
-            signer_names: vec![actor.name.clone()],
-        });
+        self.history.push(submission);
         Ok(())
     }
 
@@ -1643,6 +1021,7 @@ impl TxArena {
             let settlement = CovenantOutput::from_tx(&tx, 0).map_err(orchestrator_builder_error("read Settle output"))?;
             (settlement, Some(tx))
         };
+        let mux_submission = mux_settle_tx.as_ref().map(|tx| submitted_tx("mux_settle", tx, vec![]));
         if let Some(tx) = mux_settle_tx.as_ref() {
             self.transactions.push(tx.clone());
         }
@@ -1718,6 +1097,7 @@ impl TxArena {
             .actor_output("Player", player_source_state(&next_black), CovenantBinding::new(0, self.covenant_id), next_black.value);
         let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("settle game into players"))?;
         let executed_txid = executed_tx.id();
+        let settlement_submission = submitted_tx("settle", &executed_tx, vec![]);
         self.transactions.push(executed_tx);
 
         self.players.insert(white.name.clone(), next_white);
@@ -1746,10 +1126,10 @@ impl TxArena {
                 kind: OffchainMessageKind::SettlementNotice { result },
             },
         );
-        if mux_settle_tx.is_some() {
-            self.history.push(SubmittedTx { recipe_name: "mux_settle", consumed: vec![], produced: vec![], signer_names: vec![] });
+        if let Some(submission) = mux_submission {
+            self.history.push(submission);
         }
-        self.history.push(SubmittedTx { recipe_name: "settle", consumed: vec![], produced: vec![], signer_names: vec![] });
+        self.history.push(settlement_submission);
         Ok(())
     }
 
@@ -1771,14 +1151,10 @@ impl TxArena {
             0,
         );
         let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("retire player"))?;
+        let submission = submitted_tx("retire", &executed_tx, vec![player.name.clone()]);
         self.transactions.push(executed_tx);
         self.players.remove(&player.name);
-        self.history.push(SubmittedTx {
-            recipe_name: "retire",
-            consumed: vec![],
-            produced: vec![],
-            signer_names: vec![player.name.clone()],
-        });
+        self.history.push(submission);
         Ok(())
     }
 
@@ -2071,118 +1447,8 @@ fn load_argent_artifact() -> Result<Artifact, OrchestratorError> {
     Ok(artifact)
 }
 
-fn load_template_family() -> Result<ChessTemplateFamily, OrchestratorError> {
-    let artifact = load_argent_artifact()?;
-    let league = artifact_template_witness(&artifact, "League")?;
-    let player = artifact_template_witness(&artifact, "Player")?;
-    let mux = artifact_template_witness(&artifact, "Mux")?;
-    let settle = artifact_template_witness(&artifact, "Settle")?;
-    let pawn = artifact_template_witness(&artifact, "Pawn")?;
-    let knight = artifact_template_witness(&artifact, "Knight")?;
-    let vert = artifact_template_witness(&artifact, "Vert")?;
-    let horiz = artifact_template_witness(&artifact, "Horiz")?;
-    let diag = artifact_template_witness(&artifact, "Diag")?;
-    let king = artifact_template_witness(&artifact, "King")?;
-    let castle = artifact_template_witness(&artifact, "Castle")?;
-    let castle_challenge = artifact_template_witness(&artifact, "CastleChallengePrep")?;
-
-    let route_table = artifact
-        .argent
-        .template_plan
-        .route_tables
-        .iter()
-        .find(|table| table.state == "GameState" && table.field == "gen__mux_routes")
-        .ok_or_else(|| OrchestratorError("Argent artifact has no Mux route table".to_string()))?;
-    let expected_routes = [
-        ("Pawn", &pawn),
-        ("Knight", &knight),
-        ("Vert", &vert),
-        ("Horiz", &horiz),
-        ("Diag", &diag),
-        ("King", &king),
-        ("Castle", &castle),
-        ("CastleChallengePrep", &castle_challenge),
-    ];
-    if route_table.byte_len != expected_routes.len() * 32 || route_table.entries.len() != expected_routes.len() {
-        return Err(OrchestratorError(format!(
-            "unexpected Mux route table size: {} bytes across {} entries",
-            route_table.byte_len,
-            route_table.entries.len()
-        )));
-    }
-
-    let mut route_templates = Vec::with_capacity(route_table.byte_len);
-    for (index, (expected_actor, witness)) in expected_routes.into_iter().enumerate() {
-        let entry = route_table
-            .entries
-            .iter()
-            .find(|entry| entry.index == index)
-            .ok_or_else(|| OrchestratorError(format!("Mux route table has no entry at index {index}")))?;
-        let RouteTemplateLeafArtifact::Template { actor, .. } = &entry.leaf else {
-            return Err(OrchestratorError(format!("Mux route table entry {index} is not a template")));
-        };
-        if actor != expected_actor || entry.offset != index * 32 {
-            return Err(OrchestratorError(format!(
-                "unexpected Mux route table entry {index}: actor {actor}, offset {}",
-                entry.offset
-            )));
-        }
-        route_templates.extend_from_slice(&witness.hash.as_bytes());
-    }
-    let routes_commitment = blake2b(&route_templates);
-
-    Ok(ChessTemplateFamily {
-        league,
-        player,
-        mux,
-        settle,
-        pawn,
-        knight,
-        vert,
-        horiz,
-        diag,
-        king,
-        castle,
-        castle_challenge,
-        route_templates,
-        routes_commitment,
-    })
-}
-
-fn artifact_template_witness(artifact: &Artifact, contract_name: &str) -> Result<TemplateWitness, OrchestratorError> {
-    let template = &artifact
-        .sil_abi
-        .contract(contract_name)
-        .ok_or_else(|| OrchestratorError(format!("Argent artifact has no {contract_name} contract")))?
-        .compiled
-        .template;
-    let prefix = decode_artifact_hex(&template.prefix_hex)?;
-    let suffix = decode_artifact_hex(&template.suffix_hex)?;
-    let hash_bytes = decode_artifact_hex(&template.hash_hex)?;
-    let hash = Hash::try_from_slice(&hash_bytes)
-        .map_err(|_| OrchestratorError(format!("Argent artifact has an invalid {contract_name} template hash")))?;
-    Ok(TemplateWitness { prefix, suffix, hash })
-}
-
-fn decode_artifact_hex(value: &str) -> Result<Vec<u8>, OrchestratorError> {
-    if !value.len().is_multiple_of(2) {
-        return Err(OrchestratorError("Argent artifact contains odd-length hex".to_string()));
-    }
-    (0..value.len())
-        .step_by(2)
-        .map(|offset| {
-            u8::from_str_radix(&value[offset..offset + 2], 16)
-                .map_err(|_| OrchestratorError("Argent artifact contains invalid hex".to_string()))
-        })
-        .collect()
-}
-
 fn blake2b(data: &[u8]) -> Hash {
     Hash::from_slice(Blake2bParams::new().hash_length(32).to_state().update(data).finalize().as_bytes())
-}
-
-fn derive_player_id(nonce: u32, owner_hash: &Hash) -> Hash {
-    blake2b([b"LeaguePlayerId".as_slice(), owner_hash.as_bytes().as_slice(), &nonce.to_le_bytes()].concat().as_slice())
 }
 
 fn file_char(x: i64) -> char {
@@ -2237,75 +1503,6 @@ fn approx_updated_rating(self_rating: i64, opp_rating: i64, actual_score: i64) -
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn loads_template_family_with_real_route_commitment() {
-        let planner = ChessTxPlanner::load().expect("template family loads");
-        assert_eq!(planner.family.route_templates.len(), 32 * 8);
-    }
-
-    #[test]
-    fn settlement_recipe_uses_unsigned_player_delegates() {
-        let planner = ChessTxPlanner::load().expect("template family loads");
-        let white_win = planner.settlement_recipe(GameResult::WhiteWin);
-        assert_eq!(white_win.settle_step.calls[1].signer, SignerRequirement::None);
-        assert_eq!(white_win.settle_step.calls[2].signer, SignerRequirement::None);
-
-        let draw = planner.settlement_recipe(GameResult::Draw);
-        assert_eq!(draw.settle_step.calls[1].signer, SignerRequirement::None);
-        assert_eq!(draw.settle_step.calls[2].signer, SignerRequirement::None);
-    }
-
-    #[test]
-    fn local_orchestrators_can_play_settle_and_retire_end_to_end() {
-        let planner = ChessTxPlanner::load().expect("planner loads");
-        let mut arena = LocalArena::new(planner);
-        let mut white = PlayerHandle::new("white", 0x21);
-        let mut black = PlayerHandle::new("black", 0x22);
-
-        let reg_white = arena.register_player(&mut white).expect("white registers");
-        let reg_black = arena.register_player(&mut black).expect("black registers");
-        assert_eq!(reg_white.recipe_name, "register_player");
-        assert_eq!(reg_black.recipe_name, "register_player");
-
-        arena.send_game_invite(&white, &black).expect("invite sends");
-        let black_mail = arena.drain_inbox(&black);
-        assert_eq!(black_mail.len(), 1);
-        assert!(matches!(black_mail[0].kind, OffchainMessageKind::GameInvite { .. }));
-
-        let start = arena.start_game(&white, &black).expect("game starts");
-        assert_eq!(start.recipe_name, "start_game");
-        let game = arena.active_game_snapshot().expect("active game exists");
-        assert_eq!(game.turn, Side::White);
-
-        let white_move = arena.submit_move(&white, WorkerKind::Pawn, "e2e4").expect("white move succeeds");
-        assert_eq!(white_move.len(), 2);
-        let black_move_notice = arena.drain_inbox(&black);
-        assert_eq!(black_move_notice.len(), 1);
-        assert!(matches!(black_move_notice[0].kind, OffchainMessageKind::MoveNotice { .. }));
-        let game = arena.active_game_snapshot().expect("active game exists");
-        assert_eq!(game.turn, Side::Black);
-
-        let settle = arena.settle_game(&white, &black, GameResult::WhiteWin).expect("settlement succeeds");
-        assert_eq!(settle.len(), 2);
-        let white_state = arena.player_account_snapshot(&white).expect("white state exists");
-        let black_state = arena.player_account_snapshot(&black).expect("black state exists");
-        assert_eq!(white_state.open_games, 0);
-        assert_eq!(black_state.open_games, 0);
-        assert_eq!(white_state.games, 1);
-        assert_eq!(black_state.games, 1);
-        assert_eq!(white_state.wins, 1);
-        assert_eq!(black_state.losses, 1);
-        assert_eq!(white_state.value, 2_000);
-        assert_eq!(black_state.value, 1_000);
-        assert!(white_state.rating > 1200);
-        assert!(black_state.rating < 1200);
-
-        let retire = arena.retire_player(&white).expect("white retires");
-        assert_eq!(retire.recipe_name, "retire");
-        assert!(arena.player_account_snapshot(&white).is_err());
-        assert_eq!(arena.history().len(), 8);
-    }
 
     #[test]
     fn actual_txs_can_play_a_short_game_end_to_end() {
@@ -2380,6 +1577,18 @@ mod tests {
         assert_eq!(black_state.open_games, 0);
         assert_eq!(black_state.losses, 1);
         assert_eq!(arena.history().len(), 13);
+        for submitted in arena.history() {
+            let tx = arena
+                .transactions()
+                .iter()
+                .find(|tx| tx.id() == submitted.transaction_id)
+                .expect("history entry references an executed transaction");
+            assert_eq!(submitted.input_outpoints, tx.inputs.iter().map(|input| input.previous_outpoint).collect::<Vec<_>>());
+            assert_eq!(
+                submitted.output_outpoints,
+                tx.outputs.iter().enumerate().map(|(index, _)| TransactionOutpoint::new(tx.id(), index as u32)).collect::<Vec<_>>()
+            );
+        }
     }
 
     #[test]
@@ -2432,7 +1641,7 @@ mod tests {
 
         let forced = white.force_move(MoveSpec::new(4, 1, 4, 4)).expect("forced illegal move should route");
         assert_eq!(forced.len(), 1);
-        assert_eq!(forced[0].recipe_name, "route");
+        assert_eq!(forced[0].action, "route");
 
         let notice = black.inbox();
         assert!(notice.iter().any(|message| {
