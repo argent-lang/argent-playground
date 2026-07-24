@@ -371,7 +371,7 @@ mod tests {
     #[test]
     fn decodes_contract_state_from_argent_artifact() {
         let artifact: Artifact =
-            serde_json::from_str(include_str!("../../build/argent/artifact.json")).expect("pinned chess artifact deserializes");
+            serde_json::from_str(include_str!("../../build/artifact.json")).expect("pinned chess artifact deserializes");
         let contract = artifact.sil_abi.contract("League").expect("League ABI exists");
         let template = ContractTemplate::from_artifact(&artifact, "League").expect("League template loads");
         let script = decode_hex(&contract.compiled.script_hex).expect("compiled League script is valid hex");

@@ -114,49 +114,49 @@ fn is_ident_continue(ch: char) -> bool {
 }
 
 pub fn mux_contract_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/chess_mux.sil")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/chess_mux.sil")
 }
 
 pub fn settle_contract_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/chess_settle.sil")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/chess_settle.sil")
 }
 
 pub fn league_contract_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/league.sil")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/league.sil")
 }
 
 pub fn player_contract_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/player.sil")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/player.sil")
 }
 
 pub fn pawn_contract_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/chess_pawn.sil")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/chess_pawn.sil")
 }
 
 pub fn knight_contract_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/chess_knight.sil")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/chess_knight.sil")
 }
 
 pub fn vert_contract_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/chess_vert.sil")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/chess_vert.sil")
 }
 
 pub fn horiz_contract_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/chess_horiz.sil")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/chess_horiz.sil")
 }
 
 pub fn diag_contract_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/chess_diag.sil")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/chess_diag.sil")
 }
 
 pub fn king_contract_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/chess_king.sil")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/chess_king.sil")
 }
 
 pub fn castle_contract_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/chess_castle.sil")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/chess_castle.sil")
 }
 
 pub fn castle_challenge_contract_path() -> &'static str {
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/chess_castle_challenge.sil")
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/chess_castle_challenge.sil")
 }

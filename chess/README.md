@@ -8,14 +8,13 @@ This workspace was imported from the Silverscript `chess` branch at commit
 `abe95d210b24c5d84065722e9e59d46e446f0a85`. It is the executable baseline for
 an in-place port to Argent.
 
-The Argent source under `ag/` now defines the active contract graph. Its pinned
-artifact and Sil output are under `build/argent/`.
+The Argent source under `ag/` defines the active contract graph. Its pinned
+artifact, manifest, and generated Sil output are under `build/`.
 
 The Rust orchestrator builds every chess transaction with this artifact. The
 observer also uses its ABI to decode contract state and calls. The handwritten
-contracts under `build/sil/` remain as an independent protocol baseline for the
-legacy transaction suite and script-size measurements. They are not part of the
-application runtime.
+contracts under `baseline/sil/` remain as an independent protocol baseline
+during the test migration. They are not part of the application runtime.
 
 The workspace is independent of the parent playground crate. During the port,
 it uses sibling checkouts of Argent and Silverscript through local Cargo paths.
@@ -64,8 +63,8 @@ Layout:
 
 - `chess-covenant/`: Rust orchestrator, observer, indexer, web app, and tests.
 - `ag/`: the active Argent contract graph.
-- `build/argent/`: pinned artifact and Sil output generated from `ag/`.
-- `build/sil/`: handwritten Sil baseline used only by reference tests.
+- `build/`: pinned artifact, manifest, and Sil output generated from `ag/`.
+- `baseline/sil/`: handwritten Sil baseline used only by reference tests.
 - `ARGENT_PORT.md`: the runtime boundary and intentional port differences.
 - `ARCHITECTURE.md`: high-level design principles for the mux/worker chess protocol.
 - `COVERAGE.md`: audit matrix for current classical-rule coverage vs protocol behavior.

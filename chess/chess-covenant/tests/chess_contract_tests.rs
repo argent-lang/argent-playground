@@ -10,8 +10,8 @@ use chess_covenant::{
     knight_contract_path, load_contract_source, mux_contract_path, pawn_contract_path, settle_contract_path, vert_contract_path,
 };
 
-const LEAGUE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/league.sil");
-const PLAYER_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../build/sil/player.sil");
+const LEAGUE_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/league.sil");
+const PLAYER_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../baseline/sil/player.sil");
 const DEFAULT_MOVE_TIMEOUT: i64 = 600;
 
 #[test]

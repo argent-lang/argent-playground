@@ -1,7 +1,7 @@
 # Argent Chess Port
 
 The Argent source in `ag/` defines the active chess covenant. The build pins its
-artifact and generated Sil under `build/argent/`.
+artifact, manifest, and generated Sil under `build/`.
 
 The application uses the artifact at both runtime boundaries:
 
@@ -51,11 +51,11 @@ when the user state is the same.
 
 ## Reference Baseline
 
-The handwritten contracts in `build/sil/` remain for independent protocol tests
+The handwritten contracts in `baseline/sil/` remain for independent protocol tests
 and script-size reports. These tests help detect semantic drift during the port.
 The application runtime does not load these contracts.
 
-`check.sh` regenerates `build/argent/`, rejects fixture drift, and runs the full
+`check.sh` regenerates `build/`, rejects fixture drift, and runs the full
 Rust test and lint suite.
 
 ## Follow-up Opportunity

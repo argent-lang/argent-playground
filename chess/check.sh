@@ -3,8 +3,8 @@ set -euo pipefail
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
-cargo run --quiet --manifest-path ../../argent/Cargo.toml -- build ag/app.ag --out build/argent
-git diff --exit-code -- build/argent
+cargo run --quiet --manifest-path ../../argent/Cargo.toml -- build ag/app.ag --out build
+git diff --exit-code -- build
 cargo fmt --check
 cargo check --workspace --all-targets
 cargo test --workspace --all-targets

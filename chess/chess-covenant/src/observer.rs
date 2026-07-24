@@ -1091,7 +1091,7 @@ fn blake2b(bytes: &[u8]) -> Hash {
 
 fn load_templates() -> Result<ObserverTemplates, ObserverError> {
     let artifact: Artifact =
-        serde_json::from_str(include_str!("../../build/argent/artifact.json")).map_err(|err| ObserverError(err.to_string()))?;
+        serde_json::from_str(include_str!("../../build/artifact.json")).map_err(|err| ObserverError(err.to_string()))?;
     artifact.check_schema_version().map_err(|err| ObserverError(err.to_string()))?;
     artifact.verify_id().map_err(|err| ObserverError(err.to_string()))?;
     let specs = [
@@ -1136,7 +1136,7 @@ mod tests {
     #[test]
     fn observer_decodes_generated_argent_transaction() {
         let artifact: Artifact =
-            serde_json::from_str(include_str!("../../build/argent/artifact.json")).expect("pinned chess artifact deserializes");
+            serde_json::from_str(include_str!("../../build/artifact.json")).expect("pinned chess artifact deserializes");
         let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
         let covenant_id = Hash::from_bytes([0x91; 32]);
         let white_player = Hash::from_bytes([0x92; 32]);

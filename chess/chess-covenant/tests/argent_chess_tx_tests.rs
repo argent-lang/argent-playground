@@ -204,7 +204,7 @@ impl MoveSpec {
 }
 
 fn chess_artifact() -> Artifact {
-    serde_json::from_str(include_str!("../../build/argent/artifact.json")).expect("pinned chess artifact deserializes")
+    serde_json::from_str(include_str!("../../build/artifact.json")).expect("pinned chess artifact deserializes")
 }
 
 fn blake2b32(bytes: &[u8]) -> [u8; 32] {
