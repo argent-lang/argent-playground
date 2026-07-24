@@ -24,9 +24,9 @@ const CLAIM: i64 = 2;
 const SURRENDER: i64 = 3;
 const ACCEPT: i64 = 4;
 const CLAIMED: i64 = 1;
+const DEFENSE: i64 = 2;
 const NORMAL: i64 = 3;
 const WOFFER: i64 = 4;
-const BOFFER: i64 = 5;
 const MOVE_TIMEOUT: i64 = 600;
 const GAME_VALUE: u64 = 1_000;
 const BASE_RATING: i64 = 1_200;
@@ -367,6 +367,52 @@ fn route_mux_output_to_worker(
     (worker_state, worker_output)
 }
 
+fn assert_mux_route_rejected(
+    builder: &TxBuilder<'_>,
+    player: &TestPlayer,
+    worker: &str,
+    initial: &GameStateData,
+    mv: MoveSpec,
+    output_value: u64,
+    fixture_tag: u8,
+) {
+    let covenant_id = Hash::from_bytes([fixture_tag; 32]);
+    let mux_state = initial.source_state();
+    let mux_outpoint = TransactionOutpoint::new(TransactionId::from_bytes([fixture_tag.wrapping_add(1); 32]), 0);
+    let mux_utxo = builder
+        .covenant_utxo("Mux", mux_state.clone(), GAME_VALUE, 0, false, Some(covenant_id))
+        .expect("mux rejection fixture must build");
+    let worker_state = initial.committed_route(worker, mv, CLEAR);
+    let selected_worker = worker.to_string();
+    let keypair = player.keypair;
+    let public_key = player.public_key.clone();
+    let player_id = player.player_id;
+    let context = TxContext::new()
+        .actor_input(
+            "Mux",
+            mux_state,
+            EntryCall::new("route").args_with(move |tx, input_index| {
+                args![
+                    actor(selected_worker.clone()),
+                    mv.from_x,
+                    mv.from_y,
+                    mv.to_x,
+                    mv.to_y,
+                    mv.promo_piece,
+                    CLEAR,
+                    sign_input(tx, input_index, &keypair),
+                    public_key.clone(),
+                    player_id,
+                ]
+            }),
+            mux_outpoint,
+            mux_utxo,
+            0,
+        )
+        .actor_output(worker, worker_state.source_state(), CovenantBinding::new(0, covenant_id), output_value);
+    assert!(builder.build(&context).is_err(), "Mux must reject the proposed route to {worker}");
+}
+
 fn execute_actor_transition<'a>(
     builder: &TxBuilder<'_>,
     source_actor: &str,
@@ -405,7 +451,7 @@ fn execute_mux_terminate(
     termination_action: i64,
     expected: &GameStateData,
     fixture_tag: u8,
-) {
+) -> CovenantOutput {
     let covenant_id = Hash::from_bytes([fixture_tag; 32]);
     let mux_state = initial.source_state();
     let outpoint = TransactionOutpoint::new(TransactionId::from_bytes([fixture_tag.wrapping_add(1); 32]), 0);
@@ -419,7 +465,7 @@ fn execute_mux_terminate(
         termination_action,
         expected,
         CovenantOutput { index: 0, covenant_id, outpoint, utxo },
-    );
+    )
 }
 
 fn terminate_mux_output(
@@ -1419,7 +1465,7 @@ fn invalid_castle_destination_challenge_loses_by_worker_timeout() {
 }
 
 #[test]
-fn argent_draw_offer_survives_an_ordinary_worker_round_trip() {
+fn ordinary_move_can_offer_draw_and_return_to_mux() {
     let artifact = chess_artifact();
     let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
     let white = player(0x51);
@@ -1435,7 +1481,7 @@ fn argent_draw_offer_survives_an_ordinary_worker_round_trip() {
 }
 
 #[test]
-fn argent_mux_executes_claim_surrender_and_draw_acceptance() {
+fn claim_draw_flips_turn_and_enters_draw_state() {
     let artifact = chess_artifact();
     let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
     let white = player(0x53);
@@ -1445,21 +1491,228 @@ fn argent_mux_executes_claim_surrender_and_draw_acceptance() {
     claimed.turn = BLACK;
     claimed.draw_state = CLAIMED;
     execute_mux_terminate(&builder, &white, &initial, CLAIM, &claimed, 0x83);
-
-    let mut surrendered = initial.clone();
-    surrendered.status = BWIN;
-    execute_mux_terminate(&builder, &white, &initial, SURRENDER, &surrendered, 0x85);
-
-    let mut offered = initial.clone();
-    offered.draw_state = BOFFER;
-    let mut accepted = offered.clone();
-    accepted.status = DRAW;
-    accepted.draw_state = NORMAL;
-    execute_mux_terminate(&builder, &white, &offered, ACCEPT, &accepted, 0x87);
 }
 
 #[test]
-fn argent_worker_and_mux_paths_exit_the_family_into_settlement() {
+fn surrender_routes_back_to_mux_with_terminal_status() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x55);
+    let mut initial = GameStateData::live(white.player_ref, [0x56; 32], opening_board());
+    initial.en_passant_idx = 20;
+    initial.recent_castle = 1;
+    initial.draw_state = CLAIMED;
+
+    let mut surrendered = initial.clone();
+    surrendered.status = BWIN;
+    surrendered.en_passant_idx = -1;
+    surrendered.recent_castle = CLEAR;
+    surrendered.draw_state = NORMAL;
+    execute_mux_terminate(&builder, &white, &initial, SURRENDER, &surrendered, 0x85);
+}
+
+#[test]
+fn pending_draw_offer_can_be_accepted_on_next_mux_turn() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x57);
+    let black = player(0x58);
+    let mut offered = GameStateData::live(white.player_ref, black.player_ref, opening_board());
+    offered.turn = BLACK;
+    offered.draw_state = WOFFER;
+    let mut accepted = offered.clone();
+    accepted.status = DRAW;
+    accepted.draw_state = NORMAL;
+    execute_mux_terminate(&builder, &black, &offered, ACCEPT, &accepted, 0x87);
+}
+
+#[test]
+fn route_rejects_changing_the_locked_game_value() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x59);
+    let initial = GameStateData::live(white.player_ref, [0x5a; 32], opening_board());
+    assert_mux_route_rejected(&builder, &white, "Knight", &initial, MoveSpec::new(6, 0, 5, 2), GAME_VALUE - 1, 0x89);
+}
+
+#[test]
+fn ordinary_reply_rejects_pending_draw_offer_and_clears_draw_state() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let black = player(0x5b);
+    let mut board = opening_board();
+    board[6] = 0;
+    board[21] = 0x02;
+    let mut initial = GameStateData::live([0x5c; 32], black.player_ref, board);
+    initial.turn = BLACK;
+    initial.draw_state = WOFFER;
+
+    let mv = MoveSpec::new(6, 7, 5, 5);
+    let mut expected = initial.completed_move(mv);
+    expected.draw_state = NORMAL;
+    execute_worker_round_trip(&builder, &black, "Knight", &initial, mv, &expected, 0x8b);
+}
+
+#[test]
+fn knight_draw_negotiation_flips_side_control_and_false_claim_loses() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x5d);
+    let black = player(0x5e);
+    let mut board = vec![0; 64];
+    board[1] = 0x02;
+    board[62] = 0x0a;
+    let initial = GameStateData::live(white.player_ref, black.player_ref, board);
+
+    let mut claimed = initial.clone();
+    claimed.turn = BLACK;
+    claimed.draw_state = CLAIMED;
+    let mux_output = execute_mux_terminate(&builder, &white, &initial, CLAIM, &claimed, 0x8d);
+
+    let white_piece_move = MoveSpec::new(1, 0, 2, 2);
+    let mut defense = claimed.completed_move(white_piece_move);
+    defense.draw_state = DEFENSE;
+    let mux_output = execute_worker_from_mux(&builder, &black, "Knight", &claimed, mux_output, white_piece_move, &defense);
+
+    let black_piece_move = MoveSpec::new(6, 7, 5, 5);
+    let mut failed_claim = defense.completed_move(black_piece_move);
+    failed_claim.status = BWIN;
+    failed_claim.draw_state = DEFENSE;
+    execute_worker_from_mux(&builder, &white, "Knight", &defense, mux_output, black_piece_move, &failed_claim);
+}
+
+#[test]
+fn knight_draw_capture_awards_win_to_the_actor() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x5f);
+    let black = player(0x60);
+    let mut board = vec![0; 64];
+    board[1] = 0x02;
+    board[18] = 0x0e;
+    let initial = GameStateData::live(white.player_ref, black.player_ref, board);
+
+    let mut claimed = initial.clone();
+    claimed.turn = BLACK;
+    claimed.draw_state = CLAIMED;
+    let mux_output = execute_mux_terminate(&builder, &white, &initial, CLAIM, &claimed, 0x8f);
+
+    let mv = MoveSpec::new(1, 0, 2, 2);
+    let mut expected = claimed.completed_move(mv);
+    expected.status = BWIN;
+    expected.draw_state = DEFENSE;
+    execute_worker_from_mux(&builder, &black, "Knight", &claimed, mux_output, mv, &expected);
+}
+
+#[test]
+fn pawn_draw_capture_awards_win_to_the_actor() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let black = player(0x65);
+    let mut board = vec![0; 64];
+    board[27] = 0x01;
+    board[36] = 0x0e;
+    let mut initial = GameStateData::live([0x66; 32], black.player_ref, board);
+    initial.turn = BLACK;
+    initial.draw_state = CLAIMED;
+
+    let mv = MoveSpec::new(3, 3, 4, 4);
+    let mut expected = initial.completed_move(mv);
+    expected.status = BWIN;
+    expected.draw_state = DEFENSE;
+    execute_worker_round_trip(&builder, &black, "Pawn", &initial, mv, &expected, 0x97);
+}
+
+#[test]
+fn draw_mode_reuses_ordinary_workers() {
+    struct DrawWorkerCase {
+        worker: &'static str,
+        piece: u8,
+        source: usize,
+        mv: MoveSpec,
+        castle_rights: [u8; 4],
+        fixture_tag: u8,
+    }
+
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let black = player(0x67);
+    let cases = [
+        DrawWorkerCase {
+            worker: "Pawn",
+            piece: 0x01,
+            source: 12,
+            mv: MoveSpec::new(4, 1, 4, 2),
+            castle_rights: [1; 4],
+            fixture_tag: 0x99,
+        },
+        DrawWorkerCase {
+            worker: "Vert",
+            piece: 0x04,
+            source: 0,
+            mv: MoveSpec::new(0, 0, 0, 3),
+            castle_rights: [1, 0, 1, 1],
+            fixture_tag: 0x9b,
+        },
+        DrawWorkerCase {
+            worker: "Horiz",
+            piece: 0x04,
+            source: 0,
+            mv: MoveSpec::new(0, 0, 3, 0),
+            castle_rights: [1, 0, 1, 1],
+            fixture_tag: 0x9d,
+        },
+        DrawWorkerCase {
+            worker: "Diag",
+            piece: 0x03,
+            source: 2,
+            mv: MoveSpec::new(2, 0, 5, 3),
+            castle_rights: [1; 4],
+            fixture_tag: 0x9f,
+        },
+        DrawWorkerCase {
+            worker: "King",
+            piece: 0x06,
+            source: 4,
+            mv: MoveSpec::new(4, 0, 4, 1),
+            castle_rights: [0, 0, 1, 1],
+            fixture_tag: 0xa1,
+        },
+    ];
+
+    for case in cases {
+        let mut board = vec![0; 64];
+        board[case.source] = case.piece;
+        let mut initial = GameStateData::live([case.fixture_tag; 32], black.player_ref, board);
+        initial.turn = BLACK;
+        initial.draw_state = CLAIMED;
+        let mut expected = initial.completed_move(case.mv);
+        expected.draw_state = DEFENSE;
+        expected.castle_rights = case.castle_rights;
+        execute_worker_round_trip(&builder, &black, case.worker, &initial, case.mv, &expected, case.fixture_tag);
+    }
+}
+
+#[test]
+fn draw_mode_disallows_castle_and_castle_challenge_routes() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let black = player(0x68);
+    let mut board = vec![0; 64];
+    board[4] = 0x06;
+    board[7] = 0x04;
+    let mut initial = GameStateData::live([0x69; 32], black.player_ref, board);
+    initial.turn = BLACK;
+    initial.draw_state = CLAIMED;
+    let mv = MoveSpec::new(4, 0, 6, 0);
+
+    assert_mux_route_rejected(&builder, &black, "Castle", &initial, mv, GAME_VALUE, 0xa3);
+    initial.recent_castle = 1;
+    assert_mux_route_rejected(&builder, &black, "CastleChallengePrep", &initial, mv, GAME_VALUE, 0xa5);
+}
+
+#[test]
+fn knight_worker_timeout_rescues_invalid_committed_state() {
     let artifact = chess_artifact();
     let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
     let white = player(0x61);
@@ -1469,17 +1722,21 @@ fn argent_worker_and_mux_paths_exit_the_family_into_settlement() {
     let invalid_knight_move = MoveSpec::new(0, 1, 0, 2);
     let knight_state = initial.committed_route("Knight", invalid_knight_move, CLEAR);
     execute_to_settle(&builder, "Knight", &knight_state, "timeout", MOVE_TIMEOUT as u64, BWIN, 0x91);
+}
 
+#[test]
+fn mux_timeout_awards_win_to_the_waiting_opponent() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let white = player(0x63);
+    let black = player(0x64);
+    let initial = GameStateData::live(white.player_ref, black.player_ref, opening_board());
     let keypair = black.keypair;
     let public_key = black.public_key.clone();
     let player_id = black.player_id;
     let mux_timeout = EntryCall::new("timeout")
         .args_with(move |tx, input_index| args![sign_input(tx, input_index, &keypair), public_key.clone(), player_id]);
     execute_to_settle(&builder, "Mux", &initial, mux_timeout, MOVE_TIMEOUT as u64, BWIN, 0x93);
-
-    let mut terminal = initial;
-    terminal.status = BWIN;
-    execute_to_settle(&builder, "Mux", &terminal, "settle", 0, BWIN, 0x95);
 }
 
 #[test]
