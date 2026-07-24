@@ -6,5 +6,3 @@ resolver = "2"
 argent = { path = "../../argent" }
 argent-artifact = { path = "../../argent/crates/argent-artifact" }
 argent-runtime = { path = "../../argent/crates/argent-runtime" }
-# Temporary dependency for the handwritten baseline tests.
-silverscript-lang = { path = "../../silverscript/silverscript-lang" }
