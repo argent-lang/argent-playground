@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use argent_runtime::{actor, args, state, Artifact, ArtifactValue, CovenantOutput, EntryCall, TxBuilder, TxContext};
+use argent_runtime::{actor, args, state, Artifact, ArtifactValue, BuilderResult, CovenantOutput, EntryCall, TxBuilder, TxContext};
 use blake2b_simd::Params as Blake2bParams;
 use kaspa_consensus_core::{
     hashing::{
@@ -527,6 +527,21 @@ fn launch_league(builder: &TxBuilder<'_>, state: BTreeMap<String, ArtifactValue>
     CovenantOutput::from_tx(&tx, 0).expect("league genesis output is a covenant UTXO")
 }
 
+fn actor_fixture(
+    builder: &TxBuilder<'_>,
+    actor: &str,
+    state: BTreeMap<String, ArtifactValue>,
+    value: u64,
+    fixture_tag: u8,
+) -> CovenantOutput {
+    let covenant_id = Hash::from_bytes([fixture_tag; 32]);
+    let outpoint = TransactionOutpoint::new(TransactionId::from_bytes([fixture_tag.wrapping_add(1); 32]), 0);
+    let utxo = builder
+        .covenant_utxo(actor, state, value, 0, false, Some(covenant_id))
+        .unwrap_or_else(|err| panic!("{actor} fixture UTXO must build: {err}"));
+    CovenantOutput { index: 0, covenant_id, outpoint, utxo }
+}
+
 fn register_player(
     builder: &TxBuilder<'_>,
     league_state: BTreeMap<String, ArtifactValue>,
@@ -534,6 +549,23 @@ fn register_player(
     owner_seed: u8,
     player_value: u64,
 ) -> (CovenantOutput, TestPlayer, PlayerStateData, CovenantOutput) {
+    let (tx, owner, player_state) =
+        build_registration(builder, league_state.clone(), league, owner_seed, player_value, league_state, None)
+            .expect("league registers a signed player");
+    let next_league = CovenantOutput::from_tx(&tx, 0).expect("league continuation is a covenant UTXO");
+    let player_output = CovenantOutput::from_tx(&tx, 1).expect("registered player is a covenant UTXO");
+    (next_league, owner, player_state, player_output)
+}
+
+fn build_registration(
+    builder: &TxBuilder<'_>,
+    league_state: BTreeMap<String, ArtifactValue>,
+    league: CovenantOutput,
+    owner_seed: u8,
+    player_value: u64,
+    next_league_state: BTreeMap<String, ArtifactValue>,
+    next_league_value: Option<u64>,
+) -> BuilderResult<(Transaction, TestPlayer, PlayerStateData)> {
     let mut unique_preimage = b"LeaguePlayerId".to_vec();
     unique_preimage.extend_from_slice(league.outpoint.transaction_id.as_bytes().as_slice());
     unique_preimage.extend_from_slice(&league.outpoint.index.to_le_bytes());
@@ -543,6 +575,7 @@ fn register_player(
     let covenant_id = league.covenant_id;
     let keypair = owner.keypair;
     let public_key = owner.public_key.clone();
+    let league_value = next_league_value.unwrap_or(league_value);
     let context = TxContext::new()
         .actor_input(
             "League",
@@ -553,12 +586,9 @@ fn register_player(
             league.utxo,
             0,
         )
-        .actor_output("League", league_state, CovenantBinding::new(0, covenant_id), league_value)
+        .actor_output("League", next_league_state, CovenantBinding::new(0, covenant_id), league_value)
         .actor_output("Player", player_state.source_state(), CovenantBinding::new(0, covenant_id), player_value);
-    let tx = builder.build(&context).expect("league registers a signed player");
-    let next_league = CovenantOutput::from_tx(&tx, 0).expect("league continuation is a covenant UTXO");
-    let player_output = CovenantOutput::from_tx(&tx, 1).expect("registered player is a covenant UTXO");
-    (next_league, owner, player_state, player_output)
+    builder.build(&context).map(|tx| (tx, owner, player_state))
 }
 
 fn execute_signed_rebalance(
@@ -569,6 +599,20 @@ fn execute_signed_rebalance(
     signer: &TestPlayer,
 ) -> CovenantOutput {
     let value = source.utxo.amount;
+    let tx = build_signed_rebalance(builder, actor, state.clone(), source, signer, state, value)
+        .unwrap_or_else(|err| panic!("{actor} rebalance must execute: {err}"));
+    CovenantOutput::from_tx(&tx, 0).expect("rebalance output is a covenant UTXO")
+}
+
+fn build_signed_rebalance(
+    builder: &TxBuilder<'_>,
+    actor: &str,
+    state: BTreeMap<String, ArtifactValue>,
+    source: CovenantOutput,
+    signer: &TestPlayer,
+    next_state: BTreeMap<String, ArtifactValue>,
+    next_value: u64,
+) -> BuilderResult<Transaction> {
     let covenant_id = source.covenant_id;
     let keypair = signer.keypair;
     let public_key = signer.public_key.clone();
@@ -582,18 +626,18 @@ fn execute_signed_rebalance(
             source.utxo,
             0,
         )
-        .actor_output(actor, state, CovenantBinding::new(0, covenant_id), value);
-    let tx = builder.build(&context).unwrap_or_else(|err| panic!("{actor} rebalance must execute: {err}"));
-    CovenantOutput::from_tx(&tx, 0).expect("rebalance output is a covenant UTXO")
+        .actor_output(actor, next_state, CovenantBinding::new(0, covenant_id), next_value);
+    builder.build(&context)
 }
 
-fn fork_league(
+fn build_league_fork(
     builder: &TxBuilder<'_>,
     league_state: BTreeMap<String, ArtifactValue>,
     league: CovenantOutput,
     admin: &TestPlayer,
-) -> (CovenantOutput, CovenantOutput) {
-    let value = league.utxo.amount;
+    left: (BTreeMap<String, ArtifactValue>, u64),
+    right: (BTreeMap<String, ArtifactValue>, u64),
+) -> BuilderResult<Transaction> {
     let covenant_id = league.covenant_id;
     let keypair = admin.keypair;
     let public_key = admin.public_key.clone();
@@ -606,15 +650,21 @@ fn fork_league(
             league.utxo,
             0,
         )
-        .actor_output("League", league_state.clone(), CovenantBinding::new(0, covenant_id), value)
-        .actor_output("League", league_state, CovenantBinding::new(0, covenant_id), value);
-    let tx = builder.build(&context).expect("league forks into two identical lanes");
-    let left = CovenantOutput::from_tx(&tx, 0).expect("left league lane is a covenant UTXO");
-    let right = CovenantOutput::from_tx(&tx, 1).expect("right league lane is a covenant UTXO");
-    (left, right)
+        .actor_output("League", left.0, CovenantBinding::new(0, covenant_id), left.1)
+        .actor_output("League", right.0, CovenantBinding::new(0, covenant_id), right.1);
+    builder.build(&context)
 }
 
 fn retire_player(builder: &TxBuilder<'_>, player_state: &PlayerStateData, player_output: CovenantOutput, owner: &TestPlayer) {
+    build_player_retirement(builder, player_state, player_output, owner).expect("idle player retires without a covenant output");
+}
+
+fn build_player_retirement(
+    builder: &TxBuilder<'_>,
+    player_state: &PlayerStateData,
+    player_output: CovenantOutput,
+    owner: &TestPlayer,
+) -> BuilderResult<Transaction> {
     let keypair = owner.keypair;
     let public_key = owner.public_key.clone();
     let context = TxContext::new().actor_input(
@@ -625,7 +675,7 @@ fn retire_player(builder: &TxBuilder<'_>, player_state: &PlayerStateData, player
         player_output.utxo,
         0,
     );
-    builder.build(&context).expect("idle player retires without a covenant output");
+    builder.build(&context)
 }
 
 fn start_game(
@@ -1740,42 +1790,168 @@ fn mux_timeout_awards_win_to_the_waiting_opponent() {
 }
 
 #[test]
-fn argent_league_registers_a_spendable_player() {
+fn league_registers_a_real_player_contract() {
     let artifact = chess_artifact();
     let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
     let admin = player(0x71);
     let league_values = league_state(admin.owner);
     let league = launch_league(&builder, league_values.clone(), 5_000);
-    let (league, owner, player_state, player_output) = register_player(&builder, league_values.clone(), league, 0x72, 2_000);
+    let (_league, owner, player_state, player_output) = register_player(&builder, league_values, league, 0x72, 2_000);
 
-    execute_signed_rebalance(&builder, "League", league_values, league, &admin);
-    execute_signed_rebalance(&builder, "Player", player_state.source_state(), player_output, &owner);
+    assert_eq!(player_state.owner, owner.owner);
+    assert_eq!(player_state.open_games, 0);
+    assert_eq!(player_state.rating, BASE_RATING);
+    assert_eq!(player_output.utxo.amount, 2_000);
 }
 
 #[test]
-fn argent_league_forks_and_idle_player_retires() {
+fn league_register_rejects_mutated_lane_output() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x72);
+    let league_values = league_state(admin.owner);
+    let league = launch_league(&builder, league_values.clone(), 5_000);
+    let mutated = state! {
+        base_rating: BASE_RATING + 1,
+        admin: admin.owner,
+    };
+
+    assert!(build_registration(&builder, league_values, league, 0x73, 2_000, mutated, None).is_err());
+}
+
+#[test]
+fn league_register_rejects_changed_lane_value() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x74);
+    let league_values = league_state(admin.owner);
+    let league = launch_league(&builder, league_values.clone(), 5_000);
+
+    assert!(build_registration(&builder, league_values.clone(), league, 0x75, 2_000, league_values, Some(4_999)).is_err());
+}
+
+#[test]
+fn league_rebalance_allows_same_spk_with_new_value() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x76);
+    let league_values = league_state(admin.owner);
+    let league = launch_league(&builder, league_values.clone(), 5_000);
+
+    build_signed_rebalance(&builder, "League", league_values.clone(), league, &admin, league_values, 777)
+        .expect("league rebalance permits a new value with unchanged state");
+}
+
+#[test]
+fn league_rebalance_rejects_changed_state_spk() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x77);
+    let league_values = league_state(admin.owner);
+    let league = launch_league(&builder, league_values.clone(), 5_000);
+    let mutated = state! {
+        base_rating: BASE_RATING + 1,
+        admin: admin.owner,
+    };
+
+    assert!(build_signed_rebalance(&builder, "League", league_values, league, &admin, mutated, 777).is_err());
+}
+
+#[test]
+fn league_fork_allows_two_identical_lanes() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x78);
+    let league_values = league_state(admin.owner);
+    let league = launch_league(&builder, league_values.clone(), 5_000);
+
+    build_league_fork(&builder, league_values.clone(), league, &admin, (league_values.clone(), 2_000), (league_values, 3_000))
+        .expect("league fork permits two identical state lanes");
+}
+
+#[test]
+fn league_fork_rejects_mutated_lane_output() {
     let artifact = chess_artifact();
     let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
     let admin = player(0x79);
     let league_values = league_state(admin.owner);
     let league = launch_league(&builder, league_values.clone(), 5_000);
-    let (league, owner, player_state, player_output) = register_player(&builder, league_values.clone(), league, 0x7a, 2_000);
+    let mutated = state! {
+        base_rating: BASE_RATING + 1,
+        admin: admin.owner,
+    };
 
-    let (left, right) = fork_league(&builder, league_values.clone(), league, &admin);
-    execute_signed_rebalance(&builder, "League", league_values.clone(), left, &admin);
-    execute_signed_rebalance(&builder, "League", league_values, right, &admin);
+    assert!(build_league_fork(&builder, league_values.clone(), league, &admin, (league_values, 2_000), (mutated, 3_000),).is_err());
+}
+
+#[test]
+fn player_rebalance_allows_same_spk_with_new_value() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x7a);
+    let league_values = league_state(admin.owner);
+    let league = launch_league(&builder, league_values.clone(), 5_000);
+    let (_league, owner, player_state, player_output) = register_player(&builder, league_values, league, 0x7b, 2_000);
+
+    build_signed_rebalance(&builder, "Player", player_state.source_state(), player_output, &owner, player_state.source_state(), 1_500)
+        .expect("player rebalance permits a new value with unchanged state");
+}
+
+#[test]
+fn player_rebalance_rejects_changed_state_spk() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x7c);
+    let league_values = league_state(admin.owner);
+    let league = launch_league(&builder, league_values.clone(), 5_000);
+    let (_league, owner, player_state, player_output) = register_player(&builder, league_values, league, 0x7d, 2_000);
+    let mut mutated = player_state.clone();
+    mutated.rating += 1;
+
+    assert!(build_signed_rebalance(
+        &builder,
+        "Player",
+        player_state.source_state(),
+        player_output,
+        &owner,
+        mutated.source_state(),
+        2_000,
+    )
+    .is_err());
+}
+
+#[test]
+fn player_can_retire_with_no_open_games() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x7e);
+    let league_values = league_state(admin.owner);
+    let league = launch_league(&builder, league_values.clone(), 5_000);
+    let (_league, owner, player_state, player_output) = register_player(&builder, league_values, league, 0x7f, 2_000);
     retire_player(&builder, &player_state, player_output, &owner);
 }
 
 #[test]
-fn argent_registered_players_start_a_spendable_game() {
+fn player_cannot_retire_with_open_games() {
     let artifact = chess_artifact();
     let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
-    let admin = player(0x73);
+    let owner = player(0x80);
+    let mut player_state = PlayerStateData::registered(&owner);
+    player_state.open_games = 1;
+    let player_output = actor_fixture(&builder, "Player", player_state.source_state(), 2_000, 0xa7);
+
+    assert!(build_player_retirement(&builder, &player_state, player_output, &owner).is_err());
+}
+
+#[test]
+fn players_can_start_a_real_mux_game() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let admin = player(0x81);
     let league_values = league_state(admin.owner);
     let league = launch_league(&builder, league_values.clone(), 5_000);
-    let (league, white, white_state, white_output) = register_player(&builder, league_values.clone(), league, 0x74, 2_000);
-    let (_league, black, black_state, black_output) = register_player(&builder, league_values, league, 0x75, 2_000);
+    let (league, white, white_state, white_output) = register_player(&builder, league_values.clone(), league, 0x82, 2_000);
+    let (_league, black, black_state, black_output) = register_player(&builder, league_values, league, 0x83, 2_000);
 
     let started = start_game(&builder, (&white, &white_state, white_output), (&black, &black_state, black_output), WHITE);
     assert_eq!(started.leader_state.open_games, 1);
