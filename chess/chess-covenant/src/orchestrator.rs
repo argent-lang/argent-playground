@@ -73,10 +73,6 @@ fn player_ref_hash(owner_hash: Hash, player_id: Hash) -> Hash {
     hash_pair(owner_hash, player_id)
 }
 
-fn repeated_hash(byte: u8) -> Hash {
-    Hash::from_bytes([byte; 32])
-}
-
 fn hash_pair(left: Hash, right: Hash) -> Hash {
     let left = left.as_bytes();
     let right = right.as_bytes();
@@ -319,10 +315,17 @@ struct PartialWorkerCommit {
     submissions: Vec<SubmittedTx>,
 }
 
+#[derive(Clone)]
+struct LeagueLane {
+    outpoint: TransactionOutpoint,
+    value: u64,
+}
+
 pub struct TxArena {
     artifact: Artifact,
+    admin: SigningPlayer,
     league_state: BTreeMap<String, ArtifactValue>,
-    league_outpoint: TransactionOutpoint,
+    league_lanes: Vec<LeagueLane>,
     base_rating: i64,
     covenant_id: Hash,
     players: BTreeMap<String, PlayerStateData>,
@@ -352,6 +355,10 @@ impl TxOrchestrator {
 
     pub fn register(&mut self) -> Result<(), OrchestratorError> {
         self.arena.borrow_mut().register_player(&mut self.player)
+    }
+
+    pub fn register_on_lane(&mut self, lane_index: usize) -> Result<(), OrchestratorError> {
+        self.arena.borrow_mut().register_player_on_lane(&mut self.player, lane_index)
     }
 
     pub fn send_game_invite(&self, other: &TxOrchestrator) -> Result<(), OrchestratorError> {
@@ -413,14 +420,18 @@ impl TxOrchestrator {
     pub fn retire(&self) -> Result<(), OrchestratorError> {
         self.arena.borrow_mut().retire_player(&self.player)
     }
+
+    pub fn rebalance(&self, value: u64) -> Result<(), OrchestratorError> {
+        self.arena.borrow_mut().rebalance_player(&self.player, value)
+    }
 }
 
 impl TxArena {
     pub fn new() -> Result<Self, OrchestratorError> {
         let artifact = load_argent_artifact()?;
-        let admin = repeated_hash(0x33);
+        let admin = SigningPlayer::from_seed("admin", 0x33);
         let base_rating = 1200;
-        let league_state = league_source_state(base_rating, admin);
+        let league_state = league_source_state(base_rating, admin.owner_hash);
         let league_output = {
             let builder = TxBuilder::new(&artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
             let funding_outpoint = TransactionOutpoint::new(TransactionId::from_bytes([0x77; 32]), 0);
@@ -438,8 +449,9 @@ impl TxArena {
 
         Ok(Self {
             artifact,
+            admin,
             league_state,
-            league_outpoint: league_output.outpoint,
+            league_lanes: vec![LeagueLane { outpoint: league_output.outpoint, value: league_output.utxo.amount }],
             base_rating,
             covenant_id: league_output.covenant_id,
             players: BTreeMap::new(),
@@ -471,6 +483,14 @@ impl TxArena {
 
     pub fn covenant_id(&self) -> Hash {
         self.covenant_id
+    }
+
+    pub fn league_lane_count(&self) -> usize {
+        self.league_lanes.len()
+    }
+
+    pub fn league_lane_values(&self) -> Vec<u64> {
+        self.league_lanes.iter().map(|lane| lane.value).collect()
     }
 
     pub fn player_account_snapshot(&self, player: &SigningPlayer) -> Result<PlayerAccount, OrchestratorError> {
@@ -516,20 +536,96 @@ impl TxArena {
             })
     }
 
+    pub fn rebalance_league(&mut self, lane_index: usize, value: u64) -> Result<(), OrchestratorError> {
+        let lane = self
+            .league_lanes
+            .get(lane_index)
+            .cloned()
+            .ok_or_else(|| OrchestratorError(format!("missing League lane {lane_index}")))?;
+        let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+        let lane_utxo = builder
+            .covenant_utxo("League", self.league_state.clone(), lane.value, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build League lane UTXO"))?;
+        let keypair = self.admin.keypair;
+        let public_key = self.admin.pubkey_bytes.clone();
+        let context = TxContext::new()
+            .actor_input(
+                "League",
+                self.league_state.clone(),
+                EntryCall::new("rebalance")
+                    .args_with(move |tx, input_index| args![sign_builder_input(tx, input_index, &keypair), public_key.clone()]),
+                lane.outpoint,
+                lane_utxo,
+                0,
+            )
+            .actor_output("League", self.league_state.clone(), CovenantBinding::new(0, self.covenant_id), value);
+        let tx = builder.build(&context).map_err(orchestrator_builder_error("rebalance League lane"))?;
+        let txid = tx.id();
+        let submission = submitted_tx("league_rebalance", &tx, vec![self.admin.name.clone()]);
+        self.transactions.push(tx);
+        self.league_lanes[lane_index] = LeagueLane { outpoint: TransactionOutpoint::new(txid, 0), value };
+        self.history.push(submission);
+        Ok(())
+    }
+
+    pub fn fork_league(&mut self, lane_index: usize, left_value: u64, right_value: u64) -> Result<(), OrchestratorError> {
+        let lane = self
+            .league_lanes
+            .get(lane_index)
+            .cloned()
+            .ok_or_else(|| OrchestratorError(format!("missing League lane {lane_index}")))?;
+        let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+        let lane_utxo = builder
+            .covenant_utxo("League", self.league_state.clone(), lane.value, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build League lane UTXO"))?;
+        let keypair = self.admin.keypair;
+        let public_key = self.admin.pubkey_bytes.clone();
+        let context = TxContext::new()
+            .actor_input(
+                "League",
+                self.league_state.clone(),
+                EntryCall::new("fork")
+                    .args_with(move |tx, input_index| args![sign_builder_input(tx, input_index, &keypair), public_key.clone()]),
+                lane.outpoint,
+                lane_utxo,
+                0,
+            )
+            .actor_output("League", self.league_state.clone(), CovenantBinding::new(0, self.covenant_id), left_value)
+            .actor_output("League", self.league_state.clone(), CovenantBinding::new(0, self.covenant_id), right_value);
+        let tx = builder.build(&context).map_err(orchestrator_builder_error("fork League lane"))?;
+        let txid = tx.id();
+        let submission = submitted_tx("league_fork", &tx, vec![self.admin.name.clone()]);
+        self.transactions.push(tx);
+        self.league_lanes.splice(
+            lane_index..=lane_index,
+            [
+                LeagueLane { outpoint: TransactionOutpoint::new(txid, 0), value: left_value },
+                LeagueLane { outpoint: TransactionOutpoint::new(txid, 1), value: right_value },
+            ],
+        );
+        self.history.push(submission);
+        Ok(())
+    }
+
     pub fn register_player(&mut self, player: &mut SigningPlayer) -> Result<(), OrchestratorError> {
+        self.register_player_on_lane(player, 0)
+    }
+
+    pub fn register_player_on_lane(&mut self, player: &mut SigningPlayer, lane_index: usize) -> Result<(), OrchestratorError> {
+        let lane = self
+            .league_lanes
+            .get(lane_index)
+            .cloned()
+            .ok_or_else(|| OrchestratorError(format!("missing League lane {lane_index}")))?;
         let player_id = blake2b(
-            &[
-                b"LeaguePlayerId".as_slice(),
-                self.league_outpoint.transaction_id.as_bytes().as_slice(),
-                &self.league_outpoint.index.to_le_bytes(),
-            ]
-            .concat(),
+            &[b"LeaguePlayerId".as_slice(), lane.outpoint.transaction_id.as_bytes().as_slice(), &lane.outpoint.index.to_le_bytes()]
+                .concat(),
         );
         let player_ref = player_ref_hash(player.owner_hash, player_id);
         let registered = PlayerStateData {
             owner_hash: player.owner_hash,
             player_id,
-            outpoint: self.league_outpoint,
+            outpoint: lane.outpoint,
             value: 1_000,
             open_games: 0,
             rating: self.base_rating,
@@ -541,7 +637,7 @@ impl TxArena {
         let executed_tx = {
             let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
             let league_utxo = builder
-                .covenant_utxo("League", self.league_state.clone(), 1_000, 0, false, Some(self.covenant_id))
+                .covenant_utxo("League", self.league_state.clone(), lane.value, 0, false, Some(self.covenant_id))
                 .map_err(orchestrator_builder_error("build League UTXO"))?;
             let keypair = player.keypair;
             let public_key = player.pubkey_bytes.clone();
@@ -551,17 +647,17 @@ impl TxArena {
                     self.league_state.clone(),
                     EntryCall::new("register_player")
                         .args_with(move |tx, input_index| args![sign_builder_input(tx, input_index, &keypair), public_key.clone()]),
-                    self.league_outpoint,
+                    lane.outpoint,
                     league_utxo,
                     0,
                 )
-                .actor_output("League", self.league_state.clone(), CovenantBinding::new(0, self.covenant_id), 1_000)
+                .actor_output("League", self.league_state.clone(), CovenantBinding::new(0, self.covenant_id), lane.value)
                 .actor_output("Player", player_source_state(&registered), CovenantBinding::new(0, self.covenant_id), registered.value);
             builder.build(&context).map_err(orchestrator_builder_error("register player"))?
         };
         let executed_txid = executed_tx.id();
         let submission = submitted_tx("register_player", &executed_tx, vec![player.name.clone()]);
-        self.league_outpoint = TransactionOutpoint::new(executed_txid, 0);
+        self.league_lanes[lane_index].outpoint = TransactionOutpoint::new(executed_txid, 0);
         self.transactions.push(executed_tx);
 
         player.player_id = Some(player_id);
@@ -1468,6 +1564,35 @@ impl TxArena {
         Ok(())
     }
 
+    pub fn rebalance_player(&mut self, player: &SigningPlayer, value: u64) -> Result<(), OrchestratorError> {
+        let state = self.players.get(&player.name).cloned().ok_or_else(|| OrchestratorError("missing player".to_string()))?;
+        let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+        let player_utxo = builder
+            .covenant_utxo("Player", player_source_state(&state), state.value, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build rebalancing Player UTXO"))?;
+        let keypair = player.keypair;
+        let public_key = player.pubkey_bytes.clone();
+        let context = TxContext::new()
+            .actor_input(
+                "Player",
+                player_source_state(&state),
+                EntryCall::new("rebalance")
+                    .args_with(move |tx, input_index| args![sign_builder_input(tx, input_index, &keypair), public_key.clone()]),
+                state.outpoint,
+                player_utxo,
+                0,
+            )
+            .actor_output("Player", player_source_state(&state), CovenantBinding::new(0, self.covenant_id), value);
+        let tx = builder.build(&context).map_err(orchestrator_builder_error("rebalance Player"))?;
+        let txid = tx.id();
+        let submission = submitted_tx("player_rebalance", &tx, vec![player.name.clone()]);
+        self.transactions.push(tx);
+        *self.players.get_mut(&player.name).expect("rebalanced player remains tracked") =
+            PlayerStateData { outpoint: TransactionOutpoint::new(txid, 0), value, ..state };
+        self.history.push(submission);
+        Ok(())
+    }
+
     fn push_message(&mut self, recipient: &str, message: OffchainMessage) {
         self.messages.entry(recipient.to_string()).or_default().push(message);
     }
@@ -2228,6 +2353,31 @@ mod tests {
         let arena = shared.borrow();
         assert_eq!(arena.player_account_snapshot(&white.player).expect("white remains").losses, 1);
         assert_eq!(arena.player_account_snapshot(&black.player).expect("black remains").wins, 1);
+    }
+
+    #[test]
+    fn actual_maintenance_txs_rebalance_and_fork_contracts() {
+        let mut arena = TxArena::new().expect("actual arena builds");
+        arena.rebalance_league(0, 1_200).expect("admin rebalances the League lane");
+        arena.fork_league(0, 500, 700).expect("admin forks the League lane");
+        assert_eq!(arena.league_lane_count(), 2);
+        assert_eq!(arena.league_lane_values(), [500, 700]);
+
+        let mut player = SigningPlayer::from_seed("player", 0x69);
+        arena.register_player_on_lane(&mut player, 1).expect("player registers through the selected forked lane");
+        arena.rebalance_player(&player, 2_500).expect("owner rebalances the Player");
+        assert_eq!(arena.player_account_snapshot(&player).expect("player remains").value, 2_500);
+        assert_eq!(
+            arena.history().iter().map(|submission| submission.action).collect::<Vec<_>>(),
+            ["league_rebalance", "league_fork", "register_player", "player_rebalance"]
+        );
+
+        let indexer = crate::indexer::ChessIndexer::load().expect("indexer loads");
+        let chain = indexer.index_transactions(arena.transactions(), arena.covenant_id()).expect("maintenance txs index");
+        assert_eq!(chain.league_lane_count, 2);
+        assert_eq!(chain.players.len(), 1);
+        assert_eq!(chain.players[0].value, 2_500);
+        assert!(chain.warnings.is_empty(), "indexer warnings: {:?}", chain.warnings);
     }
 
     #[test]
