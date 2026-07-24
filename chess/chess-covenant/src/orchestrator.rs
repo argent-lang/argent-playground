@@ -59,9 +59,15 @@ const WWIN: i64 = 1;
 const BWIN: i64 = 2;
 const DRAW: i64 = 3;
 const CLEAR: i64 = 0;
+const OFFER: i64 = 1;
+const CLAIM: i64 = 2;
 const SURRENDER: i64 = 3;
+const ACCEPT: i64 = 4;
 const CLAIMED: i64 = 1;
 const DEFENSE: i64 = 2;
+const NORMAL: i64 = 3;
+const WOFFER: i64 = 4;
+const BOFFER: i64 = 5;
 
 fn player_ref_hash(owner_hash: Hash, player_id: Hash) -> Hash {
     hash_pair(owner_hash, player_id)
@@ -120,6 +126,9 @@ pub enum OffchainMessageKind {
     InviteAccepted { white: String, black: String },
     GameStarted { white: String, black: String },
     MoveNotice { actor: String, worker: WorkerKind, move_label: String, mv: MoveSpec },
+    DrawOffered { actor: String },
+    DrawClaimed { actor: String },
+    DrawAccepted { actor: String },
     TimeoutClaimAvailable { result: GameResult, worker: WorkerKind, move_label: String },
     SettlementRequest { result: GameResult },
     SettlementNotice { result: GameResult },
@@ -188,6 +197,9 @@ pub struct ActualGameSnapshot {
     pub board: Vec<u8>,
     pub turn: Side,
     pub status: i64,
+    pub move_timeout: i64,
+    pub recent_castle: i64,
+    pub draw_state: i64,
     pub move_log: Vec<String>,
 }
 
@@ -349,8 +361,20 @@ impl TxOrchestrator {
         self.arena.borrow_mut().submit_move(&self.player, mv)
     }
 
+    pub fn offer_draw(&self, mv: MoveSpec) -> Result<Vec<SubmittedTx>, OrchestratorError> {
+        self.arena.borrow_mut().offer_draw(&self.player, mv)
+    }
+
     pub fn force_move(&self, mv: MoveSpec) -> Result<Vec<SubmittedTx>, OrchestratorError> {
         self.arena.borrow_mut().force_move(&self.player, mv)
+    }
+
+    pub fn claim_draw(&self) -> Result<(), OrchestratorError> {
+        self.arena.borrow_mut().claim_draw(&self.player)
+    }
+
+    pub fn accept_draw(&self) -> Result<(), OrchestratorError> {
+        self.arena.borrow_mut().accept_draw(&self.player)
     }
 
     pub fn surrender(&self) -> Result<(), OrchestratorError> {
@@ -454,6 +478,9 @@ impl TxArena {
                 board: game.board.clone(),
                 turn: side_from_turn(game.turn),
                 status: game.status,
+                move_timeout: game.move_timeout,
+                recent_castle: game.recent_castle,
+                draw_state: game.draw_state,
                 move_log: game.move_log.clone(),
             })
             .or_else(|| {
@@ -464,6 +491,9 @@ impl TxArena {
                     board: worker.state.board.clone(),
                     turn: side_from_turn(worker.state.turn),
                     status: worker.state.status,
+                    move_timeout: worker.state.move_timeout,
+                    recent_castle: worker.state.recent_castle,
+                    draw_state: worker.state.draw_state,
                     move_log: worker.state.move_log.clone(),
                 })
             })
@@ -649,34 +679,32 @@ impl TxArena {
     }
 
     pub fn submit_move(&mut self, actor: &SigningPlayer, mv: MoveSpec) -> Result<Vec<SubmittedTx>, OrchestratorError> {
-        self.submit_move_internal(actor, mv, false)
+        self.submit_move_internal(actor, mv, CLEAR, false)
+    }
+
+    pub fn offer_draw(&mut self, actor: &SigningPlayer, mv: MoveSpec) -> Result<Vec<SubmittedTx>, OrchestratorError> {
+        self.submit_move_internal(actor, mv, OFFER, false)
     }
 
     pub fn force_move(&mut self, actor: &SigningPlayer, mv: MoveSpec) -> Result<Vec<SubmittedTx>, OrchestratorError> {
-        self.submit_move_internal(actor, mv, true)
+        self.submit_move_internal(actor, mv, CLEAR, true)
     }
 
     fn submit_move_internal(
         &mut self,
         actor: &SigningPlayer,
         mv: MoveSpec,
+        termination_action: i64,
         allow_partial_commit: bool,
     ) -> Result<Vec<SubmittedTx>, OrchestratorError> {
         let game = self.game.clone().ok_or_else(|| OrchestratorError("missing game".to_string()))?;
-        let actor_ref = actor.player_ref.ok_or_else(|| OrchestratorError(format!("{} missing player ref", actor.name)))?;
-        let actor_side = if actor_ref == game.white_player {
-            Side::White
-        } else if actor_ref == game.black_player {
-            Side::Black
-        } else {
-            return Err(OrchestratorError(format!("{} is not part of the active game", actor.name)));
-        };
+        let actor_side = player_side(actor, &game)?;
         if actor_side != side_from_turn(game.turn) {
             return Err(OrchestratorError(format!("it is not {}'s turn", actor.name)));
         }
 
         let worker = determine_worker(&game.board, mv)?;
-        let pending = pending_state_for_move(&game, mv);
+        let pending = pending_state_for_move(&game, mv, termination_action);
         let game_outpoint = self.game_outpoint.ok_or_else(|| OrchestratorError("missing game outpoint".to_string()))?;
         let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
         let game_utxo = builder
@@ -698,7 +726,7 @@ impl TxArena {
                         mv.to_x,
                         mv.to_y,
                         mv.promo_piece,
-                        CLEAR,
+                        termination_action,
                         sign_builder_input(tx, input_index, &keypair),
                         public_key.clone(),
                         player_id,
@@ -789,6 +817,16 @@ impl TxArena {
                 kind: OffchainMessageKind::MoveNotice { actor: actor.name.clone(), worker, move_label: move_label.clone(), mv },
             },
         );
+        if termination_action == OFFER {
+            self.push_message(
+                &recipient,
+                OffchainMessage {
+                    from: actor.name.clone(),
+                    to: recipient.clone(),
+                    kind: OffchainMessageKind::DrawOffered { actor: actor.name.clone() },
+                },
+            );
+        }
         self.game = Some(next);
         self.game_outpoint =
             Some(TransactionOutpoint { transaction_id: self.transactions.last().expect("apply tx exists").id(), index: 0 });
@@ -798,20 +836,10 @@ impl TxArena {
         Ok(submissions)
     }
 
-    pub fn claim_timeout(&mut self, claimer: &SigningPlayer) -> Result<(), OrchestratorError> {
-        let active_worker = self.active_worker.clone().ok_or_else(|| OrchestratorError("missing active worker".to_string()))?;
-        let claimer_ref = claimer.player_ref.ok_or_else(|| OrchestratorError(format!("{} missing player ref", claimer.name)))?;
-        let timed_out_side = side_from_turn(active_worker.state.turn);
-        let winner = timed_out_side.other();
-        let (winner_ref, loser_ref, result, status) = if winner == Side::White {
-            (active_worker.state.white_player, active_worker.state.black_player, GameResult::WhiteWin, 1)
-        } else {
-            (active_worker.state.black_player, active_worker.state.white_player, GameResult::BlackWin, 2)
-        };
-        if claimer_ref != winner_ref {
-            return Err(OrchestratorError(format!("{} is not entitled to claim this timeout", claimer.name)));
-        }
-
+    fn claim_worker_timeout(&mut self, claimer: &SigningPlayer, active_worker: ActiveWorkerState) -> Result<(), OrchestratorError> {
+        player_side(claimer, &active_worker.state)?;
+        let status = timeout_status(active_worker.state.turn, active_worker.state.draw_state);
+        let result = result_from_status(status)?;
         let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
         let worker_utxo = builder
             .covenant_utxo(
@@ -830,7 +858,7 @@ impl TxArena {
                 "timeout",
                 active_worker.outpoint,
                 worker_utxo,
-                DEFAULT_MOVE_TIMEOUT as u64,
+                timeout_sequence(active_worker.state.move_timeout)?,
             )
             .actor_output(
                 "Settle",
@@ -848,47 +876,117 @@ impl TxArena {
             status,
             outpoint: TransactionOutpoint { transaction_id: executed_tx.id(), index: 0 },
         });
-        self.push_message(
-            &claimer.name,
-            OffchainMessage {
-                from: "arena".to_string(),
-                to: claimer.name.clone(),
-                kind: OffchainMessageKind::SettlementRequest { result },
-            },
-        );
-        let loser_name = self.owner_name(loser_ref)?;
-        self.push_message(
-            &loser_name,
-            OffchainMessage {
-                from: "arena".to_string(),
-                to: loser_name.clone(),
-                kind: OffchainMessageKind::SettlementRequest { result },
-            },
-        );
+        self.notify_settlement(active_worker.state.white_player, active_worker.state.black_player, result)?;
         self.history.push(submission);
         Ok(())
     }
 
-    pub fn surrender(&mut self, actor: &SigningPlayer) -> Result<(), OrchestratorError> {
-        let game = self.game.clone().ok_or_else(|| OrchestratorError("missing game".to_string()))?;
-        let actor_ref = actor.player_ref.ok_or_else(|| OrchestratorError(format!("{} missing player ref", actor.name)))?;
-        let actor_side = if actor_ref == game.white_player {
-            Side::White
-        } else if actor_ref == game.black_player {
-            Side::Black
+    fn claim_mux_timeout(&mut self, claimer: &SigningPlayer, game: GameStateData) -> Result<(), OrchestratorError> {
+        let claimer_side = player_side(claimer, &game)?;
+        if claimer_side == side_from_turn(game.turn) {
+            return Err(OrchestratorError(format!("{} is not entitled to claim this timeout", claimer.name)));
+        }
+
+        let status = timeout_status(game.turn, game.draw_state);
+        let result = result_from_status(status)?;
+        let game_outpoint = self.game_outpoint.ok_or_else(|| OrchestratorError("missing game outpoint".to_string()))?;
+        let builder = TxBuilder::new(&self.artifact).map_err(orchestrator_builder_error("initialize Argent builder"))?;
+        let game_utxo = builder
+            .covenant_utxo("Mux", game_source_state(&game), 1_000, 0, false, Some(self.covenant_id))
+            .map_err(orchestrator_builder_error("build timed-out Mux UTXO"))?;
+        let keypair = claimer.keypair;
+        let public_key = claimer.pubkey_bytes.clone();
+        let player_id = claimer.player_id.ok_or_else(|| OrchestratorError("missing player id".to_string()))?;
+        let context = TxContext::new()
+            .actor_input(
+                "Mux",
+                game_source_state(&game),
+                EntryCall::new("timeout").args_with(move |tx, input_index| {
+                    args![sign_builder_input(tx, input_index, &keypair), public_key.clone(), player_id]
+                }),
+                game_outpoint,
+                game_utxo,
+                timeout_sequence(game.move_timeout)?,
+            )
+            .actor_output(
+                "Settle",
+                settle_source_state(game.white_player, game.black_player, status),
+                CovenantBinding::new(0, self.covenant_id),
+                1_000,
+            );
+        let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("claim Mux timeout"))?;
+        let executed_txid = executed_tx.id();
+        let submission = submitted_tx("mux_timeout", &executed_tx, vec![claimer.name.clone()]);
+        self.transactions.push(executed_tx);
+        self.game = None;
+        self.game_outpoint = None;
+        self.active_settle = Some(ActiveSettleState {
+            white_player: game.white_player,
+            black_player: game.black_player,
+            status,
+            outpoint: TransactionOutpoint::new(executed_txid, 0),
+        });
+        self.notify_settlement(game.white_player, game.black_player, result)?;
+        self.history.push(submission);
+        Ok(())
+    }
+
+    pub fn claim_timeout(&mut self, claimer: &SigningPlayer) -> Result<(), OrchestratorError> {
+        if let Some(active_worker) = self.active_worker.clone() {
+            self.claim_worker_timeout(claimer, active_worker)
+        } else if let Some(game) = self.game.clone() {
+            self.claim_mux_timeout(claimer, game)
         } else {
-            return Err(OrchestratorError(format!("{} is not part of the active game", actor.name)));
-        };
+            Err(OrchestratorError("missing active game or worker".to_string()))
+        }
+    }
+
+    pub fn claim_draw(&mut self, actor: &SigningPlayer) -> Result<(), OrchestratorError> {
+        self.terminate_game(actor, CLAIM, "draw_claim")
+    }
+
+    pub fn accept_draw(&mut self, actor: &SigningPlayer) -> Result<(), OrchestratorError> {
+        self.terminate_game(actor, ACCEPT, "draw_accept")
+    }
+
+    pub fn surrender(&mut self, actor: &SigningPlayer) -> Result<(), OrchestratorError> {
+        self.terminate_game(actor, SURRENDER, "surrender")
+    }
+
+    fn terminate_game(
+        &mut self,
+        actor: &SigningPlayer,
+        termination_action: i64,
+        action: &'static str,
+    ) -> Result<(), OrchestratorError> {
+        let game = self.game.clone().ok_or_else(|| OrchestratorError("missing game".to_string()))?;
+        let actor_side = player_side(actor, &game)?;
         if actor_side != side_from_turn(game.turn) {
             return Err(OrchestratorError(format!("it is not {}'s turn", actor.name)));
         }
 
+        let (next_turn, next_status, next_draw_state) = match termination_action {
+            CLAIM => {
+                if game.draw_state != NORMAL || game.recent_castle != CLEAR {
+                    return Err(OrchestratorError("a draw claim requires a normal Mux state without a pending castle".to_string()));
+                }
+                (1 - game.turn, game.status, CLAIMED)
+            }
+            SURRENDER => (game.turn, if game.turn == WHITE { BWIN } else { WWIN }, NORMAL),
+            ACCEPT => {
+                if game.draw_state + game.turn != BOFFER {
+                    return Err(OrchestratorError("no draw offer is available to accept".to_string()));
+                }
+                (game.turn, DRAW, NORMAL)
+            }
+            _ => return Err(OrchestratorError(format!("unsupported termination action {termination_action}"))),
+        };
         let next = GameStateData {
             white_player: game.white_player,
             black_player: game.black_player,
             board: game.board.clone(),
-            turn: game.turn,
-            status: if game.turn == 0 { 2 } else { 1 },
+            turn: next_turn,
+            status: next_status,
             move_timeout: game.move_timeout,
             castle_rights: game.castle_rights,
             en_passant_idx: -1,
@@ -896,7 +994,7 @@ impl TxArena {
             pending_dst_idx: -1,
             pending_promo: 0,
             recent_castle: 0,
-            draw_state: 3,
+            draw_state: next_draw_state,
             move_log: game.move_log.clone(),
         };
         let game_outpoint = self.game_outpoint.ok_or_else(|| OrchestratorError("missing game outpoint".to_string()))?;
@@ -912,19 +1010,28 @@ impl TxArena {
                 "Mux",
                 game_source_state(&game),
                 EntryCall::new("terminate").args_with(move |tx, input_index| {
-                    args![SURRENDER, sign_builder_input(tx, input_index, &keypair), public_key.clone(), player_id]
+                    args![termination_action, sign_builder_input(tx, input_index, &keypair), public_key.clone(), player_id]
                 }),
                 game_outpoint,
                 game_utxo,
                 0,
             )
             .actor_output("Mux", game_source_state(&next), CovenantBinding::new(0, self.covenant_id), 1_000);
-        let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("surrender game"))?;
-        let submission = submitted_tx("terminate", &executed_tx, vec![actor.name.clone()]);
+        let executed_tx = builder.build(&context).map_err(orchestrator_builder_error("terminate game"))?;
+        let submission = submitted_tx(action, &executed_tx, vec![actor.name.clone()]);
         self.transactions.push(executed_tx);
         self.game = Some(next);
         self.game_outpoint =
-            Some(TransactionOutpoint { transaction_id: self.transactions.last().expect("surrender tx exists").id(), index: 0 });
+            Some(TransactionOutpoint { transaction_id: self.transactions.last().expect("termination tx exists").id(), index: 0 });
+        let recipient = self.owner_name(if actor_side == Side::White { game.black_player } else { game.white_player })?;
+        let kind = match termination_action {
+            CLAIM => Some(OffchainMessageKind::DrawClaimed { actor: actor.name.clone() }),
+            ACCEPT => Some(OffchainMessageKind::DrawAccepted { actor: actor.name.clone() }),
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            self.push_message(&recipient, OffchainMessage { from: actor.name.clone(), to: recipient.clone(), kind });
+        }
         self.history.push(submission);
         Ok(())
     }
@@ -1169,6 +1276,20 @@ impl TxArena {
         Ok(())
     }
 
+    fn notify_settlement(&mut self, white_player: Hash, black_player: Hash, result: GameResult) -> Result<(), OrchestratorError> {
+        for recipient in [self.owner_name(white_player)?, self.owner_name(black_player)?] {
+            self.push_message(
+                &recipient,
+                OffchainMessage {
+                    from: "arena".to_string(),
+                    to: recipient.clone(),
+                    kind: OffchainMessageKind::SettlementRequest { result },
+                },
+            );
+        }
+        Ok(())
+    }
+
     fn player_account(&self, player_ref: Hash) -> Result<PlayerAccount, OrchestratorError> {
         self.players
             .iter()
@@ -1224,6 +1345,40 @@ fn status_from_result(result: GameResult) -> i64 {
     }
 }
 
+fn result_from_status(status: i64) -> Result<GameResult, OrchestratorError> {
+    match status {
+        WWIN => Ok(GameResult::WhiteWin),
+        BWIN => Ok(GameResult::BlackWin),
+        DRAW => Ok(GameResult::Draw),
+        _ => Err(OrchestratorError(format!("status {status} is not terminal"))),
+    }
+}
+
+fn timeout_status(turn: i64, draw_state: i64) -> i64 {
+    if draw_state == CLAIMED {
+        DRAW
+    } else if turn == WHITE {
+        BWIN
+    } else {
+        WWIN
+    }
+}
+
+fn timeout_sequence(move_timeout: i64) -> Result<u64, OrchestratorError> {
+    u64::try_from(move_timeout).map_err(|_| OrchestratorError("move timeout cannot be negative".to_string()))
+}
+
+fn player_side(player: &SigningPlayer, game: &GameStateData) -> Result<Side, OrchestratorError> {
+    let player_ref = player.player_ref.ok_or_else(|| OrchestratorError(format!("{} missing player ref", player.name)))?;
+    if player_ref == game.white_player {
+        Ok(Side::White)
+    } else if player_ref == game.black_player {
+        Ok(Side::Black)
+    } else {
+        Err(OrchestratorError(format!("{} is not part of the active game", player.name)))
+    }
+}
+
 fn determine_worker(board: &[u8], mv: MoveSpec) -> Result<WorkerKind, OrchestratorError> {
     if !(0..8).contains(&mv.from_x) || !(0..8).contains(&mv.from_y) || !(0..8).contains(&mv.to_x) || !(0..8).contains(&mv.to_y) {
         return Err(OrchestratorError("move coordinates must stay on board".to_string()));
@@ -1270,7 +1425,14 @@ fn determine_worker(board: &[u8], mv: MoveSpec) -> Result<WorkerKind, Orchestrat
     }
 }
 
-fn pending_state_for_move(game: &GameStateData, mv: MoveSpec) -> GameStateData {
+fn pending_state_for_move(game: &GameStateData, mv: MoveSpec, termination_action: i64) -> GameStateData {
+    let mut draw_state = game.draw_state;
+    if draw_state > NORMAL {
+        draw_state = NORMAL;
+    }
+    if termination_action == OFFER {
+        draw_state = WOFFER + game.turn;
+    }
     GameStateData {
         white_player: game.white_player,
         black_player: game.black_player,
@@ -1284,7 +1446,7 @@ fn pending_state_for_move(game: &GameStateData, mv: MoveSpec) -> GameStateData {
         pending_dst_idx: square_idx(mv.to_x, mv.to_y),
         pending_promo: mv.promo_piece,
         recent_castle: 0,
-        draw_state: game.draw_state,
+        draw_state,
         move_log: game.move_log.clone(),
     }
 }
@@ -1294,11 +1456,12 @@ fn apply_move_to_state(
     mv: MoveSpec,
     allow_protocol_nonstandard: bool,
 ) -> Result<GameStateData, OrchestratorError> {
+    let effective_turn = if game.draw_state < NORMAL { 1 - game.turn } else { game.turn };
     let next = if allow_protocol_nonstandard {
         apply_protocol_move(
             &ProtocolState {
                 board: game.board.clone(),
-                turn: game.turn,
+                turn: effective_turn,
                 castle_rights: game.castle_rights,
                 en_passant_idx: game.en_passant_idx,
             },
@@ -1308,7 +1471,7 @@ fn apply_move_to_state(
         apply_standard_chess_move(
             &ProtocolState {
                 board: game.board.clone(),
-                turn: game.turn,
+                turn: effective_turn,
                 castle_rights: game.castle_rights,
                 en_passant_idx: game.en_passant_idx,
             },
@@ -1329,7 +1492,7 @@ fn apply_move_to_state(
         white_player: game.white_player,
         black_player: game.black_player,
         board: next.board,
-        turn: next.turn,
+        turn: 1 - game.turn,
         status: game.status,
         move_timeout: game.move_timeout,
         castle_rights: next.castle_rights,
@@ -1393,7 +1556,7 @@ fn apply_worker_state(
 
     let target_piece = game.board[square_idx(mv.to_x, mv.to_y) as usize];
     let target_num = i64::from(target_piece);
-    let is_draw_claim_mode = game.draw_state < DRAW;
+    let is_draw_claim_mode = game.draw_state < NORMAL;
     let effective_turn = if is_draw_claim_mode { 1 - game.turn } else { game.turn };
 
     let mut next_status = game.status;
@@ -1674,6 +1837,132 @@ mod tests {
     }
 
     #[test]
+    fn actual_txs_can_offer_accept_and_settle_a_draw() {
+        let shared = TxArena::shared().expect("actual arena builds");
+        let mut white = TxOrchestrator::new("white", 0x63, shared.clone());
+        let mut black = TxOrchestrator::new("black", 0x64, shared.clone());
+
+        white.register().expect("white register tx passes");
+        black.register().expect("black register tx passes");
+        white.start_game(&black).expect("start game tx passes");
+
+        let move_txs = white.offer_draw(MoveSpec::new(4, 1, 4, 3)).expect("draw offer move passes");
+        assert_eq!(move_txs.len(), 2);
+        let black_notices = black.inbox();
+        assert!(black_notices.iter().any(|message| {
+            matches!(message.kind, OffchainMessageKind::MoveNotice { ref move_label, .. } if move_label == "e2e4")
+        }));
+        assert!(black_notices
+            .iter()
+            .any(|message| matches!(message.kind, OffchainMessageKind::DrawOffered { ref actor } if actor == "white")));
+
+        {
+            let arena = shared.borrow();
+            let game = arena.game.as_ref().expect("Mux remains active after draw offer");
+            assert_eq!(game.turn, BLACK);
+            assert_eq!(game.draw_state, WOFFER);
+        }
+
+        black.accept_draw().expect("black accepts the draw");
+        assert!(white
+            .inbox()
+            .iter()
+            .any(|message| matches!(message.kind, OffchainMessageKind::DrawAccepted { ref actor } if actor == "black")));
+        {
+            let arena = shared.borrow();
+            let game = arena.game.as_ref().expect("terminal Mux remains until settlement");
+            assert_eq!(game.status, DRAW);
+            assert_eq!(game.draw_state, NORMAL);
+            assert_eq!(arena.history().last().expect("accept transaction").action, "draw_accept");
+        }
+
+        white.settle(&black, GameResult::Draw).expect("accepted draw settles");
+        let arena = shared.borrow();
+        let white_state = arena.player_account_snapshot(&white.player).expect("white remains");
+        let black_state = arena.player_account_snapshot(&black.player).expect("black remains");
+        assert_eq!(white_state.draws, 1);
+        assert_eq!(black_state.draws, 1);
+        assert_eq!(white_state.value, 1_500);
+        assert_eq!(black_state.value, 1_500);
+    }
+
+    #[test]
+    fn actual_txs_execute_the_draw_claim_defense_game() {
+        let shared = TxArena::shared().expect("actual arena builds");
+        let mut white = TxOrchestrator::new("white", 0x65, shared.clone());
+        let mut black = TxOrchestrator::new("black", 0x66, shared.clone());
+
+        white.register().expect("white register tx passes");
+        black.register().expect("black register tx passes");
+        white.start_game(&black).expect("start game tx passes");
+
+        white.claim_draw().expect("white claims a draw");
+        assert!(black
+            .inbox()
+            .iter()
+            .any(|message| matches!(message.kind, OffchainMessageKind::DrawClaimed { ref actor } if actor == "white")));
+        {
+            let arena = shared.borrow();
+            let game = arena.game.as_ref().expect("claimed game remains active");
+            assert_eq!(game.turn, BLACK);
+            assert_eq!(game.draw_state, CLAIMED);
+        }
+
+        black.submit_move(MoveSpec::new(1, 0, 2, 2)).expect("black controls a white proof move");
+        {
+            let arena = shared.borrow();
+            let game = arena.game.as_ref().expect("defense game remains active");
+            assert_eq!(game.turn, WHITE);
+            assert_eq!(game.draw_state, DEFENSE);
+            assert_eq!(game.board[1], 0);
+            assert_eq!(game.board[18], 0x02);
+        }
+
+        white.submit_move(MoveSpec::new(1, 7, 2, 5)).expect("white controls a black defense move");
+        {
+            let arena = shared.borrow();
+            let game = arena.game.as_ref().expect("failed claim remains until settlement");
+            assert_eq!(game.status, BWIN);
+            assert_eq!(game.board[57], 0);
+            assert_eq!(game.board[42], 0x0a);
+        }
+
+        white.settle(&black, GameResult::BlackWin).expect("failed draw claim settles");
+        let arena = shared.borrow();
+        assert_eq!(arena.player_account_snapshot(&white.player).expect("white remains").losses, 1);
+        assert_eq!(arena.player_account_snapshot(&black.player).expect("black remains").wins, 1);
+    }
+
+    #[test]
+    fn actual_mux_timeout_requires_and_rewards_the_waiting_opponent() {
+        let shared = TxArena::shared().expect("actual arena builds");
+        let mut white = TxOrchestrator::new("white", 0x67, shared.clone());
+        let mut black = TxOrchestrator::new("black", 0x68, shared.clone());
+
+        white.register().expect("white register tx passes");
+        black.register().expect("black register tx passes");
+        white.start_game(&black).expect("start game tx passes");
+
+        let err = white.claim_timeout().expect_err("active player cannot claim own Mux timeout");
+        assert!(err.0.contains("not entitled"), "unexpected error: {}", err.0);
+        black.claim_timeout().expect("waiting black player claims Mux timeout");
+
+        {
+            let arena = shared.borrow();
+            assert!(arena.game.is_none());
+            assert_eq!(arena.active_settle.as_ref().expect("timeout creates Settle").status, BWIN);
+            let timeout = arena.history().last().expect("timeout transaction is recorded");
+            assert_eq!(timeout.action, "mux_timeout");
+            assert_eq!(timeout.signer_names, ["black"]);
+        }
+
+        white.settle(&black, GameResult::BlackWin).expect("Mux timeout settles");
+        let arena = shared.borrow();
+        assert_eq!(arena.player_account_snapshot(&white.player).expect("white remains").losses, 1);
+        assert_eq!(arena.player_account_snapshot(&black.player).expect("black remains").wins, 1);
+    }
+
+    #[test]
     fn actual_txs_can_capture_the_enemy_king() {
         let shared = TxArena::shared().expect("actual arena builds");
         let mut white = TxOrchestrator::new("white", 0x71, shared.clone());
@@ -1698,7 +1987,7 @@ mod tests {
             game.pending_dst_idx = -1;
             game.pending_promo = 0;
             game.recent_castle = CLEAR;
-            game.draw_state = DRAW;
+            game.draw_state = NORMAL;
             game.move_log.clear();
         }
 

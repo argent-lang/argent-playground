@@ -156,10 +156,16 @@ impl LocalWebController {
                 let mv = parse_move_label(action.move_label.as_deref().ok_or("missing move label")?)?;
                 self.player(action.actor.as_deref().ok_or("missing actor")?)?.submit_move(mv)?;
             }
+            "offer_draw" => {
+                let mv = parse_move_label(action.move_label.as_deref().ok_or("missing move label")?)?;
+                self.player(action.actor.as_deref().ok_or("missing actor")?)?.offer_draw(mv)?;
+            }
             "force_move" => {
                 let mv = parse_move_label(action.move_label.as_deref().ok_or("missing move label")?)?;
                 self.player(action.actor.as_deref().ok_or("missing actor")?)?.force_move(mv)?;
             }
+            "claim_draw" => self.player(action.actor.as_deref().ok_or("missing actor")?)?.claim_draw()?,
+            "accept_draw" => self.player(action.actor.as_deref().ok_or("missing actor")?)?.accept_draw()?,
             "surrender" => self.player(action.actor.as_deref().ok_or("missing actor")?)?.surrender()?,
             "claim_timeout" => self.player(action.actor.as_deref().ok_or("missing actor")?)?.claim_timeout()?,
             "request_settlement" => {
@@ -259,6 +265,7 @@ fn player_view(arena: &TxArena, player: &SigningPlayer, role: &str) -> PlayerVie
 }
 
 fn game_view(game: ActualGameSnapshot) -> GameView {
+    let move_side = if game.draw_state < 3 { opposite_side(game.turn) } else { game.turn };
     GameView {
         phase: game.phase,
         turn: match game.turn {
@@ -272,8 +279,11 @@ fn game_view(game: ActualGameSnapshot) -> GameView {
             3 => "draw".to_string(),
             other => format!("status_{other}"),
         },
-        value: None,
-        move_timeout: None,
+        move_side: side_label(move_side).to_string(),
+        draw_state: draw_state_label(game.draw_state).to_string(),
+        recent_castle: game.recent_castle,
+        value: Some(1_000),
+        move_timeout: Some(game.move_timeout),
         board_rows: board_rows(&game.board),
         move_log: game.move_log,
     }
@@ -315,16 +325,17 @@ fn indexed_player_view(player: &IndexedPlayer, white: &SigningPlayer, black: &Si
 }
 
 fn observed_game_view(game: &ActiveEntry<GameState>) -> ObservedGameView {
+    let turn = side_from_value(game.state.turn);
+    let move_side = if game.state.draw_state < 3 { opposite_side(turn) } else { turn };
     ObservedGameView {
         outpoint: short_outpoint(game.outpoint),
         pair: format!("{} vs {}", short_hash(game.pair.white_player), short_hash(game.pair.black_player)),
         value: game.value,
-        turn: match game.state.turn {
-            0 => "white".to_string(),
-            1 => "black".to_string(),
-            other => format!("turn_{other}"),
-        },
+        turn: side_label(turn).to_string(),
+        move_side: side_label(move_side).to_string(),
         status: status_label(game.state.status),
+        draw_state: draw_state_label(game.state.draw_state).to_string(),
+        recent_castle: game.state.recent_castle,
         move_timeout: game.state.move_timeout,
         board_rows: board_rows(&game.state.board),
         move_log: Vec::new(),
@@ -433,6 +444,39 @@ fn status_label(status: i64) -> String {
     }
 }
 
+fn side_from_value(turn: i64) -> chess_covenant::orchestrator::Side {
+    if turn == 0 {
+        chess_covenant::orchestrator::Side::White
+    } else {
+        chess_covenant::orchestrator::Side::Black
+    }
+}
+
+fn side_label(side: chess_covenant::orchestrator::Side) -> &'static str {
+    match side {
+        chess_covenant::orchestrator::Side::White => "white",
+        chess_covenant::orchestrator::Side::Black => "black",
+    }
+}
+
+fn opposite_side(side: chess_covenant::orchestrator::Side) -> chess_covenant::orchestrator::Side {
+    match side {
+        chess_covenant::orchestrator::Side::White => chess_covenant::orchestrator::Side::Black,
+        chess_covenant::orchestrator::Side::Black => chess_covenant::orchestrator::Side::White,
+    }
+}
+
+fn draw_state_label(draw_state: i64) -> &'static str {
+    match draw_state {
+        1 => "claimed",
+        2 => "defense",
+        3 => "normal",
+        4 => "white offer",
+        5 => "black offer",
+        _ => "unknown",
+    }
+}
+
 fn board_rows(board: &[u8]) -> Vec<String> {
     (0..8).rev().map(|y| (0..8).map(|x| piece_char(board[(y * 8 + x) as usize])).collect::<String>()).collect()
 }
@@ -468,6 +512,9 @@ fn format_message(owner: &str, message: &OffchainMessage) -> String {
         OffchainMessageKind::InviteAccepted { white, black } => format!("{owner} inbox: invite accepted for {white} vs {black}"),
         OffchainMessageKind::GameStarted { white, black } => format!("{owner} inbox: game started for {white} vs {black}"),
         OffchainMessageKind::MoveNotice { actor, move_label, .. } => format!("{owner} inbox: {actor} played {move_label}"),
+        OffchainMessageKind::DrawOffered { actor } => format!("{owner} inbox: {actor} offered a draw"),
+        OffchainMessageKind::DrawClaimed { actor } => format!("{owner} inbox: {actor} claimed a draw"),
+        OffchainMessageKind::DrawAccepted { actor } => format!("{owner} inbox: {actor} accepted the draw"),
         OffchainMessageKind::TimeoutClaimAvailable { result, worker, move_label } => {
             format!("{owner} inbox: {move_label} entered {:?}; timeout win {:?} can now be claimed", worker, result)
         }
@@ -578,6 +625,9 @@ struct GameView {
     phase: String,
     turn: String,
     status: String,
+    move_side: String,
+    draw_state: String,
+    recent_castle: i64,
     value: Option<u64>,
     move_timeout: Option<i64>,
     board_rows: Vec<String>,
@@ -609,7 +659,10 @@ struct ObservedGameView {
     pair: String,
     value: u64,
     turn: String,
+    move_side: String,
     status: String,
+    draw_state: String,
+    recent_castle: i64,
     move_timeout: i64,
     board_rows: Vec<String>,
     move_log: Vec<String>,
@@ -886,7 +939,12 @@ const INDEX_HTML: &str = r#"<!doctype html>
             </div>
             <div class="button-row">
               <button class="primary" onclick="submitMove()">Submit Move</button>
+              <button onclick="offerDraw()">Move + Offer Draw</button>
               <button onclick="forceMove()">Force Protocol Move</button>
+            </div>
+            <div class="button-row">
+              <button onclick="claimDraw()">Claim Draw</button>
+              <button onclick="acceptDraw()">Accept Draw</button>
             </div>
             <div class="form-row">
               <select id="surrenderActor">
@@ -1054,6 +1112,25 @@ const INDEX_HTML: &str = r#"<!doctype html>
         move_label: document.getElementById('moveLabel').value
       });
     }
+    function offerDraw() {
+      act({
+        action: 'offer_draw',
+        actor: document.getElementById('moveActor').value,
+        move_label: document.getElementById('moveLabel').value
+      });
+    }
+    function claimDraw() {
+      act({
+        action: 'claim_draw',
+        actor: document.getElementById('moveActor').value
+      });
+    }
+    function acceptDraw() {
+      act({
+        action: 'accept_draw',
+        actor: document.getElementById('moveActor').value
+      });
+    }
     function submitSurrender() {
       act({
         action: 'surrender',
@@ -1115,8 +1192,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
         document.getElementById('status').textContent = 'Choose a source square with a piece.';
         return;
       }
-      if (side !== game.turn) {
-        document.getElementById('status').textContent = `It is ${game.turn}'s turn.`;
+      if (side !== game.move_side) {
+        document.getElementById('status').textContent = `${game.turn} controls the ${game.move_side} pieces in this phase.`;
         return;
       }
       selectedSource = square;
@@ -1134,7 +1211,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         return;
       }
       const targetPiece = pieceAt(game.board_rows, target);
-      if (pieceSide(targetPiece) === game.turn) {
+      if (pieceSide(targetPiece) === game.move_side) {
         beginSourceSelection(target);
         return;
       }
@@ -1160,7 +1237,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       const game = displayedGame(latestState);
       if (!game) return;
       const piece = pieceAt(game.board_rows, square);
-      if (pieceSide(piece) !== game.turn) {
+      if (pieceSide(piece) !== game.move_side) {
         event.preventDefault();
         return;
       }
@@ -1204,7 +1281,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
             source: `observed game ${selected.outpoint}`,
             phase: 'observed',
             turn: selected.turn,
+            move_side: selected.move_side,
             status: selected.status,
+            draw_state: selected.draw_state,
+            recent_castle: selected.recent_castle,
             value: selected.value,
             move_timeout: selected.move_timeout,
             board_rows: selected.board_rows,
@@ -1217,7 +1297,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
           source: 'current local game',
           phase: state.game.phase,
           turn: state.game.turn,
+          move_side: state.game.move_side,
           status: state.game.status,
+          draw_state: state.game.draw_state,
+          recent_castle: state.game.recent_castle,
           value: state.game.value,
           move_timeout: state.game.move_timeout,
           board_rows: state.game.board_rows,
@@ -1231,7 +1314,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
           source: `observed game ${selected.outpoint}`,
           phase: 'observed',
           turn: selected.turn,
+          move_side: selected.move_side,
           status: selected.status,
+          draw_state: selected.draw_state,
+          recent_castle: selected.recent_castle,
           value: selected.value,
           move_timeout: selected.move_timeout,
           board_rows: selected.board_rows,
@@ -1323,10 +1409,13 @@ const INDEX_HTML: &str = r#"<!doctype html>
         document.getElementById('gameMeta').innerHTML = [
           ['phase', game.phase],
           ['turn', game.turn],
+          ['moves', `${game.move_side} pieces`],
           ['status', game.status],
+          ['draw', game.draw_state],
+          ['castle proof', game.recent_castle || 'none'],
           ['value', game.value ?? 'n/a'],
           ['timeout', game.move_timeout ?? 'n/a'],
-          ['moves', game.move_log.length ? game.move_log.join(', ') : 'none yet'],
+          ['move log', game.move_log.length ? game.move_log.join(', ') : 'none yet'],
         ].map(([label, value]) => `<div class="meta-chip"><strong>${label}</strong>${value}</div>`).join('');
       } else {
         clearSelection();
@@ -1358,7 +1447,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
               <button onclick="selectObservedGame('${g.outpoint}')">
                 <div class="list-title">${g.pair}</div>
                 <div class="list-sub">${g.outpoint}</div>
-                <div class="list-meta">value=${g.value} · turn=${g.turn} · status=${g.status} · timeout=${g.move_timeout}</div>
+                <div class="list-meta">value=${g.value} · turn=${g.turn} · moves=${g.move_side} · status=${g.status} · draw=${g.draw_state} · timeout=${g.move_timeout}</div>
               </button>
             </div>`
           ).join('')
@@ -1548,5 +1637,68 @@ mod tests {
         let snapshot = app.snapshot();
         assert!(snapshot.game.is_none());
         assert!(snapshot.notices.iter().any(|notice| notice.contains("settlement complete")));
+    }
+
+    #[test]
+    fn controller_exposes_the_transaction_backed_draw_flow() {
+        let mut app = LocalWebController::new().expect("controller builds");
+        app.handle_action(ActionRequest { action: "register".into(), actor: Some("white".into()), move_label: None, result: None })
+            .expect("white registers");
+        app.handle_action(ActionRequest { action: "register".into(), actor: Some("black".into()), move_label: None, result: None })
+            .expect("black registers");
+        app.handle_action(ActionRequest { action: "start_game".into(), actor: None, move_label: None, result: None })
+            .expect("game starts");
+
+        app.handle_action(ActionRequest {
+            action: "offer_draw".into(),
+            actor: Some("white".into()),
+            move_label: Some("e2e4".into()),
+            result: None,
+        })
+        .expect("white moves and offers a draw");
+        let offered = app.snapshot();
+        let game = offered.game.as_ref().expect("offered game remains active");
+        assert_eq!(game.turn, "black");
+        assert_eq!(game.move_side, "black");
+        assert_eq!(game.draw_state, "white offer");
+        assert!(offered.notices.iter().any(|notice| notice.contains("offered a draw")));
+
+        app.handle_action(ActionRequest { action: "accept_draw".into(), actor: Some("black".into()), move_label: None, result: None })
+            .expect("black accepts the draw");
+        let accepted = app.snapshot();
+        assert_eq!(accepted.game.as_ref().expect("terminal game remains active").status, "draw");
+        assert_eq!(accepted.history.last().expect("accept transaction").action, "draw_accept");
+        assert!(accepted.observer.warnings.is_empty(), "observer warnings: {:?}", accepted.observer.warnings);
+
+        app.handle_action(ActionRequest { action: "settle".into(), actor: None, move_label: None, result: Some("draw".into()) })
+            .expect("accepted draw settles");
+        let settled = app.snapshot();
+        assert!(settled.game.is_none());
+        assert!(settled.players.iter().all(|player| player.draws == 1));
+    }
+
+    #[test]
+    fn controller_exposes_signed_mux_timeout_claims() {
+        let mut app = LocalWebController::new().expect("controller builds");
+        app.handle_action(ActionRequest { action: "register".into(), actor: Some("white".into()), move_label: None, result: None })
+            .expect("white registers");
+        app.handle_action(ActionRequest { action: "register".into(), actor: Some("black".into()), move_label: None, result: None })
+            .expect("black registers");
+        app.handle_action(ActionRequest { action: "start_game".into(), actor: None, move_label: None, result: None })
+            .expect("game starts");
+
+        app.handle_action(ActionRequest {
+            action: "claim_timeout".into(),
+            actor: Some("black".into()),
+            move_label: None,
+            result: None,
+        })
+        .expect("waiting black player claims timeout");
+        let timed_out = app.snapshot();
+        assert!(timed_out.game.is_none());
+        assert_eq!(timed_out.history.last().expect("timeout transaction").action, "mux_timeout");
+        assert_eq!(timed_out.observer.active_settles.len(), 1);
+        assert_eq!(timed_out.observer.active_settles[0].status, "black_win");
+        assert!(timed_out.observer.warnings.is_empty(), "observer warnings: {:?}", timed_out.observer.warnings);
     }
 }
