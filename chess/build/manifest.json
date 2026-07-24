@@ -5,6 +5,7 @@
     "ag/app.ag",
     "ag/types.ag",
     "ag/outer.ag",
+    "std::core",
     "ag/game.ag"
   ],
   "templates": [

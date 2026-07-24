@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use argent_runtime::{actor, args, state, Artifact, ArtifactValue, BuilderResult, CovenantOutput, EntryCall, TxBuilder, TxContext};
+use argent_runtime::{
+    actor, args, state, stdlib::core::invocation_uid, Artifact, ArtifactValue, BuilderResult, CovenantOutput, EntryCall, TxBuilder,
+    TxContext,
+};
 use blake2b_simd::Params as Blake2bParams;
 use kaspa_consensus_core::{
     hashing::{
@@ -592,10 +595,8 @@ fn build_registration(
     next_league_state: BTreeMap<String, ArtifactValue>,
     next_league_value: Option<u64>,
 ) -> BuilderResult<(Transaction, TestPlayer, PlayerStateData)> {
-    let mut unique_preimage = b"LeaguePlayerId".to_vec();
-    unique_preimage.extend_from_slice(league.outpoint.transaction_id.as_bytes().as_slice());
-    unique_preimage.extend_from_slice(&league.outpoint.index.to_le_bytes());
-    let owner = player_with_id(owner_seed, blake2b32(&unique_preimage));
+    let player_id = invocation_uid(&league.outpoint, b"LeaguePlayerId").expect("registration domain is valid");
+    let owner = player_with_id(owner_seed, player_id.as_bytes());
     let player_state = PlayerStateData::registered(&owner);
     let league_value = league.utxo.amount;
     let covenant_id = league.covenant_id;

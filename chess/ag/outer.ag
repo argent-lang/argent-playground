@@ -1,3 +1,4 @@
+import "std::core";
 import "./types.ag";
 
 import actor Mux from "./game.ag";
@@ -11,7 +12,7 @@ actor League owns LeagueState {
 
         PlayerState next_player = {
             owner: blake2b(owner_pk),
-            player_id: unique("LeaguePlayerId", self.outpoint),
+            player_id: invocation_uid(bytes("LeaguePlayerId")),
             open_games: 0,
             rating: base_rating,
             games: 0,

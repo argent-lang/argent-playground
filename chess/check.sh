@@ -3,8 +3,37 @@ set -euo pipefail
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
+allow_generated_diff=false
+
+case "${1:-}" in
+    "")
+        ;;
+    --regen)
+        allow_generated_diff=true
+        ;;
+    -h|--help)
+        cat <<'USAGE'
+Usage: ./check.sh [--regen]
+
+Regenerates and verifies the Chess application.
+
+Options:
+  --regen     Regenerate tracked build output without requiring a clean diff.
+  -h, --help  Show this help.
+USAGE
+        exit 0
+        ;;
+    *)
+        echo "unknown argument: $1" >&2
+        echo "try: ./check.sh --help" >&2
+        exit 2
+        ;;
+esac
+
 cargo run --quiet --manifest-path ../../argent/Cargo.toml -- build ag/app.ag --out build
-git diff --exit-code -- build
+if [[ "$allow_generated_diff" = false ]]; then
+    git diff --exit-code -- build
+fi
 
 if [[ -e build/argent ]]; then
     echo "error: generated Chess output must be stored directly under build/" >&2

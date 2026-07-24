@@ -2,7 +2,10 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use argent_runtime::{actor as actor_arg, args, state, Artifact, ArtifactValue, CovenantOutput, EntryCall, TxBuilder, TxContext};
+use argent_runtime::{
+    actor as actor_arg, args, state, stdlib::core::invocation_uid, Artifact, ArtifactValue, CovenantOutput, EntryCall, TxBuilder,
+    TxContext,
+};
 use blake2b_simd::Params as Blake2bParams;
 use kaspa_consensus_core::hashing::sighash::calc_schnorr_signature_hash;
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
@@ -617,10 +620,8 @@ impl TxArena {
             .get(lane_index)
             .cloned()
             .ok_or_else(|| OrchestratorError(format!("missing League lane {lane_index}")))?;
-        let player_id = blake2b(
-            &[b"LeaguePlayerId".as_slice(), lane.outpoint.transaction_id.as_bytes().as_slice(), &lane.outpoint.index.to_le_bytes()]
-                .concat(),
-        );
+        let player_id =
+            invocation_uid(&lane.outpoint, b"LeaguePlayerId").map_err(|err| OrchestratorError(format!("derive player ID: {err}")))?;
         let player_ref = player_ref_hash(player.owner_hash, player_id);
         let registered = PlayerStateData {
             owner_hash: player.owner_hash,

@@ -99,6 +99,15 @@ contract League(
         }
         return status;
     }
+    function invocation_uid(byte[] domain) : byte[32] {
+        require(domain.length > 0);
+
+        byte[36] outpoint =
+            OpOutpointTxId(this.activeInputIndex)
+                + byte[4](OpOutpointIndex(this.activeInputIndex));
+
+        return blake2bWithKey(outpoint, domain);
+    }
 
     // :: route templates
     byte[32] gen__mux_template = gen__init_mux_template;
@@ -134,7 +143,7 @@ contract League(
             gen__mux_routes_digest: gen__mux_routes_digest,
             // :: user declared fields
             owner: blake2b(owner_pk),
-            player_id: blake2b(bytes("LeaguePlayerId") + OpOutpointTxId(this.activeInputIndex) + byte[4](OpOutpointIndex(this.activeInputIndex))),
+            player_id: invocation_uid(bytes("LeaguePlayerId")),
             open_games: 0,
             rating: base_rating,
             games: 0,

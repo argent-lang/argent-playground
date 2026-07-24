@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use argent_artifact::Artifact;
+use argent_runtime::stdlib::core::invocation_uid;
 use blake2b_simd::Params as Blake2bParams;
 use kaspa_consensus_core::tx::Transaction;
 use kaspa_consensus_core::Hash;
@@ -197,14 +198,8 @@ impl ChessEventEmitter {
                     let owner_pk = hash_arg(&decoded.call, "owner_pk")?;
                     let owner = blake2b(&owner_pk.as_bytes());
                     let source_outpoint = tx.inputs[decoded.index].previous_outpoint;
-                    let player_id = blake2b(
-                        &[
-                            b"LeaguePlayerId".as_slice(),
-                            source_outpoint.transaction_id.as_bytes().as_slice(),
-                            &source_outpoint.index.to_le_bytes(),
-                        ]
-                        .concat(),
-                    );
+                    let player_id = invocation_uid(&source_outpoint, b"LeaguePlayerId")
+                        .map_err(|err| ObserverError(format!("derive player ID: {err}")))?;
                     let player = PlayerState {
                         league_template: state.league_template,
                         player_template: state.player_template,

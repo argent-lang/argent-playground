@@ -53,9 +53,9 @@ fn size_snapshots() -> [SizeSnapshot; 12] {
     [
         SizeSnapshot {
             actor: "League",
-            expected_script_len: 488,
-            expected_instruction_count: 289,
-            expected_charged_op_count: 213,
+            expected_script_len: 501,
+            expected_instruction_count: 302,
+            expected_charged_op_count: 222,
             baseline_script_len: 488,
             baseline_instruction_count: 289,
             baseline_charged_op_count: 213,
