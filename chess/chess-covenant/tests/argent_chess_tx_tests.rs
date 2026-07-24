@@ -67,6 +67,21 @@ struct SettledGame {
     black_output: CovenantOutput,
 }
 
+struct ExpectedSettlement {
+    white_state: PlayerStateData,
+    white_value: u64,
+    black_state: PlayerStateData,
+    black_value: u64,
+}
+
+struct SettlementFixture {
+    white_state: PlayerStateData,
+    white_output: CovenantOutput,
+    black_state: PlayerStateData,
+    black_output: CovenantOutput,
+    settlement: CovenantOutput,
+}
+
 impl PlayerStateData {
     fn registered(player: &TestPlayer) -> Self {
         Self {
@@ -535,7 +550,18 @@ fn actor_fixture(
     fixture_tag: u8,
 ) -> CovenantOutput {
     let covenant_id = Hash::from_bytes([fixture_tag; 32]);
-    let outpoint = TransactionOutpoint::new(TransactionId::from_bytes([fixture_tag.wrapping_add(1); 32]), 0);
+    actor_fixture_in_covenant(builder, actor, state, value, covenant_id, fixture_tag.wrapping_add(1))
+}
+
+fn actor_fixture_in_covenant(
+    builder: &TxBuilder<'_>,
+    actor: &str,
+    state: BTreeMap<String, ArtifactValue>,
+    value: u64,
+    covenant_id: Hash,
+    fixture_tag: u8,
+) -> CovenantOutput {
+    let outpoint = TransactionOutpoint::new(TransactionId::from_bytes([fixture_tag; 32]), 0);
     let utxo = builder
         .covenant_utxo(actor, state, value, 0, false, Some(covenant_id))
         .unwrap_or_else(|err| panic!("{actor} fixture UTXO must build: {err}"));
@@ -752,43 +778,122 @@ fn route_game_to_settle(builder: &TxBuilder<'_>, game_state: &GameStateData, gam
     CovenantOutput::from_tx(&tx, 0).expect("settlement output is a covenant UTXO")
 }
 
-fn settle_black_win(
+fn expected_settlement(
+    white_state: &PlayerStateData,
+    white_value: u64,
+    black_state: &PlayerStateData,
+    black_value: u64,
+    status: i64,
+    settlement_value: u64,
+) -> ExpectedSettlement {
+    assert_eq!(white_state.rating, black_state.rating, "this fixture expects equal initial ratings");
+    let mut next_white = white_state.clone();
+    let mut next_black = black_state.clone();
+    next_white.open_games -= 1;
+    next_black.open_games -= 1;
+    next_white.games += 1;
+    next_black.games += 1;
+
+    let (white_value, black_value) = match status {
+        WWIN => {
+            next_white.rating += 16;
+            next_white.wins += 1;
+            next_black.rating -= 16;
+            next_black.losses += 1;
+            (white_value + settlement_value, black_value)
+        }
+        BWIN => {
+            next_white.rating -= 16;
+            next_white.losses += 1;
+            next_black.rating += 16;
+            next_black.wins += 1;
+            (white_value, black_value + settlement_value)
+        }
+        DRAW => {
+            next_white.draws += 1;
+            next_black.draws += 1;
+            let white_share = settlement_value / 2;
+            (white_value + white_share, black_value + settlement_value - white_share)
+        }
+        _ => panic!("unsupported settlement status {status}"),
+    };
+
+    ExpectedSettlement { white_state: next_white, white_value, black_state: next_black, black_value }
+}
+
+fn build_settlement(
     builder: &TxBuilder<'_>,
     settlement: CovenantOutput,
+    status: i64,
     white: (&PlayerStateData, CovenantOutput),
     black: (&PlayerStateData, CovenantOutput),
-) -> SettledGame {
+    expected: &ExpectedSettlement,
+) -> BuilderResult<Transaction> {
     let (white_state, white_output) = white;
     let (black_state, black_output) = black;
-    assert_eq!(white_state.rating, black_state.rating, "this fixture expects equal initial ratings");
     let covenant_id = settlement.covenant_id;
-    let mut next_white = white_state.clone();
-    next_white.open_games -= 1;
-    next_white.rating -= 16;
-    next_white.games += 1;
-    next_white.losses += 1;
-    let mut next_black = black_state.clone();
-    next_black.open_games -= 1;
-    next_black.rating += 16;
-    next_black.games += 1;
-    next_black.wins += 1;
-    let white_value = white_output.utxo.amount;
-    let black_value = black_output.utxo.amount + settlement.utxo.amount;
     let settlement_state = settle_state(
         blake2b32(&[white_state.owner.as_slice(), white_state.player_id.as_slice()].concat()),
         blake2b32(&[black_state.owner.as_slice(), black_state.player_id.as_slice()].concat()),
-        BWIN,
+        status,
     );
     let context = TxContext::new()
         .actor_input("Settle", settlement_state, "settle", settlement.outpoint, settlement.utxo, 0)
         .actor_input("Player", white_state.source_state(), "delegate_settle", white_output.outpoint, white_output.utxo, 0)
         .actor_input("Player", black_state.source_state(), "delegate_settle", black_output.outpoint, black_output.utxo, 0)
-        .actor_output("Player", next_white.source_state(), CovenantBinding::new(0, covenant_id), white_value)
-        .actor_output("Player", next_black.source_state(), CovenantBinding::new(0, covenant_id), black_value);
-    let tx = builder.build(&context).expect("settlement updates both delegated players");
+        .actor_output("Player", expected.white_state.source_state(), CovenantBinding::new(0, covenant_id), expected.white_value)
+        .actor_output("Player", expected.black_state.source_state(), CovenantBinding::new(0, covenant_id), expected.black_value);
+    builder.build(&context)
+}
+
+fn settle_game(
+    builder: &TxBuilder<'_>,
+    settlement: CovenantOutput,
+    status: i64,
+    white: (&PlayerStateData, CovenantOutput),
+    black: (&PlayerStateData, CovenantOutput),
+) -> SettledGame {
+    let expected = expected_settlement(white.0, white.1.utxo.amount, black.0, black.1.utxo.amount, status, settlement.utxo.amount);
+    let tx =
+        build_settlement(builder, settlement, status, white, black, &expected).expect("settlement updates both delegated players");
     let white_output = CovenantOutput::from_tx(&tx, 0).expect("settled white player is a covenant UTXO");
     let black_output = CovenantOutput::from_tx(&tx, 1).expect("settled black player is a covenant UTXO");
-    SettledGame { white_state: next_white, white_output, black_state: next_black, black_output }
+    SettledGame { white_state: expected.white_state, white_output, black_state: expected.black_state, black_output }
+}
+
+fn settlement_fixture(builder: &TxBuilder<'_>, status: i64, settlement_value: u64, fixture_tag: u8) -> SettlementFixture {
+    let white = player(fixture_tag);
+    let black = player(fixture_tag.wrapping_add(1));
+    let mut white_state = PlayerStateData::registered(&white);
+    white_state.open_games = 1;
+    white_state.games = 10;
+    white_state.wins = 6;
+    white_state.draws = 2;
+    white_state.losses = 2;
+    let mut black_state = PlayerStateData::registered(&black);
+    black_state.open_games = 1;
+    black_state.games = 10;
+    black_state.wins = 2;
+    black_state.draws = 2;
+    black_state.losses = 6;
+
+    let covenant_id = Hash::from_bytes([fixture_tag; 32]);
+    let white_output =
+        actor_fixture_in_covenant(builder, "Player", white_state.source_state(), 1_000, covenant_id, fixture_tag.wrapping_add(2));
+    let black_output =
+        actor_fixture_in_covenant(builder, "Player", black_state.source_state(), 1_000, covenant_id, fixture_tag.wrapping_add(3));
+    let mut game_state = GameStateData::live(white.player_ref, black.player_ref, opening_board());
+    game_state.status = status;
+    let game_output = actor_fixture_in_covenant(
+        builder,
+        "Mux",
+        game_state.source_state(),
+        settlement_value,
+        covenant_id,
+        fixture_tag.wrapping_add(4),
+    );
+    let settlement = route_game_to_settle(builder, &game_state, game_output);
+    SettlementFixture { white_state, white_output, black_state, black_output, settlement }
 }
 
 fn execute_to_settle<'a>(
@@ -862,7 +967,7 @@ fn execute_worker_timeout(
 }
 
 #[test]
-fn argent_ordinary_workers_round_trip_through_mux() {
+fn muxed_chess_routes_all_move_families() {
     let artifact = chess_artifact();
     let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
     let white = player(0x21);
@@ -1968,7 +2073,7 @@ fn players_can_start_a_real_mux_game() {
 }
 
 #[test]
-fn argent_game_settles_back_into_spendable_players() {
+fn terminal_mux_settles_black_win_back_into_players() {
     let artifact = chess_artifact();
     let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
     let admin = player(0x76);
@@ -1982,9 +2087,10 @@ fn argent_game_settles_back_into_spendable_players() {
     terminal_state.status = BWIN;
     let terminal_output = terminate_mux_output(&builder, &white, &started.game_state, SURRENDER, &terminal_state, started.game_output);
     let settlement = route_game_to_settle(&builder, &terminal_state, terminal_output);
-    let settled = settle_black_win(
+    let settled = settle_game(
         &builder,
         settlement,
+        BWIN,
         (&started.leader_state, started.leader_output),
         (&started.other_state, started.other_output),
     );
@@ -1997,4 +2103,123 @@ fn argent_game_settles_back_into_spendable_players() {
     assert_eq!(settled.black_output.utxo.amount, 3_000);
     execute_signed_rebalance(&builder, "Player", settled.white_state.source_state(), settled.white_output, &white);
     execute_signed_rebalance(&builder, "Player", settled.black_state.source_state(), settled.black_output, &black);
+}
+
+#[test]
+fn terminal_mux_settles_white_win_back_into_players() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let fixture = settlement_fixture(&builder, WWIN, GAME_VALUE, 0xb1);
+    let settled = settle_game(
+        &builder,
+        fixture.settlement,
+        WWIN,
+        (&fixture.white_state, fixture.white_output),
+        (&fixture.black_state, fixture.black_output),
+    );
+
+    assert_eq!(
+        (
+            settled.white_state.open_games,
+            settled.white_state.rating,
+            settled.white_state.games,
+            settled.white_state.wins,
+            settled.white_state.draws,
+            settled.white_state.losses,
+        ),
+        (0, BASE_RATING + 16, 11, 7, 2, 2)
+    );
+    assert_eq!(
+        (
+            settled.black_state.open_games,
+            settled.black_state.rating,
+            settled.black_state.games,
+            settled.black_state.wins,
+            settled.black_state.draws,
+            settled.black_state.losses,
+        ),
+        (0, BASE_RATING - 16, 11, 2, 2, 7)
+    );
+    assert_eq!((settled.white_output.utxo.amount, settled.black_output.utxo.amount), (2_000, 1_000));
+}
+
+#[test]
+fn terminal_mux_settles_draw_back_into_players() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let fixture = settlement_fixture(&builder, DRAW, GAME_VALUE, 0xb7);
+    let settled = settle_game(
+        &builder,
+        fixture.settlement,
+        DRAW,
+        (&fixture.white_state, fixture.white_output),
+        (&fixture.black_state, fixture.black_output),
+    );
+
+    assert_eq!(
+        (
+            settled.white_state.open_games,
+            settled.white_state.rating,
+            settled.white_state.games,
+            settled.white_state.wins,
+            settled.white_state.draws,
+            settled.white_state.losses,
+        ),
+        (0, BASE_RATING, 11, 6, 3, 2)
+    );
+    assert_eq!(
+        (
+            settled.black_state.open_games,
+            settled.black_state.rating,
+            settled.black_state.games,
+            settled.black_state.wins,
+            settled.black_state.draws,
+            settled.black_state.losses,
+        ),
+        (0, BASE_RATING, 11, 2, 3, 6)
+    );
+    assert_eq!((settled.white_output.utxo.amount, settled.black_output.utxo.amount), (1_500, 1_500));
+}
+
+#[test]
+fn draw_settlement_allows_black_to_take_the_odd_extra() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let fixture = settlement_fixture(&builder, DRAW, GAME_VALUE + 1, 0xbd);
+    let settled = settle_game(
+        &builder,
+        fixture.settlement,
+        DRAW,
+        (&fixture.white_state, fixture.white_output),
+        (&fixture.black_state, fixture.black_output),
+    );
+
+    assert_eq!((settled.white_output.utxo.amount, settled.black_output.utxo.amount), (1_500, 1_501));
+}
+
+#[test]
+fn draw_settlement_rejects_the_wrong_odd_split() {
+    let artifact = chess_artifact();
+    let builder = TxBuilder::new(&artifact).expect("pinned chess artifact is valid");
+    let fixture = settlement_fixture(&builder, DRAW, GAME_VALUE + 1, 0xc3);
+    let mut wrong = expected_settlement(
+        &fixture.white_state,
+        fixture.white_output.utxo.amount,
+        &fixture.black_state,
+        fixture.black_output.utxo.amount,
+        DRAW,
+        fixture.settlement.utxo.amount,
+    );
+    wrong.white_value += 1;
+    wrong.black_value -= 1;
+
+    assert!(build_settlement(
+        &builder,
+        fixture.settlement,
+        DRAW,
+        (&fixture.white_state, fixture.white_output),
+        (&fixture.black_state, fixture.black_output),
+        &wrong,
+    )
+    .is_err());
 }
