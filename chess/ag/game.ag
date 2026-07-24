@@ -16,16 +16,16 @@ actor enum Move {
 
 actor Mux owns GameState {
     entry route(
-        target: Move,
-        from_x: int,
-        from_y: int,
-        to_x: int,
-        to_y: int,
-        promo_piece: int,
-        termination_action: int,
-        s: sig,
-        pk: pubkey,
-        player_id: byte[32]
+        Move target,
+        int from_x,
+        int from_y,
+        int to_x,
+        int to_y,
+        int promo_piece,
+        int termination_action,
+        sig s,
+        pubkey pk,
+        byte[32] player_id
     ) emits one Move {
         require(status == LIVE);
 
@@ -80,10 +80,10 @@ actor Mux owns GameState {
     }
 
     entry terminate(
-        termination_action: int,
-        s: sig,
-        pk: pubkey,
-        player_id: byte[32]
+        int termination_action,
+        sig s,
+        pubkey pk,
+        byte[32] player_id
     ) emits one Mux {
         require(status == LIVE);
 
@@ -134,9 +134,9 @@ actor Mux owns GameState {
     }
 
     entry timeout(
-        s: sig,
-        pk: pubkey,
-        player_id: byte[32]
+        sig s,
+        pubkey pk,
+        byte[32] player_id
     ) emits one Settle {
         require(status == LIVE);
 
@@ -1324,7 +1324,7 @@ actor Castle owns GameState {
 }
 
 actor CastleChallengePrep owns GameState {
-    entry apply(target: Move) emits one Move {
+    entry apply(Move target) emits one Move {
         require(status == LIVE);
         require(draw_state == NORMAL);
         require(recent_castle >= 1 && recent_castle <= 4);

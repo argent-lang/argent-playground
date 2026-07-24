@@ -59,11 +59,11 @@ state SettleState {
     int status;
 }
 
-fn player_ref(owner: byte[32], player_id: byte[32]) -> byte[32] {
+fn player_ref(byte[32] owner, byte[32] player_id) -> byte[32] {
     return blake2b(owner + player_id);
 }
 
-fn abs_int(value: int) -> int {
+fn abs_int(int value) -> int {
     int result = value;
     if (value < 0) {
         result = 0 - value;
@@ -71,7 +71,7 @@ fn abs_int(value: int) -> int {
     return result;
 }
 
-fn timeout_status(turn: int, draw_state: int) -> int {
+fn timeout_status(int turn, int draw_state) -> int {
     int status = WWIN;
     if (turn == WHITE) {
         status = BWIN;

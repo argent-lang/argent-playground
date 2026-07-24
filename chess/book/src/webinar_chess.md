@@ -153,13 +153,13 @@ PlayerState next_self = {
     games: games,
     wins: wins,
     draws: draws,
-    losses: losses
+    losses: losses,
 };
 
 become {
-    self_out <- Player(next_self);
-    other_out <- Player(next_other);
-    game <- Mux(next_game);
+    self_out <- Player(next_self),
+    other_out <- Player(next_other),
+    game <- Mux(next_game),
 };
 ```
 
@@ -194,7 +194,7 @@ GameState next_state = {
     pending_dst_idx: next_pending_dst_idx,
     pending_promo: next_pending_promo,
     recent_castle: next_recent_castle,
-    draw_state: next_draw_state
+    draw_state: next_draw_state,
 };
 
 become target(next_state);

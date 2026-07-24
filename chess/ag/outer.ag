@@ -3,9 +3,9 @@ import "./types.ag";
 import actor Mux from "./game.ag";
 
 actor League owns LeagueState {
-    entry register_player(owner_sig: sig, owner_pk: pubkey) emits {
-        league: League;
-        player: Player;
+    entry register_player(sig owner_sig, pubkey owner_pk) emits {
+        league: League,
+        player: Player,
     } {
         require(checkSig(owner_sig, owner_pk));
 
@@ -23,42 +23,42 @@ actor League owns LeagueState {
         require(league.value == self.value);
 
         become {
-            league <- League(self.state);
-            player <- Player(next_player);
+            league <- League(self.state),
+            player <- Player(next_player),
         };
     }
 
-    entry rebalance(admin_sig: sig, admin_pk: pubkey) emits one League {
+    entry rebalance(sig admin_sig, pubkey admin_pk) emits one League {
         require(blake2b(admin_pk) == admin);
         require(checkSig(admin_sig, admin_pk));
         become League(self.state);
     }
 
-    entry fork(admin_sig: sig, admin_pk: pubkey) emits {
-        left: League;
-        right: League;
+    entry fork(sig admin_sig, pubkey admin_pk) emits {
+        left: League,
+        right: League,
     } {
         require(blake2b(admin_pk) == admin);
         require(checkSig(admin_sig, admin_pk));
         become {
-            left <- League(self.state);
-            right <- League(self.state);
+            left <- League(self.state),
+            right <- League(self.state),
         };
     }
 }
 
 actor Player owns PlayerState {
     entry start_game(
-        owner_sig: sig,
-        owner_pk: pubkey,
-        self_side: int,
-        move_timeout: int
+        sig owner_sig,
+        pubkey owner_pk,
+        int self_side,
+        int move_timeout
     ) consumes {
-        other: Player;
+        other: Player,
     } emits {
-        self_out: Player;
-        other_out: Player;
-        game: Mux;
+        self_out: Player,
+        other_out: Player,
+        game: Mux,
     } {
         require(self_side == WHITE || self_side == BLACK);
         require(move_timeout > 0);
@@ -114,18 +114,18 @@ actor Player owns PlayerState {
         };
 
         become {
-            self_out <- Player(next_self);
-            other_out <- Player(next_other);
-            game <- Mux(next_game);
+            self_out <- Player(next_self),
+            other_out <- Player(next_other),
+            game <- Mux(next_game),
         };
     }
 
     delegate delegate_start_game(
-        owner_sig: sig,
-        owner_pk: pubkey,
-        move_timeout: int
+        sig owner_sig,
+        pubkey owner_pk,
+        int move_timeout
     ) consumes {
-        leader: Player;
+        leader: Player,
     } {
         require(move_timeout > 0);
         require(blake2b(owner_pk) == owner);
@@ -134,20 +134,20 @@ actor Player owns PlayerState {
     }
 
     delegate delegate_settle() consumes {
-        settlement: Settle;
+        settlement: Settle,
     } {
         require(settlement.status != LIVE);
         byte[32] self_ref = player_ref(owner, player_id);
         require(self_ref == settlement.white_player || self_ref == settlement.black_player);
     }
 
-    entry rebalance(owner_sig: sig, owner_pk: pubkey) emits one Player {
+    entry rebalance(sig owner_sig, pubkey owner_pk) emits one Player {
         require(blake2b(owner_pk) == owner);
         require(checkSig(owner_sig, owner_pk));
         become Player(self.state);
     }
 
-    entry retire(owner_sig: sig, owner_pk: pubkey) emits none {
+    entry retire(sig owner_sig, pubkey owner_pk) emits none {
         require(blake2b(owner_pk) == owner);
         require(checkSig(owner_sig, owner_pk));
         require(open_games == 0);
@@ -156,11 +156,11 @@ actor Player owns PlayerState {
 
 actor Settle owns SettleState {
     entry settle() consumes {
-        white_in: Player;
-        black_in: Player;
+        white_in: Player,
+        black_in: Player,
     } emits {
-        white_out: Player;
-        black_out: Player;
+        white_out: Player,
+        black_out: Player,
     } {
         require(status != LIVE);
         require(player_ref(white_in.owner, white_in.player_id) == white_player);
@@ -263,8 +263,8 @@ actor Settle owns SettleState {
         require(white_out.value == white_output_value);
         require(black_out.value == black_output_value);
         become {
-            white_out <- Player(next_white);
-            black_out <- Player(next_black);
+            white_out <- Player(next_white),
+            black_out <- Player(next_black),
         };
     }
 }
