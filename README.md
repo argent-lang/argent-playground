@@ -1,6 +1,6 @@
 # Argent playground
 
-Small Rust playground for using [Argent](https://github.com/michaelsutton/argent)
+Small Rust playground for using [Argent](https://github.com/argent-lang/argent)
 as a client app would.
 
 Expected checkout layout:
