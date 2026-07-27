@@ -108,8 +108,9 @@ impl ContractTemplate {
     pub fn from_artifact(artifact: &Artifact, contract_name: &str) -> Result<Self, DecodeError> {
         let contract =
             artifact.sil_abi.contract(contract_name).ok_or_else(|| DecodeError::UnknownContract(contract_name.to_string()))?;
-        let prefix = decode_hex(&contract.compiled.template.prefix_hex)?;
-        let suffix = decode_hex(&contract.compiled.template.suffix_hex)?;
+        let script = decode_hex(&contract.compiled.script_hex)?;
+        let (prefix, _, suffix) =
+            contract.compiled.script_parts(&script).ok_or_else(|| DecodeError::TemplateMismatch(contract_name.to_string()))?;
         let fields = contract.runtime_state.fields.iter().map(|field| (field.name.clone(), field.ty.clone())).collect();
         let structs = artifact
             .sil_abi
@@ -128,8 +129,8 @@ impl ContractTemplate {
             .collect();
         Ok(Self {
             contract_name: contract.name.clone(),
-            prefix,
-            suffix,
+            prefix: prefix.to_vec(),
+            suffix: suffix.to_vec(),
             state_layout_len: contract.compiled.state_span.len,
             entries,
             fields,

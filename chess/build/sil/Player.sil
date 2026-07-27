@@ -36,16 +36,33 @@ contract Player(
 
     // :: state layouts
     struct LeagueState {
-        // :: generated fields
-        byte[32] gen__mux_template;
-        byte[32] gen__player_template;
-        byte[32] gen__settle_template;
-        byte[32] gen__mux_routes_digest;
         // :: user declared fields
         int base_rating;
         byte[32] admin;
     }
     struct GameState {
+        // :: user declared fields
+        byte[32] white_player;
+        byte[32] black_player;
+        byte[64] board;
+        int turn;
+        int status;
+        int move_timeout;
+        byte[4] castle_rights;
+        int en_passant_idx;
+        int pending_src_idx;
+        int pending_dst_idx;
+        int pending_promo;
+        int recent_castle;
+        int draw_state;
+    }
+    struct SettleState {
+        // :: user declared fields
+        byte[32] white_player;
+        byte[32] black_player;
+        int status;
+    }
+    struct Gen__MuxState {
         // :: generated fields
         byte[32] gen__player_template;
         byte[32] gen__settle_template;
@@ -66,7 +83,7 @@ contract Player(
         int recent_castle;
         int draw_state;
     }
-    struct SettleState {
+    struct Gen__SettleState {
         // :: generated fields
         byte[32] gen__mux_template;
         byte[32] gen__player_template;
@@ -206,7 +223,7 @@ contract Player(
             draws: other.draws,
             losses: other.losses,
         };
-        GameState next_game = {
+        Gen__MuxState next_game = {
             // :: generated fields
             gen__player_template: gen__player_template,
             gen__settle_template: gen__settle_template,
@@ -277,7 +294,7 @@ contract Player(
         require(OpCovInputCount(gen__cov_id) >= 2);
         require(OpCovInputIdx(gen__cov_id, 0) != this.activeInputIndex);
         int gen__settlement_input_idx = OpCovInputIdx(gen__cov_id, 0); // input Settle at cov[0]
-        SettleState settlement = readInputStateWithTemplate(
+        Gen__SettleState settlement = readInputStateWithTemplate(
             gen__settlement_input_idx,
             gen__settle_prefix_len,
             gen__settle_suffix_len,

@@ -31,21 +31,11 @@ contract Settle(
 
     // :: state layouts
     struct LeagueState {
-        // :: generated fields
-        byte[32] gen__mux_template;
-        byte[32] gen__player_template;
-        byte[32] gen__settle_template;
-        byte[32] gen__mux_routes_digest;
         // :: user declared fields
         int base_rating;
         byte[32] admin;
     }
     struct PlayerState {
-        // :: generated fields
-        byte[32] gen__mux_template;
-        byte[32] gen__player_template;
-        byte[32] gen__settle_template;
-        byte[32] gen__mux_routes_digest;
         // :: user declared fields
         byte[32] owner;
         byte[32] player_id;
@@ -57,11 +47,6 @@ contract Settle(
         int losses;
     }
     struct GameState {
-        // :: generated fields
-        byte[32] gen__player_template;
-        byte[32] gen__settle_template;
-        byte[32] gen__mux_template;
-        byte[256] gen__mux_routes;
         // :: user declared fields
         byte[32] white_player;
         byte[32] black_player;
@@ -76,6 +61,22 @@ contract Settle(
         int pending_promo;
         int recent_castle;
         int draw_state;
+    }
+    struct Gen__PlayerState {
+        // :: generated fields
+        byte[32] gen__mux_template;
+        byte[32] gen__player_template;
+        byte[32] gen__settle_template;
+        byte[32] gen__mux_routes_digest;
+        // :: user declared fields
+        byte[32] owner;
+        byte[32] player_id;
+        int open_games;
+        int rating;
+        int games;
+        int wins;
+        int draws;
+        int losses;
     }
 
     // :: shared helper functions
@@ -128,14 +129,14 @@ contract Settle(
         require(OpCovInputCount(gen__cov_id) == 3);
         require(OpCovInputIdx(gen__cov_id, 0) == this.activeInputIndex);
         int gen__white_in_input_idx = OpCovInputIdx(gen__cov_id, 1); // input Player at cov[1]
-        PlayerState white_in = readInputStateWithTemplate(
+        Gen__PlayerState white_in = readInputStateWithTemplate(
             gen__white_in_input_idx,
             gen__player_prefix_len,
             gen__player_suffix_len,
             gen__player_template
         );
         int gen__black_in_input_idx = OpCovInputIdx(gen__cov_id, 2); // input Player at cov[2]
-        PlayerState black_in = readInputStateWithTemplate(
+        Gen__PlayerState black_in = readInputStateWithTemplate(
             gen__black_in_input_idx,
             gen__player_prefix_len,
             gen__player_suffix_len,
@@ -217,7 +218,7 @@ contract Settle(
         int black_rating = black_in.rating + ((32 * (black_actual - black_expected)) / 1000);
         require(white_in.open_games > 0);
         require(black_in.open_games > 0);
-        PlayerState next_white = {
+        Gen__PlayerState next_white = {
             // :: generated fields
             gen__mux_template: gen__mux_template,
             gen__player_template: gen__player_template,
@@ -233,7 +234,7 @@ contract Settle(
             draws: white_draws,
             losses: white_losses,
         };
-        PlayerState next_black = {
+        Gen__PlayerState next_black = {
             // :: generated fields
             gen__mux_template: gen__mux_template,
             gen__player_template: gen__player_template,

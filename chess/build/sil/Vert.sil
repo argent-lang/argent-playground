@@ -41,21 +41,11 @@ contract Vert(
 
     // :: state layouts
     struct LeagueState {
-        // :: generated fields
-        byte[32] gen__mux_template;
-        byte[32] gen__player_template;
-        byte[32] gen__settle_template;
-        byte[32] gen__mux_routes_digest;
         // :: user declared fields
         int base_rating;
         byte[32] admin;
     }
     struct PlayerState {
-        // :: generated fields
-        byte[32] gen__mux_template;
-        byte[32] gen__player_template;
-        byte[32] gen__settle_template;
-        byte[32] gen__mux_routes_digest;
         // :: user declared fields
         byte[32] owner;
         byte[32] player_id;
@@ -67,6 +57,12 @@ contract Vert(
         int losses;
     }
     struct SettleState {
+        // :: user declared fields
+        byte[32] white_player;
+        byte[32] black_player;
+        int status;
+    }
+    struct Gen__SettleState {
         // :: generated fields
         byte[32] gen__mux_template;
         byte[32] gen__player_template;
@@ -300,7 +296,7 @@ contract Vert(
 
         require(status == LIVE);
         require(this.age >= move_timeout);
-        SettleState next_state = {
+        Gen__SettleState next_state = {
             // :: generated fields
             gen__mux_template: gen__mux_template,
             gen__player_template: gen__player_template,

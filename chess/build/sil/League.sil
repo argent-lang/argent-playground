@@ -30,11 +30,6 @@ contract League(
 
     // :: state layouts
     struct PlayerState {
-        // :: generated fields
-        byte[32] gen__mux_template;
-        byte[32] gen__player_template;
-        byte[32] gen__settle_template;
-        byte[32] gen__mux_routes_digest;
         // :: user declared fields
         byte[32] owner;
         byte[32] player_id;
@@ -46,11 +41,6 @@ contract League(
         int losses;
     }
     struct GameState {
-        // :: generated fields
-        byte[32] gen__player_template;
-        byte[32] gen__settle_template;
-        byte[32] gen__mux_template;
-        byte[256] gen__mux_routes;
         // :: user declared fields
         byte[32] white_player;
         byte[32] black_player;
@@ -67,15 +57,26 @@ contract League(
         int draw_state;
     }
     struct SettleState {
+        // :: user declared fields
+        byte[32] white_player;
+        byte[32] black_player;
+        int status;
+    }
+    struct Gen__PlayerState {
         // :: generated fields
         byte[32] gen__mux_template;
         byte[32] gen__player_template;
         byte[32] gen__settle_template;
         byte[32] gen__mux_routes_digest;
         // :: user declared fields
-        byte[32] white_player;
-        byte[32] black_player;
-        int status;
+        byte[32] owner;
+        byte[32] player_id;
+        int open_games;
+        int rating;
+        int games;
+        int wins;
+        int draws;
+        int losses;
     }
 
     // :: shared helper functions
@@ -135,7 +136,7 @@ contract League(
         int gen__player_output_idx = OpAuthOutputIdx(this.activeInputIndex, 1);
 
         require(checkSig(owner_sig, owner_pk));
-        PlayerState next_player = {
+        Gen__PlayerState next_player = {
             // :: generated fields
             gen__mux_template: gen__mux_template,
             gen__player_template: gen__player_template,
