@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.94.0"
 license = "ISC"
-authors = ["Kaspa developers"]
+authors = ["Argent-lang developers"]
 
 [dependencies]
 argent = { path = "../argent" }

@@ -21,7 +21,7 @@ jobs:
       - name: Checkout Argent
         uses: actions/checkout@v6
         with:
-          repository: michaelsutton/argent
+          repository: argent-lang/argent
           ref: master
           path: argent
 
