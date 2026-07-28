@@ -61,7 +61,7 @@ actor DexCore owns DexCoreState {
             pair: self.pair_type,
         }
     }
-    emits one DexCore {
+    emits next: DexCore {
         require(checkSig(governor_sig, governor));
         require(quote_id != base_id);
         require(quote_per_base_num > 0);
@@ -82,7 +82,7 @@ actor DexCore owns DexCoreState {
         DexPairState pair = {
             initializer: initializer,
             initialized: true,
-            core_id: self.covenant_id,
+            core_id: self.cov_id,
             core_type: core_type,
             quote_id: quote_id,
             quote_type: quote_type,
@@ -94,6 +94,7 @@ actor DexCore owns DexCoreState {
             reserve_moves: 0,
         };
 
+        unrestricted(new_pair.outputs.pair.value);
         require new_pair.outputs become {
             pair <- self.pair_type(pair),
         };
@@ -109,14 +110,14 @@ actor DexCore owns DexCoreState {
         };
 
         require(next.value == self.value);
-        become DexCore(next_core);
+        become next <- DexCore(next_core);
     }
 
     // Reserve migration reads the current registry through this unchanged core
     // input/output pair. The linear preimage is supplied to the migrating Pair.
-    entry witness_registry() emits one DexCore {
+    entry witness_registry() emits next: DexCore {
         require(next.value == self.value);
-        become DexCore(self.state);
+        become next <- DexCore(self.state);
     }
 }
 
@@ -141,7 +142,7 @@ actor DexPair owns DexPairState {
             payout: self.base_type,
         }
     }
-    emits one DexPair {
+    emits next: DexPair {
         require(initialized);
 
         AssetCapsule quote_payment = quote.inputs.payment.state;
@@ -149,7 +150,7 @@ actor DexPair owns DexPairState {
 
         require(quote_payment.owner_kind == OWNER_KEY);
         require(base_reserve.owner_kind == OWNER_COVID);
-        require(base_reserve.owner == byte[32](self.covenant_id));
+        require(base_reserve.owner == byte[32](self.cov_id));
         require(quote_payment.amount > 0);
         require(base_reserve.amount > 0);
 
@@ -161,7 +162,7 @@ actor DexPair owns DexPairState {
         );
 
         AssetCapsule quote_reserve = {
-            owner: byte[32](self.covenant_id),
+            owner: byte[32](self.cov_id),
             owner_kind: OWNER_COVID,
             policy: quote_payment.policy,
             amount: quote_payment.amount,
@@ -199,7 +200,7 @@ actor DexPair owns DexPairState {
         // KAS fees, partial fills, change lots, and slippage are outside this
         // demo. The asset and ownership invariants do not depend on them.
         require(next.value == self.value);
-        become DexPair(next_pair);
+        become next <- DexPair(next_pair);
     }
 
     // Moving either reserve to another Pair requires a current Core registry
@@ -226,9 +227,9 @@ actor DexPair owns DexPairState {
             reserve: asset_type,
         }
     }
-    emits one DexPair {
+    emits next: DexPair {
         require(initialized);
-        require(target_pair_id != self.covenant_id);
+        require(target_pair_id != self.cov_id);
         require(
             (asset_id == quote_id && asset_type == quote_type)
                 || (asset_id == base_id && asset_type == base_type)
@@ -245,7 +246,7 @@ actor DexPair owns DexPairState {
 
         AssetCapsule reserve = moved_asset.inputs.reserve.state;
         require(reserve.owner_kind == OWNER_COVID);
-        require(reserve.owner == byte[32](self.covenant_id));
+        require(reserve.owner == byte[32](self.cov_id));
 
         AssetCapsule moved_reserve = {
             owner: byte[32](target_pair_id),
@@ -277,7 +278,7 @@ actor DexPair owns DexPairState {
         };
 
         require(next.value == self.value);
-        become DexPair(next_pair);
+        become next <- DexPair(next_pair);
     }
 }
 

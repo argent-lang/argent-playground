@@ -50,6 +50,8 @@ actor Minter owns MintableTokenState {
             amount: mint_amount,
         };
 
+        unrestricted(minter.value);
+        unrestricted(token.value);
         become {
             minter <- Minter(next_minter),
             token <- MintableToken(next_token),
@@ -62,7 +64,7 @@ actor MintableToken owns MintableTokenState {
         byte[32] next_owner,
         byte next_owner_kind,
         sig owner_sig
-    ) emits one MintableToken {
+    ) emits next: MintableToken {
         if (owner_kind == OWNER_KEY) {
             require(checkSig(owner_sig, owner));
         } else if (owner_kind == OWNER_COVID) {
@@ -84,7 +86,8 @@ actor MintableToken owns MintableTokenState {
             amount: amount,
         };
 
-        become MintableToken(next_token);
+        unrestricted(next.value);
+        become next <- MintableToken(next_token);
     }
 }
 

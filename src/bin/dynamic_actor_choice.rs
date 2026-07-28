@@ -29,7 +29,7 @@ actor enum Target {
 }
 
 actor Router owns RouteState {
-    entry choose(Target target) emits one Target {
+    entry choose(Target target) emits next: Target {
         if (target == Target::Beta) {
             require(nonce >= 0);
         }
@@ -39,7 +39,8 @@ actor Router owns RouteState {
             hops: hops + 1,
         };
 
-        become target(next);
+        unrestricted(next.value);
+        become next <- target(next);
     }
 }
 

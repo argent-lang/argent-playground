@@ -11,6 +11,7 @@ actor Forager owns AgentCapsule {
             energy: next_energy,
         };
 
+        unrestricted(agent.value);
         become agent <- Forager(next_agent);
     }
 }
