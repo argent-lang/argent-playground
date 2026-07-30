@@ -98,9 +98,10 @@ contract CastleChallengePrep(
     function invocation_uid(byte[] domain) : byte[32] {
         require(domain.length > 0);
 
-        byte[36] outpoint =
+        byte[36] outpoint = byte[36](
             OpOutpointTxId(this.activeInputIndex)
-                + byte[4](OpOutpointIndex(this.activeInputIndex));
+                + byte[4](OpOutpointIndex(this.activeInputIndex))
+        );
 
         return blake2bWithKey(outpoint, domain);
     }
@@ -131,7 +132,7 @@ contract CastleChallengePrep(
     entrypoint function apply(int target, byte[] gen__target_prefix, byte[] gen__target_suffix) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Move
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Move
 
         require(status == LIVE);
         require(draw_state == NORMAL);
@@ -212,15 +213,17 @@ contract CastleChallengePrep(
         byte[] mid_bc = prev_dyn.slice(b + 1, c);
         byte[] mid_cd = prev_dyn.slice(c + 1, d);
         byte[] suffix = prev_dyn.slice(d + 1, 64);
-        byte[64] proof_board = prefix
-            + byte[1](va)
-            + mid_ab
-            + byte[1](vb)
-            + mid_bc
-            + byte[1](vc)
-            + mid_cd
-            + byte[1](vd)
-            + suffix;
+        byte[64] proof_board = byte[64](
+            prefix
+                + byte[1](va)
+                + mid_ab
+                + byte[1](vb)
+                + mid_bc
+                + byte[1](vc)
+                + mid_cd
+                + byte[1](vd)
+                + suffix
+        );
         int from_y = from_idx / 8;
         int from_x = from_idx % 8;
         int to_y = to_idx / 8;
@@ -299,7 +302,7 @@ contract CastleChallengePrep(
     entrypoint function timeout(byte[] gen__settle_prefix, byte[] gen__settle_suffix) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Settle
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status == LIVE);
         require(this.age >= move_timeout);

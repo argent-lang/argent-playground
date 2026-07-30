@@ -98,9 +98,10 @@ contract Vert(
     function invocation_uid(byte[] domain) : byte[32] {
         require(domain.length > 0);
 
-        byte[36] outpoint =
+        byte[36] outpoint = byte[36](
             OpOutpointTxId(this.activeInputIndex)
-                + byte[4](OpOutpointIndex(this.activeInputIndex));
+                + byte[4](OpOutpointIndex(this.activeInputIndex))
+        );
 
         return blake2bWithKey(outpoint, domain);
     }
@@ -131,7 +132,7 @@ contract Vert(
     entrypoint function apply(byte[] gen__mux_prefix, byte[] gen__mux_suffix) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Mux
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Mux
 
         require(status == LIVE);
         int from_idx = OpBin2Num(pending_src_idx);
@@ -193,7 +194,7 @@ contract Vert(
         byte[] prefix = prev_dyn.slice(0, low_idx);
         byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
         byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
-        byte[64] next_board = prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix;
+        byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
         int next_status = status;
         if (recent_castle != CLEAR) {
             if (turn == WHITE) {
@@ -252,10 +253,12 @@ contract Vert(
         if (from_idx == 63 || to_idx == 63) {
             next_black_can_castle_k = byte(0x00);
         }
-        byte[4] next_castle_rights = byte[1](next_white_can_castle_k)
-            + byte[1](next_white_can_castle_q)
-            + byte[1](next_black_can_castle_k)
-            + byte[1](next_black_can_castle_q);
+        byte[4] next_castle_rights = byte[4](
+            byte[1](next_white_can_castle_k)
+                + byte[1](next_white_can_castle_q)
+                + byte[1](next_black_can_castle_k)
+                + byte[1](next_black_can_castle_q)
+        );
         State next_state = {
             // :: generated fields
             gen__player_template: gen__player_template,
@@ -292,7 +295,7 @@ contract Vert(
     entrypoint function timeout(byte[] gen__settle_prefix, byte[] gen__settle_suffix) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Settle
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status == LIVE);
         require(this.age >= move_timeout);

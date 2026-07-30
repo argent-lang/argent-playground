@@ -98,9 +98,10 @@ contract Pawn(
     function invocation_uid(byte[] domain) : byte[32] {
         require(domain.length > 0);
 
-        byte[36] outpoint =
+        byte[36] outpoint = byte[36](
             OpOutpointTxId(this.activeInputIndex)
-                + byte[4](OpOutpointIndex(this.activeInputIndex));
+                + byte[4](OpOutpointIndex(this.activeInputIndex))
+        );
 
         return blake2bWithKey(outpoint, domain);
     }
@@ -131,7 +132,7 @@ contract Pawn(
     entrypoint function apply(byte[] gen__mux_prefix, byte[] gen__mux_suffix) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Mux
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Mux
 
         require(status == LIVE);
         int from_idx = OpBin2Num(pending_src_idx);
@@ -304,7 +305,7 @@ contract Pawn(
         byte[] middle_xy = prev_dyn.slice(x + 1, y);
         byte[] middle_yz = prev_dyn.slice(y + 1, z);
         byte[] suffix = prev_dyn.slice(z + 1, 64);
-        byte[64] next_board = prefix + byte[1](vx) + middle_xy + byte[1](vy) + middle_yz + byte[1](vz) + suffix;
+        byte[64] next_board = byte[64](prefix + byte[1](vx) + middle_xy + byte[1](vy) + middle_yz + byte[1](vz) + suffix);
         State next_state = {
             // :: generated fields
             gen__player_template: gen__player_template,
@@ -341,7 +342,7 @@ contract Pawn(
     entrypoint function timeout(byte[] gen__settle_prefix, byte[] gen__settle_suffix) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Settle
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status == LIVE);
         require(this.age >= move_timeout);

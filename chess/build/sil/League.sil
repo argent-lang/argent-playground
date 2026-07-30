@@ -103,9 +103,10 @@ contract League(
     function invocation_uid(byte[] domain) : byte[32] {
         require(domain.length > 0);
 
-        byte[36] outpoint =
+        byte[36] outpoint = byte[36](
             OpOutpointTxId(this.activeInputIndex)
-                + byte[4](OpOutpointIndex(this.activeInputIndex));
+                + byte[4](OpOutpointIndex(this.activeInputIndex))
+        );
 
         return blake2bWithKey(outpoint, domain);
     }
@@ -172,7 +173,7 @@ contract League(
     entrypoint function rebalance(sig admin_sig, pubkey admin_pk) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one League
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: League
 
         require(blake2b(admin_pk) == admin);
         require(checkSig(admin_sig, admin_pk));

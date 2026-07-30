@@ -98,9 +98,10 @@ contract Mux(
     function invocation_uid(byte[] domain) : byte[32] {
         require(domain.length > 0);
 
-        byte[36] outpoint =
+        byte[36] outpoint = byte[36](
             OpOutpointTxId(this.activeInputIndex)
-                + byte[4](OpOutpointIndex(this.activeInputIndex));
+                + byte[4](OpOutpointIndex(this.activeInputIndex))
+        );
 
         return blake2bWithKey(outpoint, domain);
     }
@@ -144,7 +145,7 @@ contract Mux(
     ) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Move
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Move
 
         require(status == LIVE);
         byte[32] player_ref = player_ref(blake2b(pk), player_id);
@@ -214,7 +215,7 @@ contract Mux(
     entrypoint function terminate(int termination_action, sig s, pubkey pk, byte[32] player_id) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Mux
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Mux
 
         require(status == LIVE);
         byte[32] player_ref = player_ref(blake2b(pk), player_id);
@@ -277,7 +278,7 @@ contract Mux(
     ) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Settle
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status == LIVE);
         byte[32] player_ref = player_ref(blake2b(pk), player_id);
@@ -314,7 +315,7 @@ contract Mux(
     entrypoint function settle(byte[] gen__settle_prefix, byte[] gen__settle_suffix) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Settle
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status != LIVE);
         Gen__SettleState next_state = {

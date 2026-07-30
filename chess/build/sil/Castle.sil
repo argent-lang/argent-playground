@@ -98,9 +98,10 @@ contract Castle(
     function invocation_uid(byte[] domain) : byte[32] {
         require(domain.length > 0);
 
-        byte[36] outpoint =
+        byte[36] outpoint = byte[36](
             OpOutpointTxId(this.activeInputIndex)
-                + byte[4](OpOutpointIndex(this.activeInputIndex));
+                + byte[4](OpOutpointIndex(this.activeInputIndex))
+        );
 
         return blake2bWithKey(outpoint, domain);
     }
@@ -131,7 +132,7 @@ contract Castle(
     entrypoint function apply(byte[] gen__mux_prefix, byte[] gen__mux_suffix) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Mux
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Mux
 
         require(status == LIVE);
         require(draw_state >= NORMAL);
@@ -204,13 +205,15 @@ contract Castle(
         byte[] prefix = prev_board.slice(0, a);
         byte[] middle = prev_board.slice(a + 1, b);
         byte[] suffix = prev_board.slice(d + 1, 64);
-        byte[64] next_board = prefix
-            + byte[1](empty_piece)
-            + middle
-            + byte[1](vb)
-            + byte[1](vc)
-            + byte[1](empty_piece)
-            + suffix;
+        byte[64] next_board = byte[64](
+            prefix
+                + byte[1](empty_piece)
+                + middle
+                + byte[1](vb)
+                + byte[1](vc)
+                + byte[1](empty_piece)
+                + suffix
+        );
         byte next_white_can_castle_k = castle_rights[0];
         byte next_white_can_castle_q = castle_rights[1];
         byte next_black_can_castle_k = castle_rights[2];
@@ -222,10 +225,12 @@ contract Castle(
             next_black_can_castle_k = byte(0x00);
             next_black_can_castle_q = byte(0x00);
         }
-        byte[4] next_castle_rights = byte[1](next_white_can_castle_k)
-            + byte[1](next_white_can_castle_q)
-            + byte[1](next_black_can_castle_k)
-            + byte[1](next_black_can_castle_q);
+        byte[4] next_castle_rights = byte[4](
+            byte[1](next_white_can_castle_k)
+                + byte[1](next_white_can_castle_q)
+                + byte[1](next_black_can_castle_k)
+                + byte[1](next_black_can_castle_q)
+        );
         int next_recent_castle = 1;
         if (!is_king_side) {
             next_recent_castle = 2;
@@ -269,7 +274,7 @@ contract Castle(
     entrypoint function timeout(byte[] gen__settle_prefix, byte[] gen__settle_suffix) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
-        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // emits one Settle
+        int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status == LIVE);
         require(this.age >= move_timeout);
