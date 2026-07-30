@@ -664,10 +664,12 @@ actor Vert owns GameState {
         if (from_idx == 63 || to_idx == 63) {
             next_black_can_castle_k = byte(0x00);
         }
-        byte[4] next_castle_rights = byte[1](next_white_can_castle_k)
-            + byte[1](next_white_can_castle_q)
-            + byte[1](next_black_can_castle_k)
-            + byte[1](next_black_can_castle_q);
+        byte[4] next_castle_rights = byte[4](
+            byte[1](next_white_can_castle_k)
+                + byte[1](next_white_can_castle_q)
+                + byte[1](next_black_can_castle_k)
+                + byte[1](next_black_can_castle_q)
+        );
 
         GameState next_state = {
             white_player: white_player,
@@ -834,10 +836,12 @@ actor Horiz owns GameState {
         if (from_idx == 63 || to_idx == 63) {
             next_black_can_castle_k = byte(0x00);
         }
-        byte[4] next_castle_rights = byte[1](next_white_can_castle_k)
-            + byte[1](next_white_can_castle_q)
-            + byte[1](next_black_can_castle_k)
-            + byte[1](next_black_can_castle_q);
+        byte[4] next_castle_rights = byte[4](
+            byte[1](next_white_can_castle_k)
+                + byte[1](next_white_can_castle_q)
+                + byte[1](next_black_can_castle_k)
+                + byte[1](next_black_can_castle_q)
+        );
 
         GameState next_state = {
             white_player: white_player,
@@ -1139,10 +1143,12 @@ actor King owns GameState {
             next_black_can_castle_k = byte(0x00);
             next_black_can_castle_q = byte(0x00);
         }
-        byte[4] next_castle_rights = byte[1](next_white_can_castle_k)
-            + byte[1](next_white_can_castle_q)
-            + byte[1](next_black_can_castle_k)
-            + byte[1](next_black_can_castle_q);
+        byte[4] next_castle_rights = byte[4](
+            byte[1](next_white_can_castle_k)
+                + byte[1](next_white_can_castle_q)
+                + byte[1](next_black_can_castle_k)
+                + byte[1](next_black_can_castle_q)
+        );
 
         GameState next_state = {
             white_player: white_player,
@@ -1258,13 +1264,15 @@ actor Castle owns GameState {
         byte[] prefix = prev_board.slice(0, a);
         byte[] middle = prev_board.slice(a + 1, b);
         byte[] suffix = prev_board.slice(d + 1, 64);
-        byte[64] next_board = prefix
-            + byte[1](empty_piece)
-            + middle
-            + byte[1](vb)
-            + byte[1](vc)
-            + byte[1](empty_piece)
-            + suffix;
+        byte[64] next_board = byte[64](
+            prefix
+                + byte[1](empty_piece)
+                + middle
+                + byte[1](vb)
+                + byte[1](vc)
+                + byte[1](empty_piece)
+                + suffix
+        );
 
         byte next_white_can_castle_k = castle_rights[0];
         byte next_white_can_castle_q = castle_rights[1];
@@ -1277,10 +1285,12 @@ actor Castle owns GameState {
             next_black_can_castle_k = byte(0x00);
             next_black_can_castle_q = byte(0x00);
         }
-        byte[4] next_castle_rights = byte[1](next_white_can_castle_k)
-            + byte[1](next_white_can_castle_q)
-            + byte[1](next_black_can_castle_k)
-            + byte[1](next_black_can_castle_q);
+        byte[4] next_castle_rights = byte[4](
+            byte[1](next_white_can_castle_k)
+                + byte[1](next_white_can_castle_q)
+                + byte[1](next_black_can_castle_k)
+                + byte[1](next_black_can_castle_q)
+        );
 
         int next_recent_castle = 1;
         if (!is_king_side) {
@@ -1411,15 +1421,17 @@ actor CastleChallengePrep owns GameState {
         byte[] mid_bc = prev_dyn.slice(b + 1, c);
         byte[] mid_cd = prev_dyn.slice(c + 1, d);
         byte[] suffix = prev_dyn.slice(d + 1, 64);
-        byte[64] proof_board = prefix
-            + byte[1](va)
-            + mid_ab
-            + byte[1](vb)
-            + mid_bc
-            + byte[1](vc)
-            + mid_cd
-            + byte[1](vd)
-            + suffix;
+        byte[64] proof_board = byte[64](
+            prefix
+                + byte[1](va)
+                + mid_ab
+                + byte[1](vb)
+                + mid_bc
+                + byte[1](vc)
+                + mid_cd
+                + byte[1](vd)
+                + suffix
+        );
 
         int from_y = from_idx / 8;
         int from_x = from_idx % 8;
