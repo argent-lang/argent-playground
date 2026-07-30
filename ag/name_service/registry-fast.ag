@@ -1,0 +1,44 @@
+import "./smt.ag";
+import "./registry.ag";
+import actor RegistryStore from "./registry-store.ag";
+import actor Name from "./name.ag";
+
+actor RegistryFast owns RegistryState {
+    entry register(byte[] label, byte[] proof, byte[] witness_label, pubkey owner, sig owner_sig) consumes {
+        store: RegistryStore,
+    } emits {
+        registry: RegistryFast,
+        root_out: RegistryStore,
+        name: Name,
+    } {
+        require(checkSig(owner_sig, owner));
+        require(label_is_valid(label));
+
+        byte[32] key = name_key(self.cov_id, label);
+        byte[32] next_root = fast_inserted_root(self.cov_id, store.root, key, proof, witness_label);
+        RegistryStoreState next_store_state = {
+            root: next_root,
+        };
+        byte[63] padded_label = byte[63](
+            (
+                label
+                + 0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+            ).slice(0, NAME_BYTES)
+        );
+        NameState minted_name = {
+            name_key: key,
+            label: padded_label,
+            owner: owner,
+        };
+
+        require(registry.value == self.value);
+        require(root_out.value == store.value);
+        unrestricted(name.value);
+
+        become {
+            registry <- RegistryFast(self.state),
+            root_out <- RegistryStore(next_store_state),
+            name <- Name(minted_name),
+        };
+    }
+}

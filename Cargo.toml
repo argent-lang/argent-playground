@@ -9,5 +9,6 @@ authors = ["Argent-lang developers"]
 [dependencies]
 argent = { path = "../argent" }
 argent-runtime = { path = "../argent/crates/argent-runtime" }
+blake3 = "1.8.5"
 kaspa-consensus-core = { git = "https://github.com/kaspanet/rusty-kaspa", tag = "v2.0.1" }
 secp256k1 = { version = "0.29.0", features = ["global-context"] }

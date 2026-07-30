@@ -1,0 +1,16 @@
+import actor RegistryFast from "./registry-fast.ag";
+import actor RegistrySlow from "./registry-slow.ag";
+
+state RegistryStoreState {
+    byte[32] root;
+}
+
+actor RegistryStore owns RegistryStoreState {
+    delegate update_fast() consumes {
+        registry: RegistryFast,
+    } {}
+
+    delegate update_slow() consumes {
+        registry: RegistrySlow,
+    } {}
+}
