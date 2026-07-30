@@ -16,7 +16,7 @@ actor KasToken owns KasTokenState {
         byte next_owner_kind,
         int next_amount,
         sig owner_sig
-    ) emits one KasToken {
+    ) emits next: KasToken {
         if (owner_kind == OWNER_KEY) {
             require(checkSig(owner_sig, owner));
         } else if (owner_kind == OWNER_COVID) {
@@ -48,7 +48,7 @@ actor KasToken owns KasTokenState {
             amount: next_amount,
         };
 
-        become KasToken(next_token);
+        become next <- KasToken(next_token);
     }
 }
 

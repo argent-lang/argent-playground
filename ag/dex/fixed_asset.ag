@@ -15,7 +15,7 @@ actor FixedToken owns FixedTokenState {
         byte[32] next_owner,
         byte next_owner_kind,
         sig owner_sig
-    ) emits one FixedToken {
+    ) emits next: FixedToken {
         if (owner_kind == OWNER_KEY) {
             require(checkSig(owner_sig, owner));
         } else if (owner_kind == OWNER_COVID) {
@@ -36,7 +36,8 @@ actor FixedToken owns FixedTokenState {
             amount: amount,
         };
 
-        become FixedToken(next_token);
+        unrestricted(next.value);
+        become next <- FixedToken(next_token);
     }
 }
 

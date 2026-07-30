@@ -37,6 +37,7 @@ actor Cell owns CellState {
             ticks: ticks + 1,
         };
 
+        unrestricted(cell.value);
         become cell <- Cell(next_cell);
     }
 }

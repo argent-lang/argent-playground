@@ -19,11 +19,11 @@ actor Controller owns ControllerState {
         controller: Controller,
     } {
         BadgeState prev_badge = asset.inputs.badge.state;
-        require(prev_badge.controller_id == self.covenant_id);
+        require(prev_badge.controller_id == self.cov_id);
         require(amount > 0);
 
         BadgeState next_badge = {
-            controller_id: self.covenant_id,
+            controller_id: self.cov_id,
             balance: prev_badge.balance + amount,
         };
 
@@ -35,6 +35,7 @@ actor Controller owns ControllerState {
             minted: minted + amount,
         };
 
+        unrestricted(controller.value);
         become controller <- Controller(next_controller);
     }
 }
