@@ -26,7 +26,7 @@ actor Mux owns GameState {
         sig s,
         pubkey pk,
         byte[32] player_id
-    ) emits one Move {
+    ) emits next: Move {
         require(status == LIVE);
 
         byte[32] player_ref = player_ref(blake2b(pk), player_id);
@@ -76,7 +76,7 @@ actor Mux owns GameState {
         };
 
         require(next.value == self.value);
-        become target(next_state);
+        become next <- target(next_state);
     }
 
     entry terminate(
@@ -84,7 +84,7 @@ actor Mux owns GameState {
         sig s,
         pubkey pk,
         byte[32] player_id
-    ) emits one Mux {
+    ) emits next: Mux {
         require(status == LIVE);
 
         byte[32] player_ref = player_ref(blake2b(pk), player_id);
@@ -130,14 +130,14 @@ actor Mux owns GameState {
         };
 
         require(next.value == self.value);
-        become Mux(next_state);
+        become next <- Mux(next_state);
     }
 
     entry timeout(
         sig s,
         pubkey pk,
         byte[32] player_id
-    ) emits one Settle {
+    ) emits next: Settle {
         require(status == LIVE);
 
         byte[32] player_ref = player_ref(blake2b(pk), player_id);
@@ -156,10 +156,10 @@ actor Mux owns GameState {
         };
 
         require(next.value == self.value);
-        become Settle(next_state);
+        become next <- Settle(next_state);
     }
 
-    entry settle() emits one Settle {
+    entry settle() emits next: Settle {
         require(status != LIVE);
         SettleState next_state = {
             white_player: white_player,
@@ -168,12 +168,12 @@ actor Mux owns GameState {
         };
 
         require(next.value == self.value);
-        become Settle(next_state);
+        become next <- Settle(next_state);
     }
 }
 
 actor Pawn owns GameState {
-    entry apply() emits one Mux {
+    entry apply() emits next: Mux {
         require(status == LIVE);
 
         int from_idx = OpBin2Num(pending_src_idx);
@@ -362,7 +362,7 @@ actor Pawn owns GameState {
         byte[] middle_xy = prev_dyn.slice(x + 1, y);
         byte[] middle_yz = prev_dyn.slice(y + 1, z);
         byte[] suffix = prev_dyn.slice(z + 1, 64);
-        byte[64] next_board = prefix + byte[1](vx) + middle_xy + byte[1](vy) + middle_yz + byte[1](vz) + suffix;
+        byte[64] next_board = byte[64](prefix + byte[1](vx) + middle_xy + byte[1](vy) + middle_yz + byte[1](vz) + suffix);
 
         GameState next_state = {
             white_player: white_player,
@@ -381,10 +381,10 @@ actor Pawn owns GameState {
         };
 
         require(next.value == self.value);
-        become Mux(next_state);
+        become next <- Mux(next_state);
     }
 
-    entry timeout() emits one Settle {
+    entry timeout() emits next: Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -393,12 +393,12 @@ actor Pawn owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become Settle(next_state);
+        become next <- Settle(next_state);
     }
 }
 
 actor Knight owns GameState {
-    entry apply() emits one Mux {
+    entry apply() emits next: Mux {
         require(status == LIVE);
 
         int from_idx = OpBin2Num(pending_src_idx);
@@ -453,7 +453,7 @@ actor Knight owns GameState {
         byte[] prefix = prev_dyn.slice(0, low_idx);
         byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
         byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
-        byte[64] next_board = prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix;
+        byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
         int next_status = status;
         if (recent_castle != CLEAR) {
@@ -516,10 +516,10 @@ actor Knight owns GameState {
         };
 
         require(next.value == self.value);
-        become Mux(next_state);
+        become next <- Mux(next_state);
     }
 
-    entry timeout() emits one Settle {
+    entry timeout() emits next: Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -528,12 +528,12 @@ actor Knight owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become Settle(next_state);
+        become next <- Settle(next_state);
     }
 }
 
 actor Vert owns GameState {
-    entry apply() emits one Mux {
+    entry apply() emits next: Mux {
         require(status == LIVE);
 
         int from_idx = OpBin2Num(pending_src_idx);
@@ -602,7 +602,7 @@ actor Vert owns GameState {
         byte[] prefix = prev_dyn.slice(0, low_idx);
         byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
         byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
-        byte[64] next_board = prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix;
+        byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
         int next_status = status;
         if (recent_castle != CLEAR) {
@@ -686,10 +686,10 @@ actor Vert owns GameState {
         };
 
         require(next.value == self.value);
-        become Mux(next_state);
+        become next <- Mux(next_state);
     }
 
-    entry timeout() emits one Settle {
+    entry timeout() emits next: Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -698,12 +698,12 @@ actor Vert owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become Settle(next_state);
+        become next <- Settle(next_state);
     }
 }
 
 actor Horiz owns GameState {
-    entry apply() emits one Mux {
+    entry apply() emits next: Mux {
         require(status == LIVE);
 
         int from_idx = OpBin2Num(pending_src_idx);
@@ -772,7 +772,7 @@ actor Horiz owns GameState {
         byte[] prefix = prev_dyn.slice(0, low_idx);
         byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
         byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
-        byte[64] next_board = prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix;
+        byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
         int next_status = status;
         if (recent_castle != CLEAR) {
@@ -856,10 +856,10 @@ actor Horiz owns GameState {
         };
 
         require(next.value == self.value);
-        become Mux(next_state);
+        become next <- Mux(next_state);
     }
 
-    entry timeout() emits one Settle {
+    entry timeout() emits next: Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -868,12 +868,12 @@ actor Horiz owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become Settle(next_state);
+        become next <- Settle(next_state);
     }
 }
 
 actor Diag owns GameState {
-    entry apply() emits one Mux {
+    entry apply() emits next: Mux {
         require(status == LIVE);
         int from_idx = OpBin2Num(pending_src_idx);
         int to_idx = OpBin2Num(pending_dst_idx);
@@ -948,7 +948,7 @@ actor Diag owns GameState {
         byte[] prefix = prev_dyn.slice(0, low_idx);
         byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
         byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
-        byte[64] next_board = prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix;
+        byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
         int next_status = status;
         if (recent_castle != CLEAR) {
@@ -1011,10 +1011,10 @@ actor Diag owns GameState {
         };
 
         require(next.value == self.value);
-        become Mux(next_state);
+        become next <- Mux(next_state);
     }
 
-    entry timeout() emits one Settle {
+    entry timeout() emits next: Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -1023,12 +1023,12 @@ actor Diag owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become Settle(next_state);
+        become next <- Settle(next_state);
     }
 }
 
 actor King owns GameState {
-    entry apply() emits one Mux {
+    entry apply() emits next: Mux {
         require(status == LIVE);
         int from_idx = OpBin2Num(pending_src_idx);
         int to_idx = OpBin2Num(pending_dst_idx);
@@ -1082,7 +1082,7 @@ actor King owns GameState {
         byte[] prefix = prev_dyn.slice(0, low_idx);
         byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
         byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
-        byte[64] next_board = prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix;
+        byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
         int next_status = status;
         if (recent_castle != CLEAR) {
@@ -1161,10 +1161,10 @@ actor King owns GameState {
         };
 
         require(next.value == self.value);
-        become Mux(next_state);
+        become next <- Mux(next_state);
     }
 
-    entry timeout() emits one Settle {
+    entry timeout() emits next: Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -1173,12 +1173,12 @@ actor King owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become Settle(next_state);
+        become next <- Settle(next_state);
     }
 }
 
 actor Castle owns GameState {
-    entry apply() emits one Mux {
+    entry apply() emits next: Mux {
         require(status == LIVE);
         require(draw_state >= NORMAL);
 
@@ -1307,10 +1307,10 @@ actor Castle owns GameState {
         };
 
         require(next.value == self.value);
-        become Mux(next_state);
+        become next <- Mux(next_state);
     }
 
-    entry timeout() emits one Settle {
+    entry timeout() emits next: Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -1319,12 +1319,12 @@ actor Castle owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become Settle(next_state);
+        become next <- Settle(next_state);
     }
 }
 
 actor CastleChallengePrep owns GameState {
-    entry apply(Move target) emits one Move {
+    entry apply(Move target) emits next: Move {
         require(status == LIVE);
         require(draw_state == NORMAL);
         require(recent_castle >= 1 && recent_castle <= 4);
@@ -1476,10 +1476,10 @@ actor CastleChallengePrep owns GameState {
         };
 
         require(next.value == self.value);
-        become target(next_state);
+        become next <- target(next_state);
     }
 
-    entry timeout() emits one Settle {
+    entry timeout() emits next: Settle {
         require(status == LIVE);
         require(this.age >= move_timeout);
         SettleState next_state = {
@@ -1488,6 +1488,6 @@ actor CastleChallengePrep owns GameState {
             status: timeout_status(turn, draw_state),
         };
         require(next.value == self.value);
-        become Settle(next_state);
+        become next <- Settle(next_state);
     }
 }
