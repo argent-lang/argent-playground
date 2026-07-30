@@ -1,18 +1,15 @@
-use argent::build_file;
+use argent::build_file_app_bundle;
 use argent_playground::{PlaygroundResult, demo_outpoint};
-use argent_runtime::{ArtifactBundle, CovenantOutput, EntryCall, TxBuilder, TxContext, args, state};
+use argent_runtime::{CovenantOutput, EntryCall, TxBuilder, TxContext, args, state};
 use kaspa_consensus_core::tx::{CovenantBinding, ScriptPublicKey, UtxoEntry};
 
-const ASSET_SOURCE: &str = "ag/multiapp_badge/badge_asset.ag";
 const CONTROLLER_SOURCE: &str = "ag/multiapp_badge/badge_controller.ag";
 
-// This demo is WIP as we perfect Argent's devx.
 fn main() -> PlaygroundResult<()> {
-    // Compile both apps independently, then bundle the controller with the
-    // observed asset app.
-    let asset_artifact = build_file(ASSET_SOURCE, "build/multiapp_badge/asset")?;
-    let controller_artifact = build_file(CONTROLLER_SOURCE, "build/multiapp_badge/controller")?;
-    let bundle = ArtifactBundle::named("badge_controller", &controller_artifact)?.with_app("badge_asset", &asset_artifact)?;
+    // Compile the asset app once, then link the controller against that exact
+    // artifact and retain both artifacts for runtime construction.
+    let compiled = build_file_app_bundle(CONTROLLER_SOURCE, "BadgeController", "build/multiapp_badge/controller")?;
+    let bundle = compiled.runtime_bundle()?;
     let builder = TxBuilder::from_bundle(&bundle)?;
 
     let controller_value = 4_000;
@@ -85,6 +82,7 @@ fn main() -> PlaygroundResult<()> {
     println!("built Controller::mint + Badge::apply co-spend");
     println!("inputs: {}", tx.inputs.len());
     println!("outputs: {}", tx.outputs.len());
-    println!("artifacts: build/multiapp_badge/{{controller,asset}}/artifact.json");
+    println!("controller artifact: build/multiapp_badge/controller/artifact.json");
+    println!("asset artifact: build/multiapp_badge/controller/apps/BadgeAsset/artifact.json");
     Ok(())
 }

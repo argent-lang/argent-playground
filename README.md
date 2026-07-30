@@ -1,6 +1,6 @@
 # Argent playground
 
-Small Rust playground for using [Argent](https://github.com/michaelsutton/argent)
+Small Rust playground for using [Argent](https://github.com/argent-lang/argent)
 as a client app would.
 
 Expected checkout layout:
@@ -41,7 +41,7 @@ src/bin/dynamic_actor_choice.rs
 
 src/bin/multiapp_badge.rs
   file-backed Controller/Badge `.ag` apps under `ag/multiapp_badge`
-  builds `build/multiapp_badge`
+  compiles the Badge dependency once and builds `build/multiapp_badge/controller`
   genesis-launches both covenants and executes an observed co-spend
 
 src/bin/open_icc_agent.rs

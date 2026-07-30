@@ -5,36 +5,37 @@ state ControllerState {
 }
 
 actor Controller owns ControllerState {
-    entry mint(asset_id: covid, amount: int)
+    entry mint(cov_id asset_id, int amount)
     observes asset by asset_id {
         inputs {
-            badge: Badge;
+            badge: BadgeAsset::Badge,
         }
 
         outputs {
-            badge: Badge;
+            badge: BadgeAsset::Badge,
         }
     }
     emits {
-        controller: Controller;
+        controller: Controller,
     } {
         BadgeState prev_badge = asset.inputs.badge.state;
-        require(prev_badge.controller_id == self.covenant_id);
+        require(prev_badge.controller_id == self.cov_id);
         require(amount > 0);
 
         BadgeState next_badge = {
-            controller_id: self.covenant_id,
+            controller_id: self.cov_id,
             balance: prev_badge.balance + amount,
         };
 
         require asset.outputs become {
-            badge <- Badge(next_badge);
+            badge <- BadgeAsset::Badge(next_badge),
         };
 
         ControllerState next_controller = {
             minted: minted + amount,
         };
 
+        unrestricted(controller.value);
         become controller <- Controller(next_controller);
     }
 }

@@ -11,12 +11,13 @@ state CounterState {
 }
 
 actor Counter owns CounterState {
-    entry bump(delta: int) emits one Counter {
+    entry bump(int delta) emits next: Counter {
         CounterState next = {
             count: count + delta,
         };
 
-        become Counter(next);
+        unrestricted(next.value);
+        become next <- Counter(next);
     }
 }
 

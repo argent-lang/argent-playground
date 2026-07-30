@@ -15,13 +15,13 @@ state MintableTokenState expands AssetCapsule {
 // route-template context even though the DEX only uses MintableToken::transfer.
 actor Minter owns MintableTokenState {
     entry mint(
-        recipient: byte[32],
-        recipient_kind: byte,
-        mint_amount: int,
-        minter_sig: sig
+        byte[32] recipient,
+        byte recipient_kind,
+        int mint_amount,
+        sig minter_sig
     ) emits {
-        minter: Minter;
-        token: MintableToken;
+        minter: Minter,
+        token: MintableToken,
     } {
         require(owner_kind == OWNER_KEY);
         require(checkSig(minter_sig, owner));
@@ -50,23 +50,25 @@ actor Minter owns MintableTokenState {
             amount: mint_amount,
         };
 
+        unrestricted(minter.value);
+        unrestricted(token.value);
         become {
-            minter <- Minter(next_minter);
-            token <- MintableToken(next_token);
+            minter <- Minter(next_minter),
+            token <- MintableToken(next_token),
         };
     }
 }
 
 actor MintableToken owns MintableTokenState {
     entry transfer(
-        next_owner: byte[32],
-        next_owner_kind: byte,
-        owner_sig: sig
-    ) emits one MintableToken {
+        byte[32] next_owner,
+        byte next_owner_kind,
+        sig owner_sig
+    ) emits next: MintableToken {
         if (owner_kind == OWNER_KEY) {
             require(checkSig(owner_sig, owner));
         } else if (owner_kind == OWNER_COVID) {
-            require(covid(owner).co_spent());
+            require(cov_id(owner).co_spent());
         } else {
             require(false);
         }
@@ -84,7 +86,8 @@ actor MintableToken owns MintableTokenState {
             amount: amount,
         };
 
-        become MintableToken(next_token);
+        unrestricted(next.value);
+        become next <- MintableToken(next_token);
     }
 }
 
