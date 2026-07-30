@@ -1,63 +1,268 @@
 import "./const.ag";
 
-fn label_is_valid(label: byte[63], label_len: int) -> bool {
-    require(label_len > 0 && label_len <= NAME_BYTES);
+fn label_is_valid(byte[] label) -> bool {
+    require(label.length > 0 && label.length <= NAME_BYTES);
     // ASCII-indexed membership table for '-', '0'..'9', and 'a'..'z'.
     byte[123] valid_characters = 0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000010101010101010101010000000000000000000000000000000000000000000000000000000000000000000000000000000101010101010101010101010101010101010101010101010101;
 
-    // bytes after label_len are deliberately ignored, len is commited to the key
-    for (i, 0, NAME_BYTES, NAME_BYTES) {
-        if (i < label_len) {
-            int character = OpBin2Num(label.slice(i, i + 1));
-            require(byte[1](valid_characters.slice(character, character + 1)) != 0x00);
-        }
+    for (i, 0, label.length, NAME_BYTES) {
+        int character = OpBin2Num(label.slice(i, i + 1));
+        require(byte[1](valid_characters.slice(character, character + 1)) != 0x00);
     }
 
     return(
         // not starting or ending with hyphen
         byte[1](label.slice(0, 1)) != 0x2d
-        && byte[1](label.slice(label_len - 1, label_len)) != 0x2d
+        && byte[1](label.slice(label.length - 1, label.length)) != 0x2d
     );
 }
 
-// registry_covenant_id || label_len || label[0; label_len]
-fn name_key(registry_id: byte[32], label: byte[63], label_len: int) -> byte[32] {
-    return(blake3WithKey(registry_id + bytes(label_len, 8) + label.slice(0, label_len), NAME_KEY_DOMAIN));
+// domain-separated leaf commitment and path:
+// registry_covenant_id || label_len || label
+fn name_key(byte[32] registry_id, byte[] label) -> byte[32] {
+    return(blake3WithKey(registry_id + bytes(label.length, 8) + label, SMT_LEAF_DOMAIN));
 }
 
-fn inserted_root(old_root: byte[32], key: byte[32]) -> byte[32] {
-    byte[32] zero = 0x0000000000000000000000000000000000000000000000000000000000000000;
+// verifies insertion within the fast hash budget
+fn fast_inserted_root(byte[32] registry_id, byte[32] old_root, byte[32] key, byte[] proof, byte[] witness_label) -> byte[32] {
+    // proof layout: leaf to root
+    // leaf_key (32) || divergence_depth_u8 (1) || lower_count_u8 (1)
+    // || (branch_depth_u8 (1) || side_offset_u8 (1) || sibling (32))*
+    // witness_label is the preimage that authenticates the header's existing leaf_key
+    // offsets divisible by 32 are checked below; slicing 64 bytes from 96 leaves only 0 or 32
+    // empty proof, or a 34-byte header followed by 34-byte branch records
+    require(proof.length % 34 == 0);
+    // Empty proofs have no existing leaf, but still require a valid placeholder.
+    require(label_is_valid(witness_label));
 
-    // zero is the empty leaf. empty parents are their ordinary node hashes,
-    byte[32] old_current = zero;
-    byte[32] new_current = blake3WithKey(key, SMT_LEAF_DOMAIN);
-    int start = 0;
+    // empty tree root
+    byte[32] old_current = 0xaf1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262;
+    byte[32] new_current = key;
+    if (proof.length > 0) {
+        // proof header
+        byte[32] leaf_key = byte[32](proof.slice(0, 32));
+        require(leaf_key == name_key(registry_id, witness_label));
+        int divergence_depth = OpBin2Num(proof.slice(32, 33) + 0x00);
+        int lower_count = OpBin2Num(proof.slice(33, 34) + 0x00);
+        int proof_branch_count = (proof.length - 34) / 34;
+        int ancestor_count = proof_branch_count - lower_count;
 
-    // siblings arrive leaf-to-root. reversing the key bytes off chain lets the
-    // script consume bytes forward and bits low-to-high without computing a
-    // depth.
-    for (key_index, 0, SMT_DEPTH / 8, SMT_DEPTH / 8) {
-        int key_byte = OpBin2Num(key.slice(key_index, key_index + 1) + 0x00);
-        for (bit, 0, 7, 7) {
-            byte[32] sibling = byte[32](OpTxPayloadSubstr(start, start + 32));
+        // the leaf label authenticates the old leaf with one hash, lower branches
+        // rebuild only the old path, the divergence costs one hash, and every
+        // ancestor rebuilds both the old and new paths
+        require(
+            ancestor_count >= 0
+            && lower_count + 2 + ancestor_count * 2 <= FAST_INSERT_HASH_BUDGET
+        );
 
-            // Sliding across current || sibling || current swaps the pair
-            // without duplicating both hash branches in the unrolled script.
-            int side_offset = (key_byte % 2) * 32;
-            old_current = blake3WithKey((old_current + sibling + old_current).slice(side_offset, side_offset + 64), SMT_NODE_DOMAIN);
-            new_current = blake3WithKey((new_current + sibling + new_current).slice(side_offset, side_offset + 64), SMT_NODE_DOMAIN);
-            key_byte = key_byte / 2;
-            start = start + 32;
+        // first differing bit
+        int divergence_byte_index = divergence_depth / 8;
+        // powers of two for byte bit positions, ordered from most to least significant
+        // selecting the divergence bit's value gives the divisor for removing its suffix
+        byte[8] bit_divisors = 0x8040201008040201;
+        int divergence_divisor = OpBin2Num(byte[](bit_divisors[divergence_depth % 8]) + 0x00);
+        int key_divergence_byte = OpBin2Num(byte[](key[divergence_byte_index]) + 0x00);
+        int leaf_divergence_byte = OpBin2Num(byte[](leaf_key[divergence_byte_index]) + 0x00);
+
+        // common prefix with provided leaf
+        require(key.slice(0, divergence_byte_index) == leaf_key.slice(0, divergence_byte_index));
+
+        // the bit at divergence_depth is different
+        //
+        // integer division by this power-of-two divisor removes the suffix bits.
+        // multiplying the divisor by 2 removes one more bit: the divergence bit.
+        // the equation requires a shared prefix and opposite divergence bits.
+        require(
+            key_divergence_byte / divergence_divisor
+            + leaf_divergence_byte / divergence_divisor
+            == key_divergence_byte / (divergence_divisor * 2) * 4 + 1
+        );
+
+        // at this point divergence_depth is exactly the first differing bit between key and leaf_key
+
+        // reconstruct the existing subtree below divergence
+        old_current = leaf_key;
+        int proof_branch_start = 34;
+        int previous_branch_depth = SMT_DEPTH;
+
+        // lower_count must cover exactly the leading lower-branch records
+        for (proof_branch, 0, lower_count, FAST_INSERT_MAX_LOWER_BRANCHES) {
+            int branch_depth = OpBin2Num(proof.slice(proof_branch_start, proof_branch_start + 1) + 0x00);
+            int old_side_offset = OpBin2Num(proof.slice(proof_branch_start + 1, proof_branch_start + 2));
+            byte[32] sibling = byte[32](proof.slice(proof_branch_start + 2, proof_branch_start + 34));
+            require(
+                // is lower depth
+                branch_depth > divergence_depth
+                // is leaf to root
+                && branch_depth < previous_branch_depth
+                // optimize == 0 || 32
+                && old_side_offset % 32 == 0
+            );
+
+            old_current = blake3WithKey(
+                bytes(branch_depth, 2)
+                + (old_current + sibling + old_current).slice(old_side_offset, old_side_offset + 64),
+                SMT_NODE_DOMAIN
+            );
+            previous_branch_depth = branch_depth;
+            proof_branch_start = proof_branch_start + 34;
         }
 
-        // not beautiful to move out of the loop, but still saves 80 bytes
-        byte[32] sibling = byte[32](OpTxPayloadSubstr(start, start + 32));
-        int side_offset = (key_byte % 2) * 32;
-        old_current = blake3WithKey((old_current + sibling + old_current).slice(side_offset, side_offset + 64), SMT_NODE_DOMAIN);
-        new_current = blake3WithKey((new_current + sibling + new_current).slice(side_offset, side_offset + 64), SMT_NODE_DOMAIN);
-        start = start + 32;
+        // insert above the reconstructed lower subtree
+        // isolate the divergence bit (0 = left, 1 = right) and convert it to a byte offset:
+        // 0 selects key|old_current and 32 selects old_current|key
+        int divergence_side_offset = ((key_divergence_byte / divergence_divisor) % 2) * 32;
+        new_current = blake3WithKey(
+            bytes(divergence_depth, 2)
+            //  offset:  0           32                  64          96
+            //           |--- key ---|--- old_current ---|--- key ---|
+            + (key + old_current + key).slice(divergence_side_offset, divergence_side_offset + 64),
+            SMT_NODE_DOMAIN
+        );
+
+        // advance the old and new paths together through every remaining ancestor
+        for (proof_branch, 0, ancestor_count, FAST_INSERT_MAX_ANCESTOR_BRANCHES) {
+            int branch_depth = OpBin2Num(proof.slice(proof_branch_start, proof_branch_start + 1) + 0x00);
+            int side_offset = OpBin2Num(proof.slice(proof_branch_start + 1, proof_branch_start + 2));
+            byte[32] sibling = byte[32](proof.slice(proof_branch_start + 2, proof_branch_start + 34));
+            require(
+                // is lower branch
+                branch_depth < divergence_depth
+                // is leaf to root
+                && branch_depth < previous_branch_depth
+                // optimize = 0 || 32
+                && side_offset % 32 == 0
+            );
+
+            old_current = blake3WithKey(
+                bytes(branch_depth, 2)
+                + (old_current + sibling + old_current).slice(side_offset, side_offset + 64),
+                SMT_NODE_DOMAIN
+            );
+
+            new_current = blake3WithKey(
+                bytes(branch_depth, 2)
+                + (new_current + sibling + new_current).slice(side_offset, side_offset + 64),
+                SMT_NODE_DOMAIN
+            );
+
+            previous_branch_depth = branch_depth;
+            proof_branch_start = proof_branch_start + 34;
+        }
     }
 
+    // verify old root
+    require(old_current == old_root);
+    return(new_current);
+}
+
+// verifies insertion for any valid path
+fn slow_inserted_root(byte[32] registry_id, byte[32] old_root, byte[32] key, byte[] proof, byte[] witness_label) -> byte[32] {
+    // proof layout: leaf to root
+    // leaf_key (32) || divergence_depth_u8 (1) || lower_count_u8 (1)
+    // || (branch_depth_u8 (1) || side_offset_u8 (1) || sibling (32))*
+    // witness_label is the preimage that authenticates the header's existing leaf_key
+    // offsets divisible by 32 are checked below; slicing 64 bytes from 96 leaves only 0 or 32
+    // up to 255 branch records
+    require(
+        proof.length % 34 == 0
+        && proof.length <= 8704
+    );
+    // Empty proofs have no existing leaf, but still require a valid placeholder.
+    require(label_is_valid(witness_label));
+
+    // empty tree root
+    byte[32] old_current = 0xaf1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262;
+    byte[32] new_current = key;
+    if (proof.length > 0) {
+        // proof header
+        byte[32] leaf_key = byte[32](proof.slice(0, 32));
+        require(leaf_key == name_key(registry_id, witness_label));
+        int divergence_depth = OpBin2Num(proof.slice(32, 33) + 0x00);
+        int proof_branch_count = (proof.length - 34) / 34;
+
+        // first differing bit
+        int divergence_byte_index = divergence_depth / 8;
+        // powers of two for byte bit positions, ordered from most to least significant.
+        // selecting the divergence bit's value gives the divisor for removing its suffix.
+        byte[8] bit_divisors = 0x8040201008040201;
+        int divergence_divisor = OpBin2Num(byte[](bit_divisors[divergence_depth % 8]) + 0x00);
+        int key_divergence_byte = OpBin2Num(byte[](key[divergence_byte_index]) + 0x00);
+        int leaf_divergence_byte = OpBin2Num(byte[](leaf_key[divergence_byte_index]) + 0x00);
+
+        // common prefix with provided leaf
+        require(key.slice(0, divergence_byte_index) == leaf_key.slice(0, divergence_byte_index));
+
+        // the bit at divergence_depth is different
+        //
+        // integer division by this power-of-two divisor removes the suffix bits.
+        // multiplying the divisor by 2 removes one more bit: the divergence bit.
+        // the equation requires a shared prefix and opposite divergence bits.
+        require(
+            key_divergence_byte / divergence_divisor
+            + leaf_divergence_byte / divergence_divisor
+            == key_divergence_byte / (divergence_divisor * 2) * 4 + 1
+        );
+
+        // at that point we proved that divergence_depth is exactly the first differing bit between key and leaf_key
+
+        // initial divergence
+        old_current = leaf_key;
+        // isolate the divergence bit (0 = left, 1 = right) and convert it to a byte offset:
+        // 0 selects key|old_current and 32 selects old_current|key
+        int divergence_side_offset = ((key_divergence_byte / divergence_divisor) % 2) * 32;
+        new_current = blake3WithKey(
+            bytes(divergence_depth, 2)
+            //  offset:  0           32                  64          96
+            //           |--- key ---|--- old_current ---|--- key ---|
+            + (key + old_current + key).slice(divergence_side_offset, divergence_side_offset + 64),
+            SMT_NODE_DOMAIN
+        );
+        int proof_branch_start = 34;
+        int previous_branch_depth = SMT_DEPTH;
+
+        // all proof branches
+        for (proof_branch, 0, proof_branch_count, SLOW_INSERT_MAX_BRANCHES) {
+            int branch_depth = OpBin2Num(proof.slice(proof_branch_start, proof_branch_start + 1) + 0x00);
+            // valide side offset is 0 or 32, no need to happen 0x00 to remove the sign bit
+            int side_offset = OpBin2Num(proof.slice(proof_branch_start + 1, proof_branch_start + 2));
+            byte[32] sibling = byte[32](proof.slice(proof_branch_start + 2, proof_branch_start + 34));
+
+            // branch can be ancestor ( branch_depth < divergence_depth ) or lower branch ( branch_depth > divergence_depth ) but not the differing depth
+            require(
+                branch_depth != divergence_depth
+                && branch_depth < previous_branch_depth
+                // optimize = 0 || 32
+                && side_offset % 32 == 0
+            );
+
+            old_current = blake3WithKey(
+                bytes(branch_depth, 2)
+                + (old_current + sibling + old_current).slice(side_offset, side_offset + 64),
+                SMT_NODE_DOMAIN
+            );
+
+            // lower branch update
+            byte[66] new_preimage = byte[66](
+                bytes(divergence_depth, 2)
+                + (key + old_current + key).slice(divergence_side_offset, divergence_side_offset + 64)
+            );
+
+            // ancestor branch update
+            if (branch_depth < divergence_depth) {
+                new_preimage = byte[66](
+                    bytes(branch_depth, 2)
+                    + (new_current + sibling + new_current).slice(side_offset, side_offset + 64)
+                );
+            }
+            new_current = blake3WithKey(byte[](new_preimage), SMT_NODE_DOMAIN);
+
+            previous_branch_depth = branch_depth;
+            proof_branch_start = proof_branch_start + 34;
+        }
+    }
+
+    // verify old root
     require(old_current == old_root);
     return(new_current);
 }

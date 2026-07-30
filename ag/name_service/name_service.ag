@@ -1,9 +1,14 @@
 import "./const.ag";
 import "./smt.ag";
 import "./registry.ag";
+import "./registry-store.ag";
+import "./registry-fast.ag";
+import "./registry-slow.ag";
 import "./name.ag";
 
 app NameService {
-    actor Registry;
+    actor RegistryStore;
+    actor RegistryFast;
+    actor RegistrySlow;
     actor Name;
 }

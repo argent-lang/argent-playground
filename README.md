@@ -56,9 +56,9 @@ src/bin/dex_asset.rs
   exercises signed open-ICC co-spends and expanded asset capsule handles
 
 src/bin/name_service.rs
-  file-backed Registry and transferable Name app under `ag/name_service`
-  commits registered labels to a 128-level sparse Merkle tree
-  mints two names, rejects a duplicate and transfers a Name output
+  file-backed RegistryStore, fast/slow Registry, and transferable Name app
+  commits registered labels to a compact sparse Merkle set over 256-bit keys
+  exercises both client-selected insertion paths, duplicate rejection, and transfer
 
 build/
   generated artifacts and Silverscript output

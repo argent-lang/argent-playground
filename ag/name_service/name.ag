@@ -1,28 +1,28 @@
 state NameState {
     byte[32] name_key;
     byte[63] label;
-    int label_len;
     pubkey owner;
 }
 
 actor Name owns NameState {
-    entry transfer(next_owner: pubkey, owner_sig: sig) emits one Name {
+    entry transfer(pubkey next_owner, sig owner_sig) emits next: Name {
         require(checkSig(owner_sig, owner));
 
         NameState transferred = {
             name_key: name_key,
             label: label,
-            label_len: label_len,
             owner: next_owner,
         };
-        become Name(transferred);
+        unrestricted(next.value);
+        become next <- Name(transferred);
     }
 
     // useful to compose with this NFT from another app
     // e.g.: another covenant can require me to be the owner by co-spending it
-    entry continue(owner_sig: sig) emits one Name {
+    entry continue(sig owner_sig) emits next: Name {
         require(checkSig(owner_sig, owner));
 
-        become Name(self.state)
+        unrestricted(next.value);
+        become next <- Name(self.state);
     }
 }
