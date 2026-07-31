@@ -137,12 +137,7 @@ contract League(
         int gen__player_output_idx = OpAuthOutputIdx(this.activeInputIndex, 1);
 
         require(checkSig(owner_sig, owner_pk));
-        Gen__PlayerState next_player = {
-            // :: generated fields
-            gen__mux_template: gen__mux_template,
-            gen__player_template: gen__player_template,
-            gen__settle_template: gen__settle_template,
-            gen__mux_routes_digest: gen__mux_routes_digest,
+        PlayerState next_player = {
             // :: user declared fields
             owner: blake2b(owner_pk),
             player_id: invocation_uid(bytes("LeaguePlayerId")),
@@ -159,10 +154,26 @@ contract League(
             tx.outputs[gen__league_output_idx].scriptPubKey
                 == tx.inputs[this.activeInputIndex].scriptPubKey
         );
+        Gen__PlayerState gen__state_player_gen__player_state = {
+            // :: generated fields
+            gen__mux_template: gen__mux_template,
+            gen__player_template: gen__player_template,
+            gen__settle_template: gen__settle_template,
+            gen__mux_routes_digest: gen__mux_routes_digest,
+            // :: user declared fields
+            owner: next_player.owner,
+            player_id: next_player.player_id,
+            open_games: next_player.open_games,
+            rating: next_player.rating,
+            games: next_player.games,
+            wins: next_player.wins,
+            draws: next_player.draws,
+            losses: next_player.losses,
+        };
         // :: become Player
         validateOutputStateWithTemplate(
             gen__player_output_idx,
-            next_player,
+            gen__state_player_gen__player_state,
             gen__player_prefix,
             gen__player_suffix,
             gen__player_template

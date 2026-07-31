@@ -219,12 +219,7 @@ contract Settle(
         int black_rating = black_in.rating + ((32 * (black_actual - black_expected)) / 1000);
         require(white_in.open_games > 0);
         require(black_in.open_games > 0);
-        Gen__PlayerState next_white = {
-            // :: generated fields
-            gen__mux_template: gen__mux_template,
-            gen__player_template: gen__player_template,
-            gen__settle_template: gen__settle_template,
-            gen__mux_routes_digest: gen__mux_routes_digest,
+        PlayerState next_white = {
             // :: user declared fields
             owner: white_in.owner,
             player_id: white_in.player_id,
@@ -235,12 +230,7 @@ contract Settle(
             draws: white_draws,
             losses: white_losses,
         };
-        Gen__PlayerState next_black = {
-            // :: generated fields
-            gen__mux_template: gen__mux_template,
-            gen__player_template: gen__player_template,
-            gen__settle_template: gen__settle_template,
-            gen__mux_routes_digest: gen__mux_routes_digest,
+        PlayerState next_black = {
             // :: user declared fields
             owner: black_in.owner,
             player_id: black_in.player_id,
@@ -253,19 +243,51 @@ contract Settle(
         };
         require(tx.outputs[gen__white_out_output_idx].value == white_output_value);
         require(tx.outputs[gen__black_out_output_idx].value == black_output_value);
+        Gen__PlayerState gen__state_white_out_gen__player_state = {
+            // :: generated fields
+            gen__mux_template: gen__mux_template,
+            gen__player_template: gen__player_template,
+            gen__settle_template: gen__settle_template,
+            gen__mux_routes_digest: gen__mux_routes_digest,
+            // :: user declared fields
+            owner: next_white.owner,
+            player_id: next_white.player_id,
+            open_games: next_white.open_games,
+            rating: next_white.rating,
+            games: next_white.games,
+            wins: next_white.wins,
+            draws: next_white.draws,
+            losses: next_white.losses,
+        };
         // :: become Player
         validateOutputStateWithInputTemplate(
             gen__white_out_output_idx,
-            next_white,
+            gen__state_white_out_gen__player_state,
             gen__white_in_input_idx,
             gen__player_prefix_len,
             gen__player_suffix_len,
             gen__player_template
         );
+        Gen__PlayerState gen__state_black_out_gen__player_state = {
+            // :: generated fields
+            gen__mux_template: gen__mux_template,
+            gen__player_template: gen__player_template,
+            gen__settle_template: gen__settle_template,
+            gen__mux_routes_digest: gen__mux_routes_digest,
+            // :: user declared fields
+            owner: next_black.owner,
+            player_id: next_black.player_id,
+            open_games: next_black.open_games,
+            rating: next_black.rating,
+            games: next_black.games,
+            wins: next_black.wins,
+            draws: next_black.draws,
+            losses: next_black.losses,
+        };
         // :: become Player
         validateOutputStateWithInputTemplate(
             gen__black_out_output_idx,
-            next_black,
+            gen__state_black_out_gen__player_state,
             gen__white_in_input_idx,
             gen__player_prefix_len,
             gen__player_suffix_len,

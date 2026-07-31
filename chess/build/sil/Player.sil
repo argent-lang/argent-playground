@@ -224,12 +224,7 @@ contract Player(
             draws: other.draws,
             losses: other.losses,
         };
-        Gen__MuxState next_game = {
-            // :: generated fields
-            gen__player_template: gen__player_template,
-            gen__settle_template: gen__settle_template,
-            gen__mux_template: gen__mux_template,
-            gen__mux_routes: gen__mux_routes,
+        GameState next_game = {
             // :: user declared fields
             white_player: white_player,
             black_player: black_player,
@@ -249,10 +244,31 @@ contract Player(
         validateOutputState(gen__self_out_output_idx, next_self);
         // :: become Player
         validateOutputState(gen__other_out_output_idx, next_other);
+        Gen__MuxState gen__state_game_gen__mux_state = {
+            // :: generated fields
+            gen__player_template: gen__player_template,
+            gen__settle_template: gen__settle_template,
+            gen__mux_template: gen__mux_template,
+            gen__mux_routes: gen__mux_routes,
+            // :: user declared fields
+            white_player: next_game.white_player,
+            black_player: next_game.black_player,
+            board: next_game.board,
+            turn: next_game.turn,
+            status: next_game.status,
+            move_timeout: next_game.move_timeout,
+            castle_rights: next_game.castle_rights,
+            en_passant_idx: next_game.en_passant_idx,
+            pending_src_idx: next_game.pending_src_idx,
+            pending_dst_idx: next_game.pending_dst_idx,
+            pending_promo: next_game.pending_promo,
+            recent_castle: next_game.recent_castle,
+            draw_state: next_game.draw_state,
+        };
         // :: become Mux
         validateOutputStateWithTemplate(
             gen__game_output_idx,
-            next_game,
+            gen__state_game_gen__mux_state,
             gen__mux_prefix,
             gen__mux_suffix,
             gen__mux_template

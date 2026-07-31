@@ -278,22 +278,28 @@ contract Castle(
 
         require(status == LIVE);
         require(this.age >= move_timeout);
-        Gen__SettleState next_state = {
-            // :: generated fields
-            gen__mux_template: gen__mux_template,
-            gen__player_template: gen__player_template,
-            gen__settle_template: gen__settle_template,
-            gen__mux_routes_digest: blake2b(gen__mux_routes),
+        SettleState next_state = {
             // :: user declared fields
             white_player: white_player,
             black_player: black_player,
             status: timeout_status(turn, draw_state),
         };
         require(tx.outputs[gen__next_output_idx].value == tx.inputs[this.activeInputIndex].value);
+        Gen__SettleState gen__state_next_gen__settle_state = {
+            // :: generated fields
+            gen__mux_template: gen__mux_template,
+            gen__player_template: gen__player_template,
+            gen__settle_template: gen__settle_template,
+            gen__mux_routes_digest: blake2b(gen__mux_routes),
+            // :: user declared fields
+            white_player: next_state.white_player,
+            black_player: next_state.black_player,
+            status: next_state.status,
+        };
         // :: become Settle
         validateOutputStateWithTemplate(
             gen__next_output_idx,
-            next_state,
+            gen__state_next_gen__settle_state,
             gen__settle_prefix,
             gen__settle_suffix,
             gen__settle_template
