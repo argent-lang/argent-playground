@@ -169,17 +169,17 @@ contract Vert(
             dir = -1;
         }
         int distance = abs_int(dy);
-        int clear = 1;
+        bool clear = true;
         for (i, 0, 7, 7) {
             if (i < distance + -1) {
                 int scan_y = from_y + dir * (i + 1);
                 int scan_idx = scan_y * 8 + from_x;
                 if (signed(prev_board[scan_idx]) != 0) {
-                    clear = 0;
+                    clear = false;
                 }
             }
         }
-        require(clear == 1);
+        require(clear);
         int low_idx = from_idx;
         int high_idx = to_idx;
         byte first_slot = byte(0x00);
