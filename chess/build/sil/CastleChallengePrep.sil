@@ -207,12 +207,11 @@ contract CastleChallengePrep(
             vc = king_piece;
             vd = empty_piece;
         }
-        byte[] prev_dyn = byte[](prev_board);
-        byte[] prefix = prev_dyn.slice(0, a);
-        byte[] mid_ab = prev_dyn.slice(a + 1, b);
-        byte[] mid_bc = prev_dyn.slice(b + 1, c);
-        byte[] mid_cd = prev_dyn.slice(c + 1, d);
-        byte[] suffix = prev_dyn.slice(d + 1, 64);
+        byte[] prefix = prev_board.slice(0, a);
+        byte[] mid_ab = prev_board.slice(a + 1, b);
+        byte[] mid_bc = prev_board.slice(b + 1, c);
+        byte[] mid_cd = prev_board.slice(c + 1, d);
+        byte[] suffix = prev_board.slice(d + 1, 64);
         byte[64] proof_board = byte[64](
             prefix
                 + byte[1](va)

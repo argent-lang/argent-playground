@@ -257,7 +257,6 @@ contract Pawn(
         if (two_step) {
             next_en_passant_idx = from_idx + dir * 8;
         }
-        byte[] prev_dyn = byte[](prev_board);
         int a = from_idx;
         byte va = byte(0x00);
         int b = to_idx;
@@ -301,10 +300,10 @@ contract Pawn(
             z = b;
             vz = vb;
         }
-        byte[] prefix = prev_dyn.slice(0, x);
-        byte[] middle_xy = prev_dyn.slice(x + 1, y);
-        byte[] middle_yz = prev_dyn.slice(y + 1, z);
-        byte[] suffix = prev_dyn.slice(z + 1, 64);
+        byte[] prefix = prev_board.slice(0, x);
+        byte[] middle_xy = prev_board.slice(x + 1, y);
+        byte[] middle_yz = prev_board.slice(y + 1, z);
+        byte[] suffix = prev_board.slice(z + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](vx) + middle_xy + byte[1](vy) + middle_yz + byte[1](vz) + suffix);
         State next_state = State {
             // :: generated fields

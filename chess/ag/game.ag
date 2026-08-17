@@ -311,7 +311,6 @@ actor Pawn owns GameState {
             next_en_passant_idx = from_idx + dir * 8;
         }
 
-        byte[] prev_dyn = byte[](prev_board);
         int a = from_idx;
         byte va = byte(0x00);
         int b = to_idx;
@@ -358,10 +357,10 @@ actor Pawn owns GameState {
             vz = vb;
         }
 
-        byte[] prefix = prev_dyn.slice(0, x);
-        byte[] middle_xy = prev_dyn.slice(x + 1, y);
-        byte[] middle_yz = prev_dyn.slice(y + 1, z);
-        byte[] suffix = prev_dyn.slice(z + 1, 64);
+        byte[] prefix = prev_board.slice(0, x);
+        byte[] middle_xy = prev_board.slice(x + 1, y);
+        byte[] middle_yz = prev_board.slice(y + 1, z);
+        byte[] suffix = prev_board.slice(z + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](vx) + middle_xy + byte[1](vy) + middle_yz + byte[1](vz) + suffix);
 
         GameState next_state = {
@@ -449,10 +448,9 @@ actor Knight owns GameState {
             second_slot = byte(0x00);
         }
 
-        byte[] prev_dyn = byte[](prev_board);
-        byte[] prefix = prev_dyn.slice(0, low_idx);
-        byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
-        byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
+        byte[] prefix = prev_board.slice(0, low_idx);
+        byte[] middle = prev_board.slice(low_idx + 1, high_idx);
+        byte[] suffix = prev_board.slice(high_idx + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
         int next_status = status;
@@ -598,10 +596,9 @@ actor Vert owns GameState {
             second_slot = byte(0x00);
         }
 
-        byte[] prev_dyn = byte[](prev_board);
-        byte[] prefix = prev_dyn.slice(0, low_idx);
-        byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
-        byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
+        byte[] prefix = prev_board.slice(0, low_idx);
+        byte[] middle = prev_board.slice(low_idx + 1, high_idx);
+        byte[] suffix = prev_board.slice(high_idx + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
         int next_status = status;
@@ -770,10 +767,9 @@ actor Horiz owns GameState {
             second_slot = byte(0x00);
         }
 
-        byte[] prev_dyn = byte[](prev_board);
-        byte[] prefix = prev_dyn.slice(0, low_idx);
-        byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
-        byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
+        byte[] prefix = prev_board.slice(0, low_idx);
+        byte[] middle = prev_board.slice(low_idx + 1, high_idx);
+        byte[] suffix = prev_board.slice(high_idx + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
         int next_status = status;
@@ -948,10 +944,9 @@ actor Diag owns GameState {
             second_slot = byte(0x00);
         }
 
-        byte[] prev_dyn = byte[](prev_board);
-        byte[] prefix = prev_dyn.slice(0, low_idx);
-        byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
-        byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
+        byte[] prefix = prev_board.slice(0, low_idx);
+        byte[] middle = prev_board.slice(low_idx + 1, high_idx);
+        byte[] suffix = prev_board.slice(high_idx + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
         int next_status = status;
@@ -1082,10 +1077,9 @@ actor King owns GameState {
             second_slot = byte(0x00);
         }
 
-        byte[] prev_dyn = byte[](prev_board);
-        byte[] prefix = prev_dyn.slice(0, low_idx);
-        byte[] middle = prev_dyn.slice(low_idx + 1, high_idx);
-        byte[] suffix = prev_dyn.slice(high_idx + 1, 64);
+        byte[] prefix = prev_board.slice(0, low_idx);
+        byte[] middle = prev_board.slice(low_idx + 1, high_idx);
+        byte[] suffix = prev_board.slice(high_idx + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
         int next_status = status;
@@ -1415,12 +1409,11 @@ actor CastleChallengePrep owns GameState {
             vd = empty_piece;
         }
 
-        byte[] prev_dyn = byte[](prev_board);
-        byte[] prefix = prev_dyn.slice(0, a);
-        byte[] mid_ab = prev_dyn.slice(a + 1, b);
-        byte[] mid_bc = prev_dyn.slice(b + 1, c);
-        byte[] mid_cd = prev_dyn.slice(c + 1, d);
-        byte[] suffix = prev_dyn.slice(d + 1, 64);
+        byte[] prefix = prev_board.slice(0, a);
+        byte[] mid_ab = prev_board.slice(a + 1, b);
+        byte[] mid_bc = prev_board.slice(b + 1, c);
+        byte[] mid_cd = prev_board.slice(c + 1, d);
+        byte[] suffix = prev_board.slice(d + 1, 64);
         byte[64] proof_board = byte[64](
             prefix
                 + byte[1](va)
