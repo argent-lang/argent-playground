@@ -75,35 +75,35 @@ contract Mux(
     }
 
     // :: shared helper functions
-    function player_ref(byte[32] owner, byte[32] player_id) : byte[32] {
-        return blake2b(owner + player_id);
+    function player_ref(byte[32] owner_, byte[32] player_id_) : byte[32] {
+        return blake2b(byte[](owner_ + player_id_));
     }
-    function abs_int(int value) : int {
-        int result = value;
-        if (value < 0) {
-            result = 0 - value;
+    function abs_int(int value_) : int {
+        int result_ = value_;
+        if (value_ < 0) {
+            result_ = 0 - value_;
         }
-        return result;
+        return result_;
     }
-    function timeout_status(int turn, int draw_state) : int {
-        int status = WWIN;
-        if (turn == WHITE) {
-            status = BWIN;
+    function timeout_status(int turn_, int draw_state_) : int {
+        int status_ = WWIN;
+        if (turn_ == WHITE) {
+            status_ = BWIN;
         }
-        if (draw_state == CLAIMED) {
-            status = DRAW;
+        if (draw_state_ == CLAIMED) {
+            status_ = DRAW;
         }
-        return status;
+        return status_;
     }
-    function invocation_uid(byte[] domain) : byte[32] {
-        require(domain.length > 0);
+    function invocation_uid(byte[] domain_) : byte[32] {
+        require(domain_.length > 0);
 
-        byte[36] outpoint = byte[36](
+        byte[36] outpoint_ = byte[36](
             OpOutpointTxId(this.activeInputIndex)
-                + byte[4](OpOutpointIndex(this.activeInputIndex))
+                + (OpOutpointIndex(this.activeInputIndex) as byte[4])
         );
 
-        return blake2bWithKey(outpoint, domain);
+        return blake2bWithKey(byte[](outpoint_), domain_);
     }
 
     // :: route templates
@@ -129,7 +129,7 @@ contract Mux(
 
     // :: entrypoints
     // :: leader entry (1:N)
-    entrypoint function route(
+    entry route(
         int target,
         int from_x,
         int from_y,
@@ -148,13 +148,13 @@ contract Mux(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Move
 
         require(status == LIVE);
-        byte[32] player_ref = player_ref(blake2b(pk), player_id);
+        byte[32] player_ref = player_ref(blake2b(byte[](pk)), player_id);
         if (turn == WHITE) {
             require(player_ref == white_player);
         } else {
             require(player_ref == black_player);
         }
-        require(checkSig(s, pk));
+        require(checkSig(s, pubkey(pk)));
         require(termination_action == CLEAR || termination_action == OFFER);
         int next_draw_state = draw_state;
         require(from_x >= 0 && from_x < 8 && from_y >= 0 && from_y < 8);
@@ -173,7 +173,7 @@ contract Mux(
             require(recent_castle != CLEAR);
             next_recent_castle = recent_castle;
         }
-        State next_state = {
+        State next_state = State {
             // :: generated fields
             gen__player_template: gen__player_template,
             gen__settle_template: gen__settle_template,
@@ -212,19 +212,19 @@ contract Mux(
     }
 
     // :: leader entry (1:N)
-    entrypoint function terminate(int termination_action, sig s, pubkey pk, byte[32] player_id) {
+    entry terminate(int termination_action, sig s, pubkey pk, byte[32] player_id) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Mux
 
         require(status == LIVE);
-        byte[32] player_ref = player_ref(blake2b(pk), player_id);
+        byte[32] player_ref = player_ref(blake2b(byte[](pk)), player_id);
         if (turn == WHITE) {
             require(player_ref == white_player);
         } else {
             require(player_ref == black_player);
         }
-        require(checkSig(s, pk));
+        require(checkSig(s, pubkey(pk)));
         int next_status = status;
         int next_turn = turn;
         int next_draw_state = draw_state;
@@ -242,7 +242,7 @@ contract Mux(
             next_status = DRAW;
             next_draw_state = NORMAL;
         }
-        State next_state = {
+        State next_state = State {
             // :: generated fields
             gen__player_template: gen__player_template,
             gen__settle_template: gen__settle_template,
@@ -269,7 +269,7 @@ contract Mux(
     }
 
     // :: leader entry (1:N)
-    entrypoint function timeout(
+    entry timeout(
         sig s,
         pubkey pk,
         byte[32] player_id,
@@ -281,27 +281,27 @@ contract Mux(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status == LIVE);
-        byte[32] player_ref = player_ref(blake2b(pk), player_id);
+        byte[32] player_ref = player_ref(blake2b(byte[](pk)), player_id);
         if (turn == WHITE) {
             require(player_ref == black_player);
         } else {
             require(player_ref == white_player);
         }
-        require(checkSig(s, pk));
+        require(checkSig(s, pubkey(pk)));
         require(this.age >= move_timeout);
-        SettleState next_state = {
+        SettleState next_state = SettleState {
             // :: user declared fields
             white_player: white_player,
             black_player: black_player,
             status: timeout_status(turn, draw_state),
         };
         require(tx.outputs[gen__next_output_idx].value == tx.inputs[this.activeInputIndex].value);
-        Gen__SettleState gen__state_next_gen__settle_state = {
+        Gen__SettleState gen__state_next_gen__settle_state = Gen__SettleState {
             // :: generated fields
             gen__mux_template: gen__mux_template,
             gen__player_template: gen__player_template,
             gen__settle_template: gen__settle_template,
-            gen__mux_routes_digest: blake2b(gen__mux_routes),
+            gen__mux_routes_digest: blake2b(byte[](gen__mux_routes)),
             // :: user declared fields
             white_player: next_state.white_player,
             black_player: next_state.black_player,
@@ -318,25 +318,25 @@ contract Mux(
     }
 
     // :: leader entry (1:N)
-    entrypoint function settle(byte[] gen__settle_prefix, byte[] gen__settle_suffix) {
+    entry settle(byte[] gen__settle_prefix, byte[] gen__settle_suffix) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status != LIVE);
-        SettleState next_state = {
+        SettleState next_state = SettleState {
             // :: user declared fields
             white_player: white_player,
             black_player: black_player,
             status: status,
         };
         require(tx.outputs[gen__next_output_idx].value == tx.inputs[this.activeInputIndex].value);
-        Gen__SettleState gen__state_next_gen__settle_state = {
+        Gen__SettleState gen__state_next_gen__settle_state = Gen__SettleState {
             // :: generated fields
             gen__mux_template: gen__mux_template,
             gen__player_template: gen__player_template,
             gen__settle_template: gen__settle_template,
-            gen__mux_routes_digest: blake2b(gen__mux_routes),
+            gen__mux_routes_digest: blake2b(byte[](gen__mux_routes)),
             // :: user declared fields
             white_player: next_state.white_player,
             black_player: next_state.black_player,

@@ -29,13 +29,13 @@ actor Mux owns GameState {
     ) emits next: Move {
         require(status == LIVE);
 
-        byte[32] player_ref = player_ref(blake2b(pk), player_id);
+        byte[32] player_ref = player_ref(blake2b(byte[](pk)), player_id);
         if (turn == WHITE) {
             require(player_ref == white_player);
         } else {
             require(player_ref == black_player);
         }
-        require(checkSig(s, pk));
+        require(checkSig(s, pubkey(pk)));
 
         require(termination_action == CLEAR || termination_action == OFFER);
 
@@ -87,13 +87,13 @@ actor Mux owns GameState {
     ) emits next: Mux {
         require(status == LIVE);
 
-        byte[32] player_ref = player_ref(blake2b(pk), player_id);
+        byte[32] player_ref = player_ref(blake2b(byte[](pk)), player_id);
         if (turn == WHITE) {
             require(player_ref == white_player);
         } else {
             require(player_ref == black_player);
         }
-        require(checkSig(s, pk));
+        require(checkSig(s, pubkey(pk)));
 
         int next_status = status;
         int next_turn = turn;
@@ -140,13 +140,13 @@ actor Mux owns GameState {
     ) emits next: Settle {
         require(status == LIVE);
 
-        byte[32] player_ref = player_ref(blake2b(pk), player_id);
+        byte[32] player_ref = player_ref(blake2b(byte[](pk)), player_id);
         if (turn == WHITE) {
             require(player_ref == black_player);
         } else {
             require(player_ref == white_player);
         }
-        require(checkSig(s, pk));
+        require(checkSig(s, pubkey(pk)));
         require(this.age >= move_timeout);
 
         SettleState next_state = {
@@ -176,9 +176,9 @@ actor Pawn owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
 
-        int from_idx = OpBin2Num(pending_src_idx);
-        int to_idx = OpBin2Num(pending_dst_idx);
-        int promo_piece = OpBin2Num(pending_promo);
+        int from_idx = pending_src_idx;
+        int to_idx = pending_dst_idx;
+        int promo_piece = pending_promo;
         require(turn == WHITE || turn == BLACK);
 
         bool is_draw_claim_mode = draw_state < NORMAL;
@@ -190,8 +190,8 @@ actor Pawn owns GameState {
 
         byte[64] prev_board = board;
         byte moving_piece = prev_board[from_idx];
-        int moving_num = OpBin2Num(moving_piece);
-        int target_num = OpBin2Num(prev_board[to_idx]);
+        int moving_num = OpBin2Num(byte[](moving_piece));
+        int target_num = OpBin2Num(byte[](prev_board[to_idx]));
         require(moving_num == 1 || moving_num == 9);
 
         bool moving_is_white = moving_num == 1;
@@ -207,7 +207,7 @@ actor Pawn owns GameState {
             require(!target_is_black);
         }
 
-        int ep_idx = OpBin2Num(en_passant_idx);
+        int ep_idx = en_passant_idx;
         int from_y = from_idx / 8;
         int from_x = from_idx % 8;
         int to_y = to_idx / 8;
@@ -236,14 +236,14 @@ actor Pawn owns GameState {
         bool two_step = false;
         if (from_y == start_rank && same_file && two_forward && target_is_empty) {
             int mid_idx = (from_y + dir) * 8 + from_x;
-            two_step = OpBin2Num(prev_board[mid_idx]) == 0;
+            two_step = OpBin2Num(byte[](prev_board[mid_idx])) == 0;
         }
 
         bool capture = side_adjacent && one_forward && target_is_enemy;
         bool en_passant = false;
         if (side_adjacent && one_forward && target_is_empty && to_idx == ep_idx) {
             en_passant_capture_idx = to_idx - dir * 8;
-            en_passant = OpBin2Num(prev_board[en_passant_capture_idx]) == ep_captured_piece;
+            en_passant = OpBin2Num(byte[](prev_board[en_passant_capture_idx])) == ep_captured_piece;
         }
         require(one_step || two_step || capture || en_passant);
 
@@ -257,7 +257,7 @@ actor Pawn owns GameState {
             if (moving_is_black) {
                 arrived_num = arrived_num + 8;
             }
-            arrived_piece = byte(arrived_num);
+            arrived_piece = arrived_num as byte;
         } else {
             require(promo_piece == 0);
         }
@@ -401,8 +401,8 @@ actor Knight owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
 
-        int from_idx = OpBin2Num(pending_src_idx);
-        int to_idx = OpBin2Num(pending_dst_idx);
+        int from_idx = pending_src_idx;
+        int to_idx = pending_dst_idx;
         int from_y = from_idx / 8;
         int from_x = from_idx % 8;
         int to_y = to_idx / 8;
@@ -418,8 +418,8 @@ actor Knight owns GameState {
 
         byte[64] prev_board = board;
         byte moving_piece = prev_board[from_idx];
-        int moving_num = OpBin2Num(moving_piece);
-        int target_num = OpBin2Num(prev_board[to_idx]);
+        int moving_num = OpBin2Num(byte[](moving_piece));
+        int target_num = OpBin2Num(byte[](prev_board[to_idx]));
         require(moving_num == 2 || moving_num == 10);
 
         bool target_is_white = target_num >= 1 && target_num <= 6;
@@ -536,8 +536,8 @@ actor Vert owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
 
-        int from_idx = OpBin2Num(pending_src_idx);
-        int to_idx = OpBin2Num(pending_dst_idx);
+        int from_idx = pending_src_idx;
+        int to_idx = pending_dst_idx;
         require(turn == WHITE || turn == BLACK);
 
         bool is_draw_claim_mode = draw_state < NORMAL;
@@ -549,8 +549,8 @@ actor Vert owns GameState {
 
         byte[64] prev_board = board;
         byte moving_piece = prev_board[from_idx];
-        int moving_num = OpBin2Num(moving_piece);
-        int target_num = OpBin2Num(prev_board[to_idx]);
+        int moving_num = OpBin2Num(byte[](moving_piece));
+        int target_num = OpBin2Num(byte[](prev_board[to_idx]));
         require(moving_num == 4 || moving_num == 5 || moving_num == 12 || moving_num == 13);
 
         bool target_is_white = target_num >= 1 && target_num <= 6;
@@ -580,7 +580,7 @@ actor Vert owns GameState {
             if (i < distance + -1) {
                 int scan_y = from_y + dir * (i + 1);
                 int scan_idx = scan_y * 8 + from_x;
-                if (OpBin2Num(prev_board[scan_idx]) != 0) {
+                if (OpBin2Num(byte[](prev_board[scan_idx])) != 0) {
                     clear = 0;
                 }
             }
@@ -708,8 +708,8 @@ actor Horiz owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
 
-        int from_idx = OpBin2Num(pending_src_idx);
-        int to_idx = OpBin2Num(pending_dst_idx);
+        int from_idx = pending_src_idx;
+        int to_idx = pending_dst_idx;
         require(turn == WHITE || turn == BLACK);
 
         bool is_draw_claim_mode = draw_state < NORMAL;
@@ -721,8 +721,8 @@ actor Horiz owns GameState {
 
         byte[64] prev_board = board;
         byte moving_piece = prev_board[from_idx];
-        int moving_num = OpBin2Num(moving_piece);
-        int target_num = OpBin2Num(prev_board[to_idx]);
+        int moving_num = OpBin2Num(byte[](moving_piece));
+        int target_num = OpBin2Num(byte[](prev_board[to_idx]));
         require(moving_num == 4 || moving_num == 5 || moving_num == 12 || moving_num == 13);
 
         bool target_is_white = target_num >= 1 && target_num <= 6;
@@ -752,7 +752,7 @@ actor Horiz owns GameState {
             if (i < distance + -1) {
                 int scan_x = from_x + dir * (i + 1);
                 int scan_idx = from_y * 8 + scan_x;
-                if (OpBin2Num(prev_board[scan_idx]) != 0) {
+                if (OpBin2Num(byte[](prev_board[scan_idx])) != 0) {
                     clear = 0;
                 }
             }
@@ -879,8 +879,8 @@ actor Horiz owns GameState {
 actor Diag owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
-        int from_idx = OpBin2Num(pending_src_idx);
-        int to_idx = OpBin2Num(pending_dst_idx);
+        int from_idx = pending_src_idx;
+        int to_idx = pending_dst_idx;
         require(turn == WHITE || turn == BLACK);
 
         bool is_draw_claim_mode = draw_state < NORMAL;
@@ -892,8 +892,8 @@ actor Diag owns GameState {
 
         byte[64] prev_board = board;
         byte moving_piece = prev_board[from_idx];
-        int moving_num = OpBin2Num(moving_piece);
-        int target_num = OpBin2Num(prev_board[to_idx]);
+        int moving_num = OpBin2Num(byte[](moving_piece));
+        int target_num = OpBin2Num(byte[](prev_board[to_idx]));
         require(moving_num == 3 || moving_num == 5 || moving_num == 11 || moving_num == 13);
 
         bool target_is_white = target_num >= 1 && target_num <= 6;
@@ -930,7 +930,7 @@ actor Diag owns GameState {
                 int scan_x = from_x + step_x * (i + 1);
                 int scan_y = from_y + step_y * (i + 1);
                 int scan_idx = scan_y * 8 + scan_x;
-                if (OpBin2Num(prev_board[scan_idx]) != 0) {
+                if (OpBin2Num(byte[](prev_board[scan_idx])) != 0) {
                     clear = 0;
                 }
             }
@@ -1034,8 +1034,8 @@ actor Diag owns GameState {
 actor King owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
-        int from_idx = OpBin2Num(pending_src_idx);
-        int to_idx = OpBin2Num(pending_dst_idx);
+        int from_idx = pending_src_idx;
+        int to_idx = pending_dst_idx;
         require(turn == WHITE || turn == BLACK);
 
         bool is_draw_claim_mode = draw_state < NORMAL;
@@ -1047,8 +1047,8 @@ actor King owns GameState {
 
         byte[64] prev_board = board;
         byte moving_piece = prev_board[from_idx];
-        int moving_num = OpBin2Num(moving_piece);
-        int target_num = OpBin2Num(prev_board[to_idx]);
+        int moving_num = OpBin2Num(byte[](moving_piece));
+        int target_num = OpBin2Num(byte[](prev_board[to_idx]));
         require(moving_num == 6 || moving_num == 14);
 
         bool moving_is_white = moving_num == 6;
@@ -1188,15 +1188,15 @@ actor Castle owns GameState {
         require(status == LIVE);
         require(draw_state >= NORMAL);
 
-        int from_idx = OpBin2Num(pending_src_idx);
-        int to_idx = OpBin2Num(pending_dst_idx);
+        int from_idx = pending_src_idx;
+        int to_idx = pending_dst_idx;
         require(turn == WHITE || turn == BLACK);
         require(from_idx != to_idx);
 
         byte[64] prev_board = board;
         byte moving_piece = prev_board[from_idx];
-        int moving_num = OpBin2Num(moving_piece);
-        int target_num = OpBin2Num(prev_board[to_idx]);
+        int moving_num = OpBin2Num(byte[](moving_piece));
+        int target_num = OpBin2Num(byte[](prev_board[to_idx]));
         require(moving_num == 6 || moving_num == 14);
 
         bool moving_is_white = moving_num == 6;
@@ -1236,14 +1236,14 @@ actor Castle owns GameState {
         if (is_king_side) {
             rook_from_idx = row_base + 7;
         }
-        require(OpBin2Num(prev_board[rook_from_idx]) == rook_num);
+        require(OpBin2Num(byte[](prev_board[rook_from_idx])) == rook_num);
         if (is_king_side) {
-            require(OpBin2Num(prev_board[row_base + 5]) == 0);
-            require(OpBin2Num(prev_board[row_base + 6]) == 0);
+            require(OpBin2Num(byte[](prev_board[row_base + 5])) == 0);
+            require(OpBin2Num(byte[](prev_board[row_base + 6])) == 0);
         } else {
-            require(OpBin2Num(prev_board[row_base + 1]) == 0);
-            require(OpBin2Num(prev_board[row_base + 2]) == 0);
-            require(OpBin2Num(prev_board[row_base + 3]) == 0);
+            require(OpBin2Num(byte[](prev_board[row_base + 1])) == 0);
+            require(OpBin2Num(byte[](prev_board[row_base + 2])) == 0);
+            require(OpBin2Num(byte[](prev_board[row_base + 3])) == 0);
         }
 
         byte rook_piece = prev_board[rook_from_idx];
@@ -1339,8 +1339,8 @@ actor CastleChallengePrep owns GameState {
         require(draw_state == NORMAL);
         require(recent_castle >= 1 && recent_castle <= 4);
 
-        int from_idx = OpBin2Num(pending_src_idx);
-        int to_idx = OpBin2Num(pending_dst_idx);
+        int from_idx = pending_src_idx;
+        int to_idx = pending_dst_idx;
         require(from_idx != to_idx);
         byte[64] prev_board = board;
 
@@ -1441,7 +1441,7 @@ actor CastleChallengePrep owns GameState {
         int dy = to_y - from_y;
         int abs_dx = abs_int(dx);
         int abs_dy = abs_int(dy);
-        int moving_num = OpBin2Num(proof_board[from_idx]);
+        int moving_num = OpBin2Num(byte[](proof_board[from_idx]));
 
         if (moving_num == 1 || moving_num == 9) {
             require(target == Move::Pawn);

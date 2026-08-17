@@ -75,35 +75,35 @@ contract Pawn(
     }
 
     // :: shared helper functions
-    function player_ref(byte[32] owner, byte[32] player_id) : byte[32] {
-        return blake2b(owner + player_id);
+    function player_ref(byte[32] owner_, byte[32] player_id_) : byte[32] {
+        return blake2b(byte[](owner_ + player_id_));
     }
-    function abs_int(int value) : int {
-        int result = value;
-        if (value < 0) {
-            result = 0 - value;
+    function abs_int(int value_) : int {
+        int result_ = value_;
+        if (value_ < 0) {
+            result_ = 0 - value_;
         }
-        return result;
+        return result_;
     }
-    function timeout_status(int turn, int draw_state) : int {
-        int status = WWIN;
-        if (turn == WHITE) {
-            status = BWIN;
+    function timeout_status(int turn_, int draw_state_) : int {
+        int status_ = WWIN;
+        if (turn_ == WHITE) {
+            status_ = BWIN;
         }
-        if (draw_state == CLAIMED) {
-            status = DRAW;
+        if (draw_state_ == CLAIMED) {
+            status_ = DRAW;
         }
-        return status;
+        return status_;
     }
-    function invocation_uid(byte[] domain) : byte[32] {
-        require(domain.length > 0);
+    function invocation_uid(byte[] domain_) : byte[32] {
+        require(domain_.length > 0);
 
-        byte[36] outpoint = byte[36](
+        byte[36] outpoint_ = byte[36](
             OpOutpointTxId(this.activeInputIndex)
-                + byte[4](OpOutpointIndex(this.activeInputIndex))
+                + (OpOutpointIndex(this.activeInputIndex) as byte[4])
         );
 
-        return blake2bWithKey(outpoint, domain);
+        return blake2bWithKey(byte[](outpoint_), domain_);
     }
 
     // :: route templates
@@ -129,15 +129,15 @@ contract Pawn(
 
     // :: entrypoints
     // :: leader entry (1:N)
-    entrypoint function apply(byte[] gen__mux_prefix, byte[] gen__mux_suffix) {
+    entry apply(byte[] gen__mux_prefix, byte[] gen__mux_suffix) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Mux
 
         require(status == LIVE);
-        int from_idx = OpBin2Num(pending_src_idx);
-        int to_idx = OpBin2Num(pending_dst_idx);
-        int promo_piece = OpBin2Num(pending_promo);
+        int from_idx = pending_src_idx;
+        int to_idx = pending_dst_idx;
+        int promo_piece = pending_promo;
         require(turn == WHITE || turn == BLACK);
         bool is_draw_claim_mode = draw_state < NORMAL;
         int effective_turn = turn;
@@ -147,8 +147,8 @@ contract Pawn(
         require(from_idx != to_idx);
         byte[64] prev_board = board;
         byte moving_piece = prev_board[from_idx];
-        int moving_num = OpBin2Num(moving_piece);
-        int target_num = OpBin2Num(prev_board[to_idx]);
+        int moving_num = OpBin2Num(byte[](moving_piece));
+        int target_num = OpBin2Num(byte[](prev_board[to_idx]));
         require(moving_num == 1 || moving_num == 9);
         bool moving_is_white = moving_num == 1;
         bool moving_is_black = moving_num == 9;
@@ -162,7 +162,7 @@ contract Pawn(
             require(moving_is_black);
             require(!target_is_black);
         }
-        int ep_idx = OpBin2Num(en_passant_idx);
+        int ep_idx = en_passant_idx;
         int from_y = from_idx / 8;
         int from_x = from_idx % 8;
         int to_y = to_idx / 8;
@@ -188,13 +188,13 @@ contract Pawn(
         bool two_step = false;
         if (from_y == start_rank && same_file && two_forward && target_is_empty) {
             int mid_idx = (from_y + dir) * 8 + from_x;
-            two_step = OpBin2Num(prev_board[mid_idx]) == 0;
+            two_step = OpBin2Num(byte[](prev_board[mid_idx])) == 0;
         }
         bool capture = side_adjacent && one_forward && target_is_enemy;
         bool en_passant = false;
         if (side_adjacent && one_forward && target_is_empty && to_idx == ep_idx) {
             en_passant_capture_idx = to_idx - dir * 8;
-            en_passant = OpBin2Num(prev_board[en_passant_capture_idx]) == ep_captured_piece;
+            en_passant = OpBin2Num(byte[](prev_board[en_passant_capture_idx])) == ep_captured_piece;
         }
         require(one_step || two_step || capture || en_passant);
         byte arrived_piece = moving_piece;
@@ -207,7 +207,7 @@ contract Pawn(
             if (moving_is_black) {
                 arrived_num = arrived_num + 8;
             }
-            arrived_piece = byte(arrived_num);
+            arrived_piece = arrived_num as byte;
         } else {
             require(promo_piece == 0);
         }
@@ -306,7 +306,7 @@ contract Pawn(
         byte[] middle_yz = prev_dyn.slice(y + 1, z);
         byte[] suffix = prev_dyn.slice(z + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](vx) + middle_xy + byte[1](vy) + middle_yz + byte[1](vz) + suffix);
-        State next_state = {
+        State next_state = State {
             // :: generated fields
             gen__player_template: gen__player_template,
             gen__settle_template: gen__settle_template,
@@ -339,26 +339,26 @@ contract Pawn(
     }
 
     // :: leader entry (1:N)
-    entrypoint function timeout(byte[] gen__settle_prefix, byte[] gen__settle_suffix) {
+    entry timeout(byte[] gen__settle_prefix, byte[] gen__settle_suffix) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status == LIVE);
         require(this.age >= move_timeout);
-        SettleState next_state = {
+        SettleState next_state = SettleState {
             // :: user declared fields
             white_player: white_player,
             black_player: black_player,
             status: timeout_status(turn, draw_state),
         };
         require(tx.outputs[gen__next_output_idx].value == tx.inputs[this.activeInputIndex].value);
-        Gen__SettleState gen__state_next_gen__settle_state = {
+        Gen__SettleState gen__state_next_gen__settle_state = Gen__SettleState {
             // :: generated fields
             gen__mux_template: gen__mux_template,
             gen__player_template: gen__player_template,
             gen__settle_template: gen__settle_template,
-            gen__mux_routes_digest: blake2b(gen__mux_routes),
+            gen__mux_routes_digest: blake2b(byte[](gen__mux_routes)),
             // :: user declared fields
             white_player: next_state.white_player,
             black_player: next_state.black_player,

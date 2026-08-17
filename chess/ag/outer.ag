@@ -8,11 +8,11 @@ actor League owns LeagueState {
         league: League,
         player: Player,
     } {
-        require(checkSig(owner_sig, owner_pk));
+        require(checkSig(owner_sig, pubkey(owner_pk)));
 
         PlayerState next_player = {
-            owner: blake2b(owner_pk),
-            player_id: invocation_uid(bytes("LeaguePlayerId")),
+            owner: blake2b(byte[](owner_pk)),
+            player_id: invocation_uid(byte[]("LeaguePlayerId")),
             open_games: 0,
             rating: base_rating,
             games: 0,
@@ -31,8 +31,8 @@ actor League owns LeagueState {
     }
 
     entry rebalance(sig admin_sig, pubkey admin_pk) emits next: League {
-        require(blake2b(admin_pk) == admin);
-        require(checkSig(admin_sig, admin_pk));
+        require(blake2b(byte[](admin_pk)) == admin);
+        require(checkSig(admin_sig, pubkey(admin_pk)));
         unrestricted(next.value);
         become next <- League(self.state);
     }
@@ -41,8 +41,8 @@ actor League owns LeagueState {
         left: League,
         right: League,
     } {
-        require(blake2b(admin_pk) == admin);
-        require(checkSig(admin_sig, admin_pk));
+        require(blake2b(byte[](admin_pk)) == admin);
+        require(checkSig(admin_sig, pubkey(admin_pk)));
         unrestricted(left.value);
         unrestricted(right.value);
         become {
@@ -67,8 +67,8 @@ actor Player owns PlayerState {
     } {
         require(self_side == WHITE || self_side == BLACK);
         require(move_timeout > 0);
-        require(blake2b(owner_pk) == owner);
-        require(checkSig(owner_sig, owner_pk));
+        require(blake2b(byte[](owner_pk)) == owner);
+        require(checkSig(owner_sig, pubkey(owner_pk)));
         require(other.player_id != player_id);
 
         byte[32] self_ref = player_ref(owner, player_id);
@@ -105,11 +105,11 @@ actor Player owns PlayerState {
         GameState next_game = {
             white_player: white_player,
             black_player: black_player,
-            board: 0x04020305060302040101010101010101000000000000000000000000000000000000000000000000000000000000000009090909090909090c0a0b0d0e0b0a0c,
+            board: byte[64](0x04020305060302040101010101010101000000000000000000000000000000000000000000000000000000000000000009090909090909090c0a0b0d0e0b0a0c),
             turn: WHITE,
             status: LIVE,
             move_timeout: move_timeout,
-            castle_rights: 0x01010101,
+            castle_rights: byte[4](0x01010101),
             en_passant_idx: -1,
             pending_src_idx: -1,
             pending_dst_idx: -1,
@@ -136,8 +136,8 @@ actor Player owns PlayerState {
         leader: Player,
     } {
         require(move_timeout > 0);
-        require(blake2b(owner_pk) == owner);
-        require(checkSig(owner_sig, owner_pk));
+        require(blake2b(byte[](owner_pk)) == owner);
+        require(checkSig(owner_sig, pubkey(owner_pk)));
         require(leader.player_id != player_id);
     }
 
@@ -150,15 +150,15 @@ actor Player owns PlayerState {
     }
 
     entry rebalance(sig owner_sig, pubkey owner_pk) emits next: Player {
-        require(blake2b(owner_pk) == owner);
-        require(checkSig(owner_sig, owner_pk));
+        require(blake2b(byte[](owner_pk)) == owner);
+        require(checkSig(owner_sig, pubkey(owner_pk)));
         unrestricted(next.value);
         become next <- Player(self.state);
     }
 
     entry retire(sig owner_sig, pubkey owner_pk) emits none {
-        require(blake2b(owner_pk) == owner);
-        require(checkSig(owner_sig, owner_pk));
+        require(blake2b(byte[](owner_pk)) == owner);
+        require(checkSig(owner_sig, pubkey(owner_pk)));
         require(open_games == 0);
     }
 }

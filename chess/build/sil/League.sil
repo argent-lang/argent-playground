@@ -80,35 +80,35 @@ contract League(
     }
 
     // :: shared helper functions
-    function player_ref(byte[32] owner, byte[32] player_id) : byte[32] {
-        return blake2b(owner + player_id);
+    function player_ref(byte[32] owner_, byte[32] player_id_) : byte[32] {
+        return blake2b(byte[](owner_ + player_id_));
     }
-    function abs_int(int value) : int {
-        int result = value;
-        if (value < 0) {
-            result = 0 - value;
+    function abs_int(int value_) : int {
+        int result_ = value_;
+        if (value_ < 0) {
+            result_ = 0 - value_;
         }
-        return result;
+        return result_;
     }
-    function timeout_status(int turn, int draw_state) : int {
-        int status = WWIN;
-        if (turn == WHITE) {
-            status = BWIN;
+    function timeout_status(int turn_, int draw_state_) : int {
+        int status_ = WWIN;
+        if (turn_ == WHITE) {
+            status_ = BWIN;
         }
-        if (draw_state == CLAIMED) {
-            status = DRAW;
+        if (draw_state_ == CLAIMED) {
+            status_ = DRAW;
         }
-        return status;
+        return status_;
     }
-    function invocation_uid(byte[] domain) : byte[32] {
-        require(domain.length > 0);
+    function invocation_uid(byte[] domain_) : byte[32] {
+        require(domain_.length > 0);
 
-        byte[36] outpoint = byte[36](
+        byte[36] outpoint_ = byte[36](
             OpOutpointTxId(this.activeInputIndex)
-                + byte[4](OpOutpointIndex(this.activeInputIndex))
+                + (OpOutpointIndex(this.activeInputIndex) as byte[4])
         );
 
-        return blake2bWithKey(outpoint, domain);
+        return blake2bWithKey(byte[](outpoint_), domain_);
     }
 
     // :: route templates
@@ -123,7 +123,7 @@ contract League(
 
     // :: entrypoints
     // :: leader entry (1:N)
-    entrypoint function register_player(
+    entry register_player(
         sig owner_sig,
         pubkey owner_pk,
         byte[] gen__player_prefix,
@@ -136,11 +136,11 @@ contract League(
         // :: output player: Player
         int gen__player_output_idx = OpAuthOutputIdx(this.activeInputIndex, 1);
 
-        require(checkSig(owner_sig, owner_pk));
-        PlayerState next_player = {
+        require(checkSig(owner_sig, pubkey(owner_pk)));
+        PlayerState next_player = PlayerState {
             // :: user declared fields
-            owner: blake2b(owner_pk),
-            player_id: invocation_uid(bytes("LeaguePlayerId")),
+            owner: blake2b(byte[](owner_pk)),
+            player_id: invocation_uid(byte[]("LeaguePlayerId")),
             open_games: 0,
             rating: base_rating,
             games: 0,
@@ -154,7 +154,7 @@ contract League(
             tx.outputs[gen__league_output_idx].scriptPubKey
                 == tx.inputs[this.activeInputIndex].scriptPubKey
         );
-        Gen__PlayerState gen__state_player_gen__player_state = {
+        Gen__PlayerState gen__state_player_gen__player_state = Gen__PlayerState {
             // :: generated fields
             gen__mux_template: gen__mux_template,
             gen__player_template: gen__player_template,
@@ -181,13 +181,13 @@ contract League(
     }
 
     // :: leader entry (1:N)
-    entrypoint function rebalance(sig admin_sig, pubkey admin_pk) {
+    entry rebalance(sig admin_sig, pubkey admin_pk) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 1);
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: League
 
-        require(blake2b(admin_pk) == admin);
-        require(checkSig(admin_sig, admin_pk));
+        require(blake2b(byte[](admin_pk)) == admin);
+        require(checkSig(admin_sig, pubkey(admin_pk)));
         // :: become League
         require(
             tx.outputs[gen__next_output_idx].scriptPubKey
@@ -196,15 +196,15 @@ contract League(
     }
 
     // :: leader entry (1:N)
-    entrypoint function fork(sig admin_sig, pubkey admin_pk) {
+    entry fork(sig admin_sig, pubkey admin_pk) {
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 2);
         int gen__left_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output left: League
         // :: output right: League
         int gen__right_output_idx = OpAuthOutputIdx(this.activeInputIndex, 1);
 
-        require(blake2b(admin_pk) == admin);
-        require(checkSig(admin_sig, admin_pk));
+        require(blake2b(byte[](admin_pk)) == admin);
+        require(checkSig(admin_sig, pubkey(admin_pk)));
         // :: become League
         require(
             tx.outputs[gen__left_output_idx].scriptPubKey
