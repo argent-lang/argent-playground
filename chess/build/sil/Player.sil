@@ -182,7 +182,7 @@ contract Player(
         require(self_side == WHITE || self_side == BLACK);
         require(move_timeout > 0);
         require(blake2b(byte[](owner_pk)) == owner);
-        require(checkSig(owner_sig, pubkey(owner_pk)));
+        require(checkSig(owner_sig, owner_pk));
         require(other.player_id != player_id);
         byte[32] self_ref = player_ref(owner, player_id);
         byte[32] other_ref = player_ref(other.owner, other.player_id);
@@ -300,7 +300,7 @@ contract Player(
 
         require(move_timeout > 0);
         require(blake2b(byte[](owner_pk)) == owner);
-        require(checkSig(owner_sig, pubkey(owner_pk)));
+        require(checkSig(owner_sig, owner_pk));
         require(leader.player_id != player_id);
     }
 
@@ -337,7 +337,7 @@ contract Player(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Player
 
         require(blake2b(byte[](owner_pk)) == owner);
-        require(checkSig(owner_sig, pubkey(owner_pk)));
+        require(checkSig(owner_sig, owner_pk));
         // :: become Player
         require(
             tx.outputs[gen__next_output_idx].scriptPubKey
@@ -355,7 +355,7 @@ contract Player(
         require(OpAuthOutputCount(this.activeInputIndex) == 0);
 
         require(blake2b(byte[](owner_pk)) == owner);
-        require(checkSig(owner_sig, pubkey(owner_pk)));
+        require(checkSig(owner_sig, owner_pk));
         require(open_games == 0);
     }
 

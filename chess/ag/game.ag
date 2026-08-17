@@ -35,7 +35,7 @@ actor Mux owns GameState {
         } else {
             require(player_ref == black_player);
         }
-        require(checkSig(s, pubkey(pk)));
+        require(checkSig(s, pk));
 
         require(termination_action == CLEAR || termination_action == OFFER);
 
@@ -93,7 +93,7 @@ actor Mux owns GameState {
         } else {
             require(player_ref == black_player);
         }
-        require(checkSig(s, pubkey(pk)));
+        require(checkSig(s, pk));
 
         int next_status = status;
         int next_turn = turn;
@@ -146,7 +146,7 @@ actor Mux owns GameState {
         } else {
             require(player_ref == white_player);
         }
-        require(checkSig(s, pubkey(pk)));
+        require(checkSig(s, pk));
         require(this.age >= move_timeout);
 
         SettleState next_state = {

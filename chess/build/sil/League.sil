@@ -136,7 +136,7 @@ contract League(
         // :: output player: Player
         int gen__player_output_idx = OpAuthOutputIdx(this.activeInputIndex, 1);
 
-        require(checkSig(owner_sig, pubkey(owner_pk)));
+        require(checkSig(owner_sig, owner_pk));
         PlayerState next_player = PlayerState {
             // :: user declared fields
             owner: blake2b(byte[](owner_pk)),
@@ -187,7 +187,7 @@ contract League(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: League
 
         require(blake2b(byte[](admin_pk)) == admin);
-        require(checkSig(admin_sig, pubkey(admin_pk)));
+        require(checkSig(admin_sig, admin_pk));
         // :: become League
         require(
             tx.outputs[gen__next_output_idx].scriptPubKey
@@ -204,7 +204,7 @@ contract League(
         int gen__right_output_idx = OpAuthOutputIdx(this.activeInputIndex, 1);
 
         require(blake2b(byte[](admin_pk)) == admin);
-        require(checkSig(admin_sig, pubkey(admin_pk)));
+        require(checkSig(admin_sig, admin_pk));
         // :: become League
         require(
             tx.outputs[gen__left_output_idx].scriptPubKey

@@ -8,7 +8,7 @@ actor League owns LeagueState {
         league: League,
         player: Player,
     } {
-        require(checkSig(owner_sig, pubkey(owner_pk)));
+        require(checkSig(owner_sig, owner_pk));
 
         PlayerState next_player = {
             owner: blake2b(byte[](owner_pk)),
@@ -32,7 +32,7 @@ actor League owns LeagueState {
 
     entry rebalance(sig admin_sig, pubkey admin_pk) emits next: League {
         require(blake2b(byte[](admin_pk)) == admin);
-        require(checkSig(admin_sig, pubkey(admin_pk)));
+        require(checkSig(admin_sig, admin_pk));
         unrestricted(next.value);
         become next <- League(self.state);
     }
@@ -42,7 +42,7 @@ actor League owns LeagueState {
         right: League,
     } {
         require(blake2b(byte[](admin_pk)) == admin);
-        require(checkSig(admin_sig, pubkey(admin_pk)));
+        require(checkSig(admin_sig, admin_pk));
         unrestricted(left.value);
         unrestricted(right.value);
         become {
@@ -68,7 +68,7 @@ actor Player owns PlayerState {
         require(self_side == WHITE || self_side == BLACK);
         require(move_timeout > 0);
         require(blake2b(byte[](owner_pk)) == owner);
-        require(checkSig(owner_sig, pubkey(owner_pk)));
+        require(checkSig(owner_sig, owner_pk));
         require(other.player_id != player_id);
 
         byte[32] self_ref = player_ref(owner, player_id);
@@ -137,7 +137,7 @@ actor Player owns PlayerState {
     } {
         require(move_timeout > 0);
         require(blake2b(byte[](owner_pk)) == owner);
-        require(checkSig(owner_sig, pubkey(owner_pk)));
+        require(checkSig(owner_sig, owner_pk));
         require(leader.player_id != player_id);
     }
 
@@ -151,14 +151,14 @@ actor Player owns PlayerState {
 
     entry rebalance(sig owner_sig, pubkey owner_pk) emits next: Player {
         require(blake2b(byte[](owner_pk)) == owner);
-        require(checkSig(owner_sig, pubkey(owner_pk)));
+        require(checkSig(owner_sig, owner_pk));
         unrestricted(next.value);
         become next <- Player(self.state);
     }
 
     entry retire(sig owner_sig, pubkey owner_pk) emits none {
         require(blake2b(byte[](owner_pk)) == owner);
-        require(checkSig(owner_sig, pubkey(owner_pk)));
+        require(checkSig(owner_sig, owner_pk));
         require(open_games == 0);
     }
 }
