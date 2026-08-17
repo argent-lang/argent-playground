@@ -142,8 +142,8 @@ contract Castle(
         require(from_idx != to_idx);
         byte[64] prev_board = board;
         byte moving_piece = prev_board[from_idx];
-        int moving_num = OpBin2Num(byte[](moving_piece));
-        int target_num = OpBin2Num(byte[](prev_board[to_idx]));
+        int moving_num = signed(moving_piece);
+        int target_num = signed(prev_board[to_idx]);
         require(moving_num == 6 || moving_num == 14);
         bool moving_is_white = moving_num == 6;
         bool moving_is_black = moving_num == 14;
@@ -179,14 +179,14 @@ contract Castle(
         if (is_king_side) {
             rook_from_idx = row_base + 7;
         }
-        require(OpBin2Num(byte[](prev_board[rook_from_idx])) == rook_num);
+        require(signed(prev_board[rook_from_idx]) == rook_num);
         if (is_king_side) {
-            require(OpBin2Num(byte[](prev_board[row_base + 5])) == 0);
-            require(OpBin2Num(byte[](prev_board[row_base + 6])) == 0);
+            require(signed(prev_board[row_base + 5]) == 0);
+            require(signed(prev_board[row_base + 6]) == 0);
         } else {
-            require(OpBin2Num(byte[](prev_board[row_base + 1])) == 0);
-            require(OpBin2Num(byte[](prev_board[row_base + 2])) == 0);
-            require(OpBin2Num(byte[](prev_board[row_base + 3])) == 0);
+            require(signed(prev_board[row_base + 1]) == 0);
+            require(signed(prev_board[row_base + 2]) == 0);
+            require(signed(prev_board[row_base + 3]) == 0);
         }
         byte rook_piece = prev_board[rook_from_idx];
         byte empty_piece = byte(0x00);

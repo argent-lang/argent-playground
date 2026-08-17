@@ -146,8 +146,8 @@ contract King(
         require(from_idx != to_idx);
         byte[64] prev_board = board;
         byte moving_piece = prev_board[from_idx];
-        int moving_num = OpBin2Num(byte[](moving_piece));
-        int target_num = OpBin2Num(byte[](prev_board[to_idx]));
+        int moving_num = signed(moving_piece);
+        int target_num = signed(prev_board[to_idx]);
         require(moving_num == 6 || moving_num == 14);
         bool moving_is_white = moving_num == 6;
         bool moving_is_black = moving_num == 14;

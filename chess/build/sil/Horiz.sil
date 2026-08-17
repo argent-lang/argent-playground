@@ -146,8 +146,8 @@ contract Horiz(
         require(from_idx != to_idx);
         byte[64] prev_board = board;
         byte moving_piece = prev_board[from_idx];
-        int moving_num = OpBin2Num(byte[](moving_piece));
-        int target_num = OpBin2Num(byte[](prev_board[to_idx]));
+        int moving_num = signed(moving_piece);
+        int target_num = signed(prev_board[to_idx]);
         require(moving_num == 4 || moving_num == 5 || moving_num == 12 || moving_num == 13);
         bool target_is_white = target_num >= 1 && target_num <= 6;
         bool target_is_black = target_num >= 9 && target_num <= 14;
@@ -174,7 +174,7 @@ contract Horiz(
             if (i < distance + -1) {
                 int scan_x = from_x + dir * (i + 1);
                 int scan_idx = from_y * 8 + scan_x;
-                if (OpBin2Num(byte[](prev_board[scan_idx])) != 0) {
+                if (signed(prev_board[scan_idx]) != 0) {
                     clear = 0;
                 }
             }

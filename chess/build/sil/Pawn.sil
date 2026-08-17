@@ -147,8 +147,8 @@ contract Pawn(
         require(from_idx != to_idx);
         byte[64] prev_board = board;
         byte moving_piece = prev_board[from_idx];
-        int moving_num = OpBin2Num(byte[](moving_piece));
-        int target_num = OpBin2Num(byte[](prev_board[to_idx]));
+        int moving_num = signed(moving_piece);
+        int target_num = signed(prev_board[to_idx]);
         require(moving_num == 1 || moving_num == 9);
         bool moving_is_white = moving_num == 1;
         bool moving_is_black = moving_num == 9;
@@ -188,13 +188,13 @@ contract Pawn(
         bool two_step = false;
         if (from_y == start_rank && same_file && two_forward && target_is_empty) {
             int mid_idx = (from_y + dir) * 8 + from_x;
-            two_step = OpBin2Num(byte[](prev_board[mid_idx])) == 0;
+            two_step = signed(prev_board[mid_idx]) == 0;
         }
         bool capture = side_adjacent && one_forward && target_is_enemy;
         bool en_passant = false;
         if (side_adjacent && one_forward && target_is_empty && to_idx == ep_idx) {
             en_passant_capture_idx = to_idx - dir * 8;
-            en_passant = OpBin2Num(byte[](prev_board[en_passant_capture_idx])) == ep_captured_piece;
+            en_passant = signed(prev_board[en_passant_capture_idx]) == ep_captured_piece;
         }
         require(one_step || two_step || capture || en_passant);
         byte arrived_piece = moving_piece;

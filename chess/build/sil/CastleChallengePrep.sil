@@ -232,7 +232,7 @@ contract CastleChallengePrep(
         int dy = to_y - from_y;
         int abs_dx = abs_int(dx);
         int abs_dy = abs_int(dy);
-        int moving_num = OpBin2Num(byte[](proof_board[from_idx]));
+        int moving_num = signed(proof_board[from_idx]);
         if (moving_num == 1 || moving_num == 9) {
             require(target == 0 /*PAWN*/);
         } else if (moving_num == 2 || moving_num == 10) {
