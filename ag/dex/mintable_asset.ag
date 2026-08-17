@@ -24,7 +24,7 @@ actor Minter owns MintableTokenState {
         token: MintableToken,
     } {
         require(owner_kind == OWNER_KEY);
-        require(checkSig(minter_sig, owner));
+        require(checkSig(minter_sig, pubkey(owner)));
         require(recipient_kind == OWNER_KEY || recipient_kind == OWNER_COVID);
         require(mint_amount > 0);
         require(amount >= mint_amount);
@@ -66,7 +66,7 @@ actor MintableToken owns MintableTokenState {
         sig owner_sig
     ) emits next: MintableToken {
         if (owner_kind == OWNER_KEY) {
-            require(checkSig(owner_sig, owner));
+            require(checkSig(owner_sig, pubkey(owner)));
         } else if (owner_kind == OWNER_COVID) {
             require(cov_id(owner).co_spent());
         } else {
