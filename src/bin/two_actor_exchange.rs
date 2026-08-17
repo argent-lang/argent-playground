@@ -12,23 +12,23 @@ state Turn {
 
 actor Ping owns Turn {
     entry send() emits next: Pong {
-        Turn next = {
+        Turn next_state = {
             cycles: cycles + 1,
         };
 
         unrestricted(next.value);
-        become next <- Pong(next);
+        become next <- Pong(next_state);
     }
 }
 
 actor Pong owns Turn {
     entry reply() emits next: Ping {
-        Turn next = {
+        Turn next_state = {
             cycles: cycles + 1,
         };
 
         unrestricted(next.value);
-        become next <- Ping(next);
+        become next <- Ping(next_state);
     }
 }
 

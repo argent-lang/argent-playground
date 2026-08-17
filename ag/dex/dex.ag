@@ -62,7 +62,7 @@ actor DexCore owns DexCoreState {
         }
     }
     emits next: DexCore {
-        require(checkSig(governor_sig, governor));
+        require(checkSig(governor_sig, pubkey(governor)));
         require(quote_id != base_id);
         require(quote_per_base_num > 0);
         require(quote_per_base_den > 0);
@@ -236,7 +236,7 @@ actor DexPair owns DexPairState {
         );
 
         DexCoreCapsule core = registry.inputs.core.state;
-        require(blake2b(registry_preimage) == core.pairs);
+        require(blake2b(byte[](registry_preimage)) == core.pairs);
         require(registry_authorizes_asset(
             registry_preimage,
             target_pair_index,
