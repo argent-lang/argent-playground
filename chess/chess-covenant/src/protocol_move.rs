@@ -2,6 +2,8 @@ use thiserror::Error;
 
 use crate::cozy_bridge::{apply_standard_move, StandardMoveError, StandardMoveSpec, StandardState, StandardTransition};
 
+pub use crate::cozy_bridge::OFFBOARD;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProtocolMoveSpec {
     pub from_x: i64,
@@ -94,7 +96,7 @@ fn apply_sil_protocol_move(state: &ProtocolState, mv: ProtocolMoveSpec) -> Resul
     let base_piece = if piece > 8 { piece - 8 } else { piece };
     let is_black = piece > 8;
     let mut castle_rights = state.castle_rights;
-    let mut en_passant_idx = -1;
+    let mut en_passant_idx = OFFBOARD;
     let mut recent_castle = 0;
 
     // Any move that lands on an original rook square consumes that side's matching castle right.
@@ -181,7 +183,7 @@ fn clear_castle_rights_for_square(castle_rights: &mut [u8; 4], x: i64, y: i64) {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_protocol_move, ProtocolMoveSpec, ProtocolState};
+    use super::{apply_protocol_move, ProtocolMoveSpec, ProtocolState, OFFBOARD};
 
     #[test]
     fn protocol_move_uses_standard_engine_for_castle() {
@@ -190,7 +192,7 @@ mod tests {
         board[7] = 0x04;
         board[60] = 0x0e;
         let next = apply_protocol_move(
-            &ProtocolState { board, turn: 0, castle_rights: [1, 0, 0, 0], en_passant_idx: -1 },
+            &ProtocolState { board, turn: 0, castle_rights: [1, 0, 0, 0], en_passant_idx: OFFBOARD },
             ProtocolMoveSpec { from_x: 4, from_y: 0, to_x: 6, to_y: 0, promo_piece: 0 },
         )
         .expect("castle should work");
@@ -207,7 +209,7 @@ mod tests {
         board[60] = 0x0e;
         board[52] = 0x05;
         let next = apply_protocol_move(
-            &ProtocolState { board, turn: 0, castle_rights: [0, 0, 0, 0], en_passant_idx: -1 },
+            &ProtocolState { board, turn: 0, castle_rights: [0, 0, 0, 0], en_passant_idx: OFFBOARD },
             ProtocolMoveSpec { from_x: 4, from_y: 6, to_x: 4, to_y: 7, promo_piece: 0 },
         )
         .expect("protocol move should preserve king-capture modeling");

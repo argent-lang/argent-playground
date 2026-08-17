@@ -16,7 +16,7 @@ use kaspa_consensus_core::tx::{
 use kaspa_consensus_core::Hash;
 use secp256k1::{Keypair, Message, Secp256k1, SecretKey};
 
-use crate::protocol_move::{apply_protocol_move, apply_standard_chess_move, ProtocolMoveSpec, ProtocolState};
+use crate::protocol_move::{apply_protocol_move, apply_standard_chess_move, ProtocolMoveSpec, ProtocolState, OFFBOARD};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorkerKind {
@@ -237,21 +237,25 @@ fn player_source_state(state: &PlayerStateData) -> BTreeMap<String, ArtifactValu
     }
 }
 
+fn state_byte(value: i64) -> u8 {
+    u8::try_from(value).expect("bounded Chess state value fits in a byte")
+}
+
 fn game_source_state(state: &GameStateData) -> BTreeMap<String, ArtifactValue> {
     state! {
         white_player: state.white_player,
         black_player: state.black_player,
         board: state.board.clone(),
-        turn: state.turn,
-        status: state.status,
+        turn: state_byte(state.turn),
+        status: state_byte(state.status),
         move_timeout: state.move_timeout,
         castle_rights: state.castle_rights,
-        en_passant_idx: state.en_passant_idx,
-        pending_src_idx: state.pending_src_idx,
-        pending_dst_idx: state.pending_dst_idx,
-        pending_promo: state.pending_promo,
-        recent_castle: state.recent_castle,
-        draw_state: state.draw_state,
+        en_passant_idx: state_byte(state.en_passant_idx),
+        pending_src_idx: state_byte(state.pending_src_idx),
+        pending_dst_idx: state_byte(state.pending_dst_idx),
+        pending_promo: state_byte(state.pending_promo),
+        recent_castle: state_byte(state.recent_castle),
+        draw_state: state_byte(state.draw_state),
     }
 }
 
@@ -259,7 +263,7 @@ fn settle_source_state(white_player: Hash, black_player: Hash, status: i64) -> B
     state! {
         white_player: white_player,
         black_player: black_player,
-        status: status,
+        status: state_byte(status),
     }
 }
 
@@ -716,9 +720,9 @@ impl TxArena {
             status: 0,
             move_timeout: DEFAULT_MOVE_TIMEOUT,
             castle_rights: [1, 1, 1, 1],
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: 0,
             recent_castle: 0,
             draw_state: 3,
@@ -740,7 +744,12 @@ impl TxArena {
                 "Player",
                 player_source_state(&white_state),
                 EntryCall::new("start_game").args_with(move |tx, input_index| {
-                    args![sign_builder_input(tx, input_index, &white_keypair), white_public_key.clone(), WHITE, DEFAULT_MOVE_TIMEOUT,]
+                    args![
+                        sign_builder_input(tx, input_index, &white_keypair),
+                        white_public_key.clone(),
+                        state_byte(WHITE),
+                        DEFAULT_MOVE_TIMEOUT,
+                    ]
                 }),
                 white_state.outpoint,
                 white_utxo,
@@ -830,8 +839,8 @@ impl TxArena {
                         mv.from_y,
                         mv.to_x,
                         mv.to_y,
-                        mv.promo_piece,
-                        termination_action,
+                        state_byte(mv.promo_piece),
+                        state_byte(termination_action),
                         sign_builder_input(tx, input_index, &keypair),
                         public_key.clone(),
                         player_id,
@@ -1289,9 +1298,9 @@ impl TxArena {
             status: next_status,
             move_timeout: game.move_timeout,
             castle_rights: game.castle_rights,
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: 0,
             recent_castle: 0,
             draw_state: next_draw_state,
@@ -1310,7 +1319,7 @@ impl TxArena {
                 "Mux",
                 game_source_state(&game),
                 EntryCall::new("terminate").args_with(move |tx, input_index| {
-                    args![termination_action, sign_builder_input(tx, input_index, &keypair), public_key.clone(), player_id]
+                    args![state_byte(termination_action), sign_builder_input(tx, input_index, &keypair), public_key.clone(), player_id]
                 }),
                 game_outpoint,
                 game_utxo,
@@ -1816,7 +1825,7 @@ fn castle_challenge_proof_state(game: &GameStateData) -> Result<GameStateData, O
         proof_board[(row_base + 4) as usize] = d;
     }
 
-    Ok(GameStateData { board: proof_board, en_passant_idx: -1, pending_promo: CLEAR, ..game.clone() })
+    Ok(GameStateData { board: proof_board, en_passant_idx: OFFBOARD, pending_promo: CLEAR, ..game.clone() })
 }
 
 fn pending_state_for_move(game: &GameStateData, mv: MoveSpec, termination_action: i64) -> GameStateData {
@@ -1891,8 +1900,8 @@ fn apply_move_to_state(
         move_timeout: game.move_timeout,
         castle_rights: next.castle_rights,
         en_passant_idx: next.en_passant_idx,
-        pending_src_idx: -1,
-        pending_dst_idx: -1,
+        pending_src_idx: OFFBOARD,
+        pending_dst_idx: OFFBOARD,
         pending_promo: 0,
         recent_castle: next.recent_castle,
         draw_state: game.draw_state,
@@ -2401,9 +2410,9 @@ mod tests {
             game.turn = Side::White as i64;
             game.status = LIVE;
             game.castle_rights = [1, 1, 1, 1];
-            game.en_passant_idx = -1;
-            game.pending_src_idx = -1;
-            game.pending_dst_idx = -1;
+            game.en_passant_idx = OFFBOARD;
+            game.pending_src_idx = OFFBOARD;
+            game.pending_dst_idx = OFFBOARD;
             game.pending_promo = 0;
             game.recent_castle = CLEAR;
             game.draw_state = NORMAL;

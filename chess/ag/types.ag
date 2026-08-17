@@ -1,24 +1,29 @@
 // Shared constants, state layouts, and helpers for the chess app.
 
-const int WHITE = 0;
-const int BLACK = 1;
+const byte WHITE = 0x00;
+const byte BLACK = 0x01;
 
-const int LIVE = 0;
-const int WWIN = 1;
-const int BWIN = 2;
-const int DRAW = 3;
+const byte LIVE = 0x00;
+const byte WWIN = 0x01;
+const byte BWIN = 0x02;
+const byte DRAW = 0x03;
 
-const int CLEAR = 0;
-const int OFFER = 1;
-const int CLAIM = 2;
-const int SURRENDER = 3;
-const int ACCEPT = 4;
+const byte CLEAR = 0x00;
+const byte OFFER = 0x01;
+const byte CLAIM = 0x02;
+const byte SURRENDER = 0x03;
+const byte ACCEPT = 0x04;
 
-const int CLAIMED = 1;
-const int DEFENSE = 2;
-const int NORMAL = 3;
-const int WOFFER = 4;
-const int BOFFER = 5;
+const byte CLAIMED = 0x01;
+const byte DEFENSE = 0x02;
+const byte NORMAL = 0x03;
+const byte WOFFER = 0x04;
+const byte BOFFER = 0x05;
+
+// Board indices use 0..63; 64 represents the absence of a square.
+// These bounded bytes stay in the nonnegative signed-byte range, so use signed(...)
+// only where an integer is required for arithmetic or indexing.
+const byte OFFBOARD = 0x40;
 
 state LeagueState {
     int base_rating;
@@ -41,22 +46,22 @@ state GameState {
     byte[32] white_player;
     byte[32] black_player;
     byte[64] board;
-    int turn;
-    int status;
+    byte turn;
+    byte status;
     int move_timeout;
     byte[4] castle_rights;
-    int en_passant_idx;
-    int pending_src_idx;
-    int pending_dst_idx;
-    int pending_promo;
-    int recent_castle;
-    int draw_state;
+    byte en_passant_idx;
+    byte pending_src_idx;
+    byte pending_dst_idx;
+    byte pending_promo;
+    byte recent_castle;
+    byte draw_state;
 }
 
 state SettleState {
     byte[32] white_player;
     byte[32] black_player;
-    int status;
+    byte status;
 }
 
 fn player_ref(byte[32] owner_, byte[32] player_id_) -> byte[32] {
@@ -71,8 +76,8 @@ fn abs_int(int value_) -> int {
     return result_;
 }
 
-fn timeout_status(int turn_, int draw_state_) -> int {
-    int status_ = WWIN;
+fn timeout_status(byte turn_, byte draw_state_) -> byte {
+    byte status_ = WWIN;
     if (turn_ == WHITE) {
         status_ = BWIN;
     }

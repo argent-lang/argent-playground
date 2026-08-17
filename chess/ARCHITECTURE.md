@@ -73,7 +73,8 @@ All mux and worker contracts use the same serialized state fields:
 - `turn`: `0` white to move, `1` black to move
 - `status`: `0` live, `1` white win, `2` black win, `3` draw
 - `castle_rights`: four historical eligibility bits in order `white K`, `white Q`, `black K`, `black Q`
-- `en_passant_idx`: en passant target square, or `-1`
+- `en_passant_idx`: en passant target square, or `OFFBOARD` (`64`) when absent
+- cleared `pending_src_idx` and `pending_dst_idx` also use `OFFBOARD`
 - `pending_src_idx`, `pending_dst_idx`, `pending_promo`: the move committed by mux for the next worker
 - `recent_castle`: `0` none, `1` white king-side, `2` white queen-side, `3` black king-side, `4` black queen-side
 - `draw_state`: `3` normal play, `1` draw claimed, `2` counterplay step, `4` white offered draw, `5` black offered draw

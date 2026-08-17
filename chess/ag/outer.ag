@@ -56,7 +56,7 @@ actor Player owns PlayerState {
     entry start_game(
         sig owner_sig,
         pubkey owner_pk,
-        int self_side,
+        byte self_side,
         int move_timeout
     ) consumes {
         other: Player,
@@ -110,9 +110,9 @@ actor Player owns PlayerState {
             status: LIVE,
             move_timeout: move_timeout,
             castle_rights: byte[4](0x01010101),
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: CLEAR,
             recent_castle: CLEAR,
             draw_state: NORMAL,

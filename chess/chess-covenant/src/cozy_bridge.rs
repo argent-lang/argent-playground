@@ -4,6 +4,9 @@ use std::str::FromStr;
 use cozy_chess::{Board, Color, Move, Piece, Square};
 use thiserror::Error;
 
+/// Byte-compatible sentinel for the absence of an en passant or pending-move square.
+pub const OFFBOARD: i64 = 64;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CozyMoveSpec {
     pub from_x: i64,
@@ -135,7 +138,7 @@ fn state_to_fen(state: &CozyState) -> Result<String, CozyBridgeError> {
     fen.push_str(&castles);
     fen.push(' ');
 
-    if state.en_passant_idx >= 0 {
+    if state.en_passant_idx != OFFBOARD {
         fen.push_str(&square_name(square_from_idx(state.en_passant_idx)?));
     } else {
         fen.push('-');
@@ -179,7 +182,7 @@ fn encode_en_passant(board: &Board) -> i64 {
             let rank_idx = if board.side_to_move() == Color::Black { 2 } else { 5 };
             square_idx(file_idx, rank_idx)
         })
-        .unwrap_or(-1)
+        .unwrap_or(OFFBOARD)
 }
 
 fn detect_recent_castle(state: &CozyState, mv: CozyMoveSpec) -> Result<i64, CozyBridgeError> {
@@ -305,7 +308,7 @@ fn move_label(mv: CozyMoveSpec) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_move_with_cozy, CozyMoveSpec, CozyState};
+    use super::{apply_move_with_cozy, CozyMoveSpec, CozyState, OFFBOARD};
 
     fn standard_board() -> Vec<u8> {
         vec![
@@ -318,7 +321,7 @@ mod tests {
 
     #[test]
     fn cozy_poc_handles_e2e4() {
-        let state = CozyState { board: standard_board(), turn: 0, castle_rights: [1, 1, 1, 1], en_passant_idx: -1 };
+        let state = CozyState { board: standard_board(), turn: 0, castle_rights: [1, 1, 1, 1], en_passant_idx: OFFBOARD };
         let next = apply_move_with_cozy(&state, CozyMoveSpec::new(4, 1, 4, 3)).expect("e2e4 should be legal");
         assert_eq!(next.turn, 1);
         assert_eq!(next.en_passant_idx, 20);
@@ -333,7 +336,7 @@ mod tests {
         let mut board = standard_board();
         board[5] = 0x00;
         board[6] = 0x00;
-        let state = CozyState { board, turn: 0, castle_rights: [1, 1, 1, 1], en_passant_idx: -1 };
+        let state = CozyState { board, turn: 0, castle_rights: [1, 1, 1, 1], en_passant_idx: OFFBOARD };
         let next = apply_move_with_cozy(&state, CozyMoveSpec::new(4, 0, 6, 0)).expect("white kingside castle should be legal");
         assert_eq!(next.turn, 1);
         assert_eq!(next.recent_castle, 1);

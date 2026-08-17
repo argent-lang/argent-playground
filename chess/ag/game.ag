@@ -21,8 +21,8 @@ actor Mux owns GameState {
         int from_y,
         int to_x,
         int to_y,
-        int promo_piece,
-        int termination_action,
+        byte promo_piece,
+        byte termination_action,
         sig s,
         pubkey pk,
         byte[32] player_id
@@ -39,7 +39,7 @@ actor Mux owns GameState {
 
         require(termination_action == CLEAR || termination_action == OFFER);
 
-        int next_draw_state = draw_state;
+        byte next_draw_state = draw_state;
         require(from_x >= 0 && from_x < 8 && from_y >= 0 && from_y < 8);
         require(to_x >= 0 && to_x < 8 && to_y >= 0 && to_y < 8);
         require(promo_piece == 0 || (target == Move::Pawn && promo_piece >= 2 && promo_piece <= 5));
@@ -50,10 +50,10 @@ actor Mux owns GameState {
             next_draw_state = NORMAL;
         }
         if (termination_action == OFFER) {
-            next_draw_state = WOFFER + turn;
+            next_draw_state = (signed(WOFFER) + signed(turn)) as byte;
         }
 
-        int next_recent_castle = CLEAR;
+        byte next_recent_castle = CLEAR;
         if (target == Move::CastleChallengePrep) {
             require(recent_castle != CLEAR);
             next_recent_castle = recent_castle;
@@ -68,8 +68,8 @@ actor Mux owns GameState {
             move_timeout: move_timeout,
             castle_rights: castle_rights,
             en_passant_idx: en_passant_idx,
-            pending_src_idx: from_y * 8 + from_x,
-            pending_dst_idx: to_y * 8 + to_x,
+            pending_src_idx: (from_y * 8 + from_x) as byte,
+            pending_dst_idx: (to_y * 8 + to_x) as byte,
             pending_promo: promo_piece,
             recent_castle: next_recent_castle,
             draw_state: next_draw_state,
@@ -80,7 +80,7 @@ actor Mux owns GameState {
     }
 
     entry terminate(
-        int termination_action,
+        byte termination_action,
         sig s,
         pubkey pk,
         byte[32] player_id
@@ -95,20 +95,20 @@ actor Mux owns GameState {
         }
         require(checkSig(s, pk));
 
-        int next_status = status;
-        int next_turn = turn;
-        int next_draw_state = draw_state;
+        byte next_status = status;
+        byte next_turn = turn;
+        byte next_draw_state = draw_state;
         if (termination_action == CLAIM) {
             require(draw_state == NORMAL);
             require(recent_castle == CLEAR);
-            next_turn = 1 - turn;
+            next_turn = (1 - signed(turn)) as byte;
             next_draw_state = CLAIMED;
         } else if (termination_action == SURRENDER) {
-            next_status = BWIN - turn;
+            next_status = (signed(BWIN) - signed(turn)) as byte;
             next_draw_state = NORMAL;
         } else {
             require(termination_action == ACCEPT);
-            require(draw_state + turn == BOFFER);
+            require(signed(draw_state) + signed(turn) == signed(BOFFER));
             next_status = DRAW;
             next_draw_state = NORMAL;
         }
@@ -121,9 +121,9 @@ actor Mux owns GameState {
             status: next_status,
             move_timeout: move_timeout,
             castle_rights: castle_rights,
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: CLEAR,
             recent_castle: CLEAR,
             draw_state: next_draw_state,
@@ -176,15 +176,15 @@ actor Pawn owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
 
-        int from_idx = pending_src_idx;
-        int to_idx = pending_dst_idx;
-        int promo_piece = pending_promo;
+        int from_idx = signed(pending_src_idx);
+        int to_idx = signed(pending_dst_idx);
+        byte promo_piece = pending_promo;
         require(turn == WHITE || turn == BLACK);
 
         bool is_draw_claim_mode = draw_state < NORMAL;
-        int effective_turn = turn;
+        byte effective_turn = turn;
         if (is_draw_claim_mode) {
-            effective_turn = 1 - turn;
+            effective_turn = (1 - signed(turn)) as byte;
         }
         require(from_idx != to_idx);
 
@@ -207,7 +207,7 @@ actor Pawn owns GameState {
             require(!target_is_black);
         }
 
-        int ep_idx = en_passant_idx;
+        int ep_idx = signed(en_passant_idx);
         int from_y = from_idx / 8;
         int from_x = from_idx % 8;
         int to_y = to_idx / 8;
@@ -253,7 +253,7 @@ actor Pawn owns GameState {
             require(promo_piece == 0);
         } else if (reaches_back_rank) {
             require(promo_piece != 0);
-            int arrived_num = promo_piece;
+            int arrived_num = signed(promo_piece);
             if (moving_is_black) {
                 arrived_num = arrived_num + 8;
             }
@@ -262,7 +262,7 @@ actor Pawn owns GameState {
             require(promo_piece == 0);
         }
 
-        int next_status = status;
+        byte next_status = status;
         if (recent_castle != CLEAR) {
             if (moving_is_white) {
                 require(target_num == 14);
@@ -295,7 +295,7 @@ actor Pawn owns GameState {
             }
         }
 
-        int next_draw_state = draw_state;
+        byte next_draw_state = draw_state;
         if (draw_state == CLAIMED) {
             next_draw_state = DEFENSE;
         } else if (draw_state == DEFENSE && next_status == LIVE) {
@@ -306,9 +306,9 @@ actor Pawn owns GameState {
             }
         }
 
-        int next_en_passant_idx = -1;
+        byte next_en_passant_idx = OFFBOARD;
         if (two_step) {
-            next_en_passant_idx = from_idx + dir * 8;
+            next_en_passant_idx = (from_idx + dir * 8) as byte;
         }
 
         int a = from_idx;
@@ -367,13 +367,13 @@ actor Pawn owns GameState {
             white_player: white_player,
             black_player: black_player,
             board: next_board,
-            turn: 1 - turn,
+            turn: (1 - signed(turn)) as byte,
             status: next_status,
             move_timeout: move_timeout,
             castle_rights: castle_rights,
             en_passant_idx: next_en_passant_idx,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: CLEAR,
             recent_castle: CLEAR,
             draw_state: next_draw_state,
@@ -400,8 +400,8 @@ actor Knight owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
 
-        int from_idx = pending_src_idx;
-        int to_idx = pending_dst_idx;
+        int from_idx = signed(pending_src_idx);
+        int to_idx = signed(pending_dst_idx);
         int from_y = from_idx / 8;
         int from_x = from_idx % 8;
         int to_y = to_idx / 8;
@@ -409,9 +409,9 @@ actor Knight owns GameState {
 
         require(turn == WHITE || turn == BLACK);
         bool is_draw_claim_mode = draw_state < NORMAL;
-        int effective_turn = turn;
+        byte effective_turn = turn;
         if (is_draw_claim_mode) {
-            effective_turn = 1 - turn;
+            effective_turn = (1 - signed(turn)) as byte;
         }
         require(from_idx != to_idx);
 
@@ -453,7 +453,7 @@ actor Knight owns GameState {
         byte[] suffix = prev_board.slice(high_idx + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
-        int next_status = status;
+        byte next_status = status;
         if (recent_castle != CLEAR) {
             if (turn == WHITE) {
                 require(target_num == 14);
@@ -486,7 +486,7 @@ actor Knight owns GameState {
             }
         }
 
-        int next_draw_state = draw_state;
+        byte next_draw_state = draw_state;
         if (draw_state == CLAIMED) {
             next_draw_state = DEFENSE;
         } else if (draw_state == DEFENSE && next_status == LIVE) {
@@ -501,13 +501,13 @@ actor Knight owns GameState {
             white_player: white_player,
             black_player: black_player,
             board: next_board,
-            turn: 1 - turn,
+            turn: (1 - signed(turn)) as byte,
             status: next_status,
             move_timeout: move_timeout,
             castle_rights: castle_rights,
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: CLEAR,
             recent_castle: CLEAR,
             draw_state: next_draw_state,
@@ -534,14 +534,14 @@ actor Vert owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
 
-        int from_idx = pending_src_idx;
-        int to_idx = pending_dst_idx;
+        int from_idx = signed(pending_src_idx);
+        int to_idx = signed(pending_dst_idx);
         require(turn == WHITE || turn == BLACK);
 
         bool is_draw_claim_mode = draw_state < NORMAL;
-        int effective_turn = turn;
+        byte effective_turn = turn;
         if (is_draw_claim_mode) {
-            effective_turn = 1 - turn;
+            effective_turn = (1 - signed(turn)) as byte;
         }
         require(from_idx != to_idx);
 
@@ -601,7 +601,7 @@ actor Vert owns GameState {
         byte[] suffix = prev_board.slice(high_idx + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
-        int next_status = status;
+        byte next_status = status;
         if (recent_castle != CLEAR) {
             if (turn == WHITE) {
                 require(target_num == 14);
@@ -634,7 +634,7 @@ actor Vert owns GameState {
             }
         }
 
-        int next_draw_state = draw_state;
+        byte next_draw_state = draw_state;
         if (draw_state == CLAIMED) {
             next_draw_state = DEFENSE;
         } else if (draw_state == DEFENSE && next_status == LIVE) {
@@ -672,13 +672,13 @@ actor Vert owns GameState {
             white_player: white_player,
             black_player: black_player,
             board: next_board,
-            turn: 1 - turn,
+            turn: (1 - signed(turn)) as byte,
             status: next_status,
             move_timeout: move_timeout,
             castle_rights: next_castle_rights,
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: CLEAR,
             recent_castle: CLEAR,
             draw_state: next_draw_state,
@@ -705,14 +705,14 @@ actor Horiz owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
 
-        int from_idx = pending_src_idx;
-        int to_idx = pending_dst_idx;
+        int from_idx = signed(pending_src_idx);
+        int to_idx = signed(pending_dst_idx);
         require(turn == WHITE || turn == BLACK);
 
         bool is_draw_claim_mode = draw_state < NORMAL;
-        int effective_turn = turn;
+        byte effective_turn = turn;
         if (is_draw_claim_mode) {
-            effective_turn = 1 - turn;
+            effective_turn = (1 - signed(turn)) as byte;
         }
         require(from_idx != to_idx);
 
@@ -772,7 +772,7 @@ actor Horiz owns GameState {
         byte[] suffix = prev_board.slice(high_idx + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
-        int next_status = status;
+        byte next_status = status;
         if (recent_castle != CLEAR) {
             if (turn == WHITE) {
                 require(target_num == 14);
@@ -805,7 +805,7 @@ actor Horiz owns GameState {
             }
         }
 
-        int next_draw_state = draw_state;
+        byte next_draw_state = draw_state;
         if (draw_state == CLAIMED) {
             next_draw_state = DEFENSE;
         } else if (draw_state == DEFENSE && next_status == LIVE) {
@@ -843,13 +843,13 @@ actor Horiz owns GameState {
             white_player: white_player,
             black_player: black_player,
             board: next_board,
-            turn: 1 - turn,
+            turn: (1 - signed(turn)) as byte,
             status: next_status,
             move_timeout: move_timeout,
             castle_rights: next_castle_rights,
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: CLEAR,
             recent_castle: CLEAR,
             draw_state: next_draw_state,
@@ -875,14 +875,14 @@ actor Horiz owns GameState {
 actor Diag owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
-        int from_idx = pending_src_idx;
-        int to_idx = pending_dst_idx;
+        int from_idx = signed(pending_src_idx);
+        int to_idx = signed(pending_dst_idx);
         require(turn == WHITE || turn == BLACK);
 
         bool is_draw_claim_mode = draw_state < NORMAL;
-        int effective_turn = turn;
+        byte effective_turn = turn;
         if (is_draw_claim_mode) {
-            effective_turn = 1 - turn;
+            effective_turn = (1 - signed(turn)) as byte;
         }
         require(from_idx != to_idx);
 
@@ -949,7 +949,7 @@ actor Diag owns GameState {
         byte[] suffix = prev_board.slice(high_idx + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
-        int next_status = status;
+        byte next_status = status;
         if (recent_castle != CLEAR) {
             if (turn == WHITE) {
                 require(target_num == 14);
@@ -982,7 +982,7 @@ actor Diag owns GameState {
             }
         }
 
-        int next_draw_state = draw_state;
+        byte next_draw_state = draw_state;
         if (draw_state == CLAIMED) {
             next_draw_state = DEFENSE;
         } else if (draw_state == DEFENSE && next_status == LIVE) {
@@ -997,13 +997,13 @@ actor Diag owns GameState {
             white_player: white_player,
             black_player: black_player,
             board: next_board,
-            turn: 1 - turn,
+            turn: (1 - signed(turn)) as byte,
             status: next_status,
             move_timeout: move_timeout,
             castle_rights: castle_rights,
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: CLEAR,
             recent_castle: CLEAR,
             draw_state: next_draw_state,
@@ -1029,14 +1029,14 @@ actor Diag owns GameState {
 actor King owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
-        int from_idx = pending_src_idx;
-        int to_idx = pending_dst_idx;
+        int from_idx = signed(pending_src_idx);
+        int to_idx = signed(pending_dst_idx);
         require(turn == WHITE || turn == BLACK);
 
         bool is_draw_claim_mode = draw_state < NORMAL;
-        int effective_turn = turn;
+        byte effective_turn = turn;
         if (is_draw_claim_mode) {
-            effective_turn = 1 - turn;
+            effective_turn = (1 - signed(turn)) as byte;
         }
         require(from_idx != to_idx);
 
@@ -1082,7 +1082,7 @@ actor King owns GameState {
         byte[] suffix = prev_board.slice(high_idx + 1, 64);
         byte[64] next_board = byte[64](prefix + byte[1](first_slot) + middle + byte[1](second_slot) + suffix);
 
-        int next_status = status;
+        byte next_status = status;
         if (recent_castle != CLEAR) {
             if (turn == WHITE) {
                 require(target_num == 14);
@@ -1115,7 +1115,7 @@ actor King owns GameState {
             }
         }
 
-        int next_draw_state = draw_state;
+        byte next_draw_state = draw_state;
         if (draw_state == CLAIMED) {
             next_draw_state = DEFENSE;
         } else if (draw_state == DEFENSE && next_status == LIVE) {
@@ -1148,13 +1148,13 @@ actor King owns GameState {
             white_player: white_player,
             black_player: black_player,
             board: next_board,
-            turn: 1 - turn,
+            turn: (1 - signed(turn)) as byte,
             status: next_status,
             move_timeout: move_timeout,
             castle_rights: next_castle_rights,
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: CLEAR,
             recent_castle: CLEAR,
             draw_state: next_draw_state,
@@ -1182,8 +1182,8 @@ actor Castle owns GameState {
         require(status == LIVE);
         require(draw_state >= NORMAL);
 
-        int from_idx = pending_src_idx;
-        int to_idx = pending_dst_idx;
+        int from_idx = signed(pending_src_idx);
+        int to_idx = signed(pending_dst_idx);
         require(turn == WHITE || turn == BLACK);
         require(from_idx != to_idx);
 
@@ -1286,25 +1286,25 @@ actor Castle owns GameState {
                 + byte[1](next_black_can_castle_q)
         );
 
-        int next_recent_castle = 1;
+        byte next_recent_castle = 0x01;
         if (!is_king_side) {
-            next_recent_castle = 2;
+            next_recent_castle = 0x02;
         }
         if (moving_is_black) {
-            next_recent_castle = next_recent_castle + 2;
+            next_recent_castle = (signed(next_recent_castle) + 2) as byte;
         }
 
         GameState next_state = {
             white_player: white_player,
             black_player: black_player,
             board: next_board,
-            turn: 1 - turn,
+            turn: (1 - signed(turn)) as byte,
             status: status,
             move_timeout: move_timeout,
             castle_rights: next_castle_rights,
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: CLEAR,
             recent_castle: next_recent_castle,
             draw_state: draw_state,
@@ -1333,8 +1333,8 @@ actor CastleChallengePrep owns GameState {
         require(draw_state == NORMAL);
         require(recent_castle >= 1 && recent_castle <= 4);
 
-        int from_idx = pending_src_idx;
-        int to_idx = pending_dst_idx;
+        int from_idx = signed(pending_src_idx);
+        int to_idx = signed(pending_dst_idx);
         require(from_idx != to_idx);
         byte[64] prev_board = board;
 
@@ -1472,7 +1472,7 @@ actor CastleChallengePrep owns GameState {
             status: status,
             move_timeout: move_timeout,
             castle_rights: castle_rights,
-            en_passant_idx: -1,
+            en_passant_idx: OFFBOARD,
             pending_src_idx: pending_src_idx,
             pending_dst_idx: pending_dst_idx,
             pending_promo: CLEAR,

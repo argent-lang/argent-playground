@@ -5,6 +5,7 @@ use argent_runtime::{
     TxContext,
 };
 use blake2b_simd::Params as Blake2bParams;
+use chess_covenant::protocol_move::OFFBOARD;
 use kaspa_consensus_core::{
     hashing::{
         sighash::{calc_schnorr_signature_hash, SigHashReusedValuesUnsync},
@@ -33,6 +34,10 @@ const WOFFER: i64 = 4;
 const MOVE_TIMEOUT: i64 = 600;
 const GAME_VALUE: u64 = 1_000;
 const BASE_RATING: i64 = 1_200;
+
+fn state_byte(value: i64) -> u8 {
+    u8::try_from(value).expect("bounded Chess state value fits in a byte")
+}
 
 struct TestPlayer {
     keypair: Keypair,
@@ -140,9 +145,9 @@ impl GameStateData {
             status: LIVE,
             move_timeout: MOVE_TIMEOUT,
             castle_rights: [1; 4],
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: 0,
             recent_castle: 0,
             draw_state: NORMAL,
@@ -172,9 +177,9 @@ impl GameStateData {
         next.board[mv.source_idx() as usize] = 0;
         next.board[mv.destination_idx() as usize] = piece;
         next.turn = 1 - self.turn;
-        next.en_passant_idx = -1;
-        next.pending_src_idx = -1;
-        next.pending_dst_idx = -1;
+        next.en_passant_idx = OFFBOARD;
+        next.pending_src_idx = OFFBOARD;
+        next.pending_dst_idx = OFFBOARD;
         next.pending_promo = 0;
         next.recent_castle = 0;
         next
@@ -185,16 +190,16 @@ impl GameStateData {
             white_player: self.white_player,
             black_player: self.black_player,
             board: self.board.clone(),
-            turn: self.turn,
-            status: self.status,
+            turn: state_byte(self.turn),
+            status: state_byte(self.status),
             move_timeout: self.move_timeout,
             castle_rights: self.castle_rights,
-            en_passant_idx: self.en_passant_idx,
-            pending_src_idx: self.pending_src_idx,
-            pending_dst_idx: self.pending_dst_idx,
-            pending_promo: self.pending_promo,
-            recent_castle: self.recent_castle,
-            draw_state: self.draw_state,
+            en_passant_idx: state_byte(self.en_passant_idx),
+            pending_src_idx: state_byte(self.pending_src_idx),
+            pending_dst_idx: state_byte(self.pending_dst_idx),
+            pending_promo: state_byte(self.pending_promo),
+            recent_castle: state_byte(self.recent_castle),
+            draw_state: state_byte(self.draw_state),
         }
     }
 }
@@ -368,8 +373,8 @@ fn route_mux_output_to_worker(
                     mv.from_y,
                     mv.to_x,
                     mv.to_y,
-                    mv.promo_piece,
-                    termination_action,
+                    state_byte(mv.promo_piece),
+                    state_byte(termination_action),
                     sign_input(tx, input_index, &keypair),
                     public_key.clone(),
                     player_id,
@@ -416,8 +421,8 @@ fn assert_mux_route_rejected(
                     mv.from_y,
                     mv.to_x,
                     mv.to_y,
-                    mv.promo_piece,
-                    CLEAR,
+                    state_byte(mv.promo_piece),
+                    state_byte(CLEAR),
                     sign_input(tx, input_index, &keypair),
                     public_key.clone(),
                     player_id,
@@ -505,7 +510,7 @@ fn terminate_mux_output(
             "Mux",
             mux_state,
             EntryCall::new("terminate").args_with(move |tx, input_index| {
-                args![termination_action, sign_input(tx, input_index, &keypair), public_key.clone(), player_id]
+                args![state_byte(termination_action), sign_input(tx, input_index, &keypair), public_key.clone(), player_id]
             }),
             mux_output.outpoint,
             mux_output.utxo,
@@ -520,7 +525,7 @@ fn settle_state(white_player: [u8; 32], black_player: [u8; 32], status: i64) -> 
     state! {
         white_player: white_player,
         black_player: black_player,
-        status: status,
+        status: state_byte(status),
     }
 }
 
@@ -738,7 +743,7 @@ fn start_game(
             "Player",
             leader_state.source_state(),
             EntryCall::new("start_game").args_with(move |tx, input_index| {
-                args![sign_input(tx, input_index, &leader_keypair), leader_public_key.clone(), self_side, MOVE_TIMEOUT,]
+                args![sign_input(tx, input_index, &leader_keypair), leader_public_key.clone(), state_byte(self_side), MOVE_TIMEOUT,]
             }),
             leader_output.outpoint,
             leader_output.utxo,
@@ -1661,7 +1666,7 @@ fn surrender_routes_back_to_mux_with_terminal_status() {
 
     let mut surrendered = initial.clone();
     surrendered.status = BWIN;
-    surrendered.en_passant_idx = -1;
+    surrendered.en_passant_idx = OFFBOARD;
     surrendered.recent_castle = CLEAR;
     surrendered.draw_state = NORMAL;
     execute_mux_terminate(&builder, &white, &initial, SURRENDER, &surrendered, 0x85);

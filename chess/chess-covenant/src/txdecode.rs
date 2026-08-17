@@ -11,6 +11,7 @@ use kaspa_txscript::opcodes::codes::{
 pub enum DecodeValue {
     Int(i64),
     Bool(bool),
+    Byte(u8),
     Bytes(Vec<u8>),
     Struct(DecodedObject),
 }
@@ -96,6 +97,8 @@ pub enum DecodeError {
     InvalidIntegerEncoding,
     #[error("invalid bool encoding")]
     InvalidBoolEncoding,
+    #[error("invalid byte encoding")]
+    InvalidByteEncoding,
     #[error("state field count mismatch for {contract}: expected {expected}, got {actual}")]
     StateFieldCountMismatch { contract: String, expected: usize, actual: usize },
     #[error("unknown contract {0}")]
@@ -299,8 +302,12 @@ fn decode_value_from_bytes(
             [1] => Ok(DecodeValue::Bool(true)),
             _ => Err(DecodeError::InvalidBoolEncoding),
         },
-        TypeArtifact::Byte
-        | TypeArtifact::Bytes
+        TypeArtifact::Byte => match (mode, bytes) {
+            (DecodeMode::State, [value]) | (DecodeMode::SigScript, [value]) => Ok(DecodeValue::Byte(*value)),
+            (DecodeMode::SigScript, []) => Ok(DecodeValue::Byte(0)),
+            _ => Err(DecodeError::InvalidByteEncoding),
+        },
+        TypeArtifact::Bytes
         | TypeArtifact::Text
         | TypeArtifact::Pubkey
         | TypeArtifact::Sig
@@ -381,5 +388,16 @@ mod tests {
         let state = template.decode_state(&script).expect("canonical League state decodes");
         assert_eq!(state.fields.len(), contract.runtime_state.fields.len());
         assert_eq!(state.fields.last().expect("admin field").name, "admin");
+    }
+
+    #[test]
+    fn decodes_byte_state_and_canonical_zero_argument() {
+        let structs = BTreeMap::new();
+        assert_eq!(decode_value_from_bytes(&[0], &TypeArtifact::Byte, &structs, DecodeMode::State), Ok(DecodeValue::Byte(0)));
+        assert_eq!(decode_value_from_bytes(&[], &TypeArtifact::Byte, &structs, DecodeMode::SigScript), Ok(DecodeValue::Byte(0)));
+        assert_eq!(
+            decode_value_from_bytes(&[], &TypeArtifact::Byte, &structs, DecodeMode::State),
+            Err(DecodeError::InvalidByteEncoding)
+        );
     }
 }

@@ -7,7 +7,7 @@ use kaspa_consensus_core::tx::Transaction;
 use kaspa_consensus_core::Hash;
 
 use crate::orchestrator::WorkerKind;
-use crate::protocol_move::{apply_protocol_move, ProtocolMoveSpec, ProtocolState};
+use crate::protocol_move::{apply_protocol_move, ProtocolMoveSpec, ProtocolState, OFFBOARD};
 use crate::txdecode::{decode_p2sh_call, ContractTemplate, DecodeError, DecodeValue, DecodedCall, DecodedObject};
 
 const WHITE: i64 = 0;
@@ -274,7 +274,7 @@ impl ChessEventEmitter {
                         )));
                     }
 
-                    let self_side = int_arg(&decoded.call, "self_side")?;
+                    let self_side = byte_arg(&decoded.call, "self_side")?;
                     let route_templates = bytes_arg_any(&decoded.call, &["route_templates", "gen__mux_routes"])?;
                     let move_timeout = int_arg(&decoded.call, "move_timeout")?;
 
@@ -295,9 +295,9 @@ impl ChessEventEmitter {
                         status: LIVE,
                         move_timeout,
                         castle_rights: vec![1, 1, 1, 1],
-                        en_passant_idx: -1,
-                        pending_src_idx: -1,
-                        pending_dst_idx: -1,
+                        en_passant_idx: OFFBOARD,
+                        pending_src_idx: OFFBOARD,
+                        pending_dst_idx: OFFBOARD,
                         pending_promo: CLEAR,
                         recent_castle: CLEAR,
                         draw_state: NORMAL,
@@ -346,8 +346,8 @@ impl ChessEventEmitter {
                     let from_y = int_arg(&decoded.call, "from_y")?;
                     let to_x = int_arg(&decoded.call, "to_x")?;
                     let to_y = int_arg(&decoded.call, "to_y")?;
-                    let promo_piece = int_arg(&decoded.call, "promo_piece")?;
-                    let termination_action = int_arg(&decoded.call, "termination_action")?;
+                    let promo_piece = byte_arg(&decoded.call, "promo_piece")?;
+                    let termination_action = byte_arg(&decoded.call, "termination_action")?;
                     let next = route_game_state(state, selector, from_x, from_y, to_x, to_y, promo_piece, termination_action)?;
                     let next_state = ChessState::Game(next);
                     let outputs = vec![ObservedOutput { output_index: output_indexes[0], state: next_state }];
@@ -364,7 +364,7 @@ impl ChessEventEmitter {
                             output_indexes.len()
                         )));
                     }
-                    let termination_action = int_arg(&decoded.call, "termination_action")?;
+                    let termination_action = byte_arg(&decoded.call, "termination_action")?;
                     let next = route_game_state(state, MUX, -1, -1, -1, -1, 0, termination_action)?;
                     let outputs = vec![ObservedOutput { output_index: output_indexes[0], state: ChessState::Game(next) }];
                     events.push(ChessEvent::MoveRouted { selector: MUX, termination_action, output_index: output_indexes[0] });
@@ -618,6 +618,13 @@ fn int_arg(call: &DecodedCall, name: &str) -> Result<i64, ObserverError> {
     }
 }
 
+fn byte_arg(call: &DecodedCall, name: &str) -> Result<i64, ObserverError> {
+    match call.args.iter().find(|arg| arg.name == name).map(|arg| &arg.value) {
+        Some(DecodeValue::Byte(value)) => Ok(i64::from(*value)),
+        _ => Err(ObserverError(format!("missing byte argument {name}"))),
+    }
+}
+
 fn int_arg_any(call: &DecodedCall, names: &[&str]) -> Result<i64, ObserverError> {
     names
         .iter()
@@ -704,6 +711,13 @@ fn int_field(object: &DecodedObject, name: &str) -> Result<i64, ObserverError> {
     }
 }
 
+fn byte_field(object: &DecodedObject, name: &str) -> Result<i64, ObserverError> {
+    match object.get(name) {
+        Some(DecodeValue::Byte(value)) => Ok(i64::from(*value)),
+        _ => Err(ObserverError(format!("missing byte field {name}"))),
+    }
+}
+
 fn league_from_decoded(object: &DecodedObject) -> Result<LeagueState, ObserverError> {
     Ok(LeagueState {
         admin: hash_field(object, "admin")?,
@@ -740,16 +754,16 @@ fn game_from_decoded(object: &DecodedObject) -> Result<GameState, ObserverError>
         white_player: hash_field(object, "white_player")?,
         black_player: hash_field(object, "black_player")?,
         board: bytes_field(object, "board")?,
-        turn: int_field(object, "turn")?,
-        status: int_field(object, "status")?,
+        turn: byte_field(object, "turn")?,
+        status: byte_field(object, "status")?,
         move_timeout: int_field(object, "move_timeout")?,
         castle_rights: bytes_field(object, "castle_rights")?,
-        en_passant_idx: int_field(object, "en_passant_idx")?,
-        pending_src_idx: int_field(object, "pending_src_idx")?,
-        pending_dst_idx: int_field(object, "pending_dst_idx")?,
-        pending_promo: int_field(object, "pending_promo")?,
-        recent_castle: int_field(object, "recent_castle")?,
-        draw_state: int_field(object, "draw_state")?,
+        en_passant_idx: byte_field(object, "en_passant_idx")?,
+        pending_src_idx: byte_field(object, "pending_src_idx")?,
+        pending_dst_idx: byte_field(object, "pending_dst_idx")?,
+        pending_promo: byte_field(object, "pending_promo")?,
+        recent_castle: byte_field(object, "recent_castle")?,
+        draw_state: byte_field(object, "draw_state")?,
     })
 }
 
@@ -758,7 +772,7 @@ fn settle_from_decoded(object: &DecodedObject) -> Result<SettleState, ObserverEr
         player_template: hash_field_any(object, &["player_template", "gen__player_template"])?,
         white_player: hash_field(object, "white_player")?,
         black_player: hash_field(object, "black_player")?,
-        status: int_field(object, "status")?,
+        status: byte_field(object, "status")?,
     })
 }
 
@@ -775,7 +789,7 @@ fn route_game_state(
 ) -> Result<GameState, ObserverError> {
     let mut next = state.clone();
     if selector == MUX {
-        next.en_passant_idx = -1;
+        next.en_passant_idx = OFFBOARD;
         next.recent_castle = CLEAR;
         if termination_action == CLAIM {
             next.turn = 1 - state.turn;
@@ -946,7 +960,7 @@ fn apply_castle_challenge_state(state: &GameState) -> Result<GameState, Observer
         proof_board[(row_base + 4) as usize] = d;
     }
 
-    Ok(GameState { board: proof_board, en_passant_idx: -1, pending_promo: CLEAR, ..state.clone() })
+    Ok(GameState { board: proof_board, en_passant_idx: OFFBOARD, pending_promo: CLEAR, ..state.clone() })
 }
 
 fn timeout_status(turn: i64, draw_state: i64) -> i64 {
@@ -1068,8 +1082,8 @@ fn apply_move_to_state(game: &GameState, mv: MoveSpec) -> Result<GameState, Obse
         turn: next.turn,
         castle_rights: next.castle_rights.to_vec(),
         en_passant_idx: next.en_passant_idx,
-        pending_src_idx: -1,
-        pending_dst_idx: -1,
+        pending_src_idx: OFFBOARD,
+        pending_dst_idx: OFFBOARD,
         pending_promo: 0,
         recent_castle: next.recent_castle,
         ..game.clone()
@@ -1140,16 +1154,16 @@ mod tests {
             white_player: white_player,
             black_player: black_player,
             board: opening_board(),
-            turn: WHITE,
-            status: WWIN,
+            turn: WHITE as u8,
+            status: WWIN as u8,
             move_timeout: 600i64,
             castle_rights: [1u8; 4],
-            en_passant_idx: -1i64,
-            pending_src_idx: -1i64,
-            pending_dst_idx: -1i64,
-            pending_promo: CLEAR,
-            recent_castle: CLEAR,
-            draw_state: NORMAL,
+            en_passant_idx: OFFBOARD as u8,
+            pending_src_idx: OFFBOARD as u8,
+            pending_dst_idx: OFFBOARD as u8,
+            pending_promo: CLEAR as u8,
+            recent_castle: CLEAR as u8,
+            draw_state: NORMAL as u8,
         };
         let outpoint = TransactionOutpoint::new(TransactionId::from_bytes([0x94; 32]), 0);
         let utxo =
@@ -1159,7 +1173,7 @@ mod tests {
             state! {
                 white_player: white_player,
                 black_player: black_player,
-                status: WWIN,
+                status: WWIN as u8,
             },
             CovenantBinding::new(0, covenant_id),
             1_000,
@@ -1234,8 +1248,8 @@ mod tests {
         match &apply.inputs[0].outputs[0].state {
             ChessState::Game(game) => {
                 assert_eq!(game.turn, BLACK);
-                assert_eq!(game.pending_src_idx, -1);
-                assert_eq!(game.pending_dst_idx, -1);
+                assert_eq!(game.pending_src_idx, OFFBOARD);
+                assert_eq!(game.pending_dst_idx, OFFBOARD);
             }
             other => panic!("expected mux game after apply, got {other:?}"),
         }

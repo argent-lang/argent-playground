@@ -17,22 +17,23 @@ contract Player(
     int init_losses
 ) {
     // :: shared constants
-    int constant WHITE = 0;
-    int constant BLACK = 1;
-    int constant LIVE = 0;
-    int constant WWIN = 1;
-    int constant BWIN = 2;
-    int constant DRAW = 3;
-    int constant CLEAR = 0;
-    int constant OFFER = 1;
-    int constant CLAIM = 2;
-    int constant SURRENDER = 3;
-    int constant ACCEPT = 4;
-    int constant CLAIMED = 1;
-    int constant DEFENSE = 2;
-    int constant NORMAL = 3;
-    int constant WOFFER = 4;
-    int constant BOFFER = 5;
+    byte constant WHITE = 0x00;
+    byte constant BLACK = 0x01;
+    byte constant LIVE = 0x00;
+    byte constant WWIN = 0x01;
+    byte constant BWIN = 0x02;
+    byte constant DRAW = 0x03;
+    byte constant CLEAR = 0x00;
+    byte constant OFFER = 0x01;
+    byte constant CLAIM = 0x02;
+    byte constant SURRENDER = 0x03;
+    byte constant ACCEPT = 0x04;
+    byte constant CLAIMED = 0x01;
+    byte constant DEFENSE = 0x02;
+    byte constant NORMAL = 0x03;
+    byte constant WOFFER = 0x04;
+    byte constant BOFFER = 0x05;
+    byte constant OFFBOARD = 0x40;
 
     // :: state layouts
     struct LeagueState {
@@ -45,22 +46,22 @@ contract Player(
         byte[32] white_player;
         byte[32] black_player;
         byte[64] board;
-        int turn;
-        int status;
+        byte turn;
+        byte status;
         int move_timeout;
         byte[4] castle_rights;
-        int en_passant_idx;
-        int pending_src_idx;
-        int pending_dst_idx;
-        int pending_promo;
-        int recent_castle;
-        int draw_state;
+        byte en_passant_idx;
+        byte pending_src_idx;
+        byte pending_dst_idx;
+        byte pending_promo;
+        byte recent_castle;
+        byte draw_state;
     }
     struct SettleState {
         // :: user declared fields
         byte[32] white_player;
         byte[32] black_player;
-        int status;
+        byte status;
     }
     struct Gen__MuxState {
         // :: generated fields
@@ -72,16 +73,16 @@ contract Player(
         byte[32] white_player;
         byte[32] black_player;
         byte[64] board;
-        int turn;
-        int status;
+        byte turn;
+        byte status;
         int move_timeout;
         byte[4] castle_rights;
-        int en_passant_idx;
-        int pending_src_idx;
-        int pending_dst_idx;
-        int pending_promo;
-        int recent_castle;
-        int draw_state;
+        byte en_passant_idx;
+        byte pending_src_idx;
+        byte pending_dst_idx;
+        byte pending_promo;
+        byte recent_castle;
+        byte draw_state;
     }
     struct Gen__SettleState {
         // :: generated fields
@@ -92,7 +93,7 @@ contract Player(
         // :: user declared fields
         byte[32] white_player;
         byte[32] black_player;
-        int status;
+        byte status;
     }
 
     // :: shared helper functions
@@ -106,8 +107,8 @@ contract Player(
         }
         return result_;
     }
-    function timeout_status(int turn_, int draw_state_) : int {
-        int status_ = WWIN;
+    function timeout_status(byte turn_, byte draw_state_) : byte {
+        byte status_ = WWIN;
         if (turn_ == WHITE) {
             status_ = BWIN;
         }
@@ -148,7 +149,7 @@ contract Player(
     entry start_game(
         sig owner_sig,
         pubkey owner_pk,
-        int self_side,
+        byte self_side,
         int move_timeout,
         int gen__player_prefix_len,
         int gen__player_suffix_len,
@@ -233,9 +234,9 @@ contract Player(
             status: LIVE,
             move_timeout: move_timeout,
             castle_rights: byte[4](0x01010101),
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: CLEAR,
             recent_castle: CLEAR,
             draw_state: NORMAL,

@@ -10,34 +10,35 @@ contract Castle(
     byte[32] init_white_player,
     byte[32] init_black_player,
     byte[64] init_board,
-    int init_turn,
-    int init_status,
+    byte init_turn,
+    byte init_status,
     int init_move_timeout,
     byte[4] init_castle_rights,
-    int init_en_passant_idx,
-    int init_pending_src_idx,
-    int init_pending_dst_idx,
-    int init_pending_promo,
-    int init_recent_castle,
-    int init_draw_state
+    byte init_en_passant_idx,
+    byte init_pending_src_idx,
+    byte init_pending_dst_idx,
+    byte init_pending_promo,
+    byte init_recent_castle,
+    byte init_draw_state
 ) {
     // :: shared constants
-    int constant WHITE = 0;
-    int constant BLACK = 1;
-    int constant LIVE = 0;
-    int constant WWIN = 1;
-    int constant BWIN = 2;
-    int constant DRAW = 3;
-    int constant CLEAR = 0;
-    int constant OFFER = 1;
-    int constant CLAIM = 2;
-    int constant SURRENDER = 3;
-    int constant ACCEPT = 4;
-    int constant CLAIMED = 1;
-    int constant DEFENSE = 2;
-    int constant NORMAL = 3;
-    int constant WOFFER = 4;
-    int constant BOFFER = 5;
+    byte constant WHITE = 0x00;
+    byte constant BLACK = 0x01;
+    byte constant LIVE = 0x00;
+    byte constant WWIN = 0x01;
+    byte constant BWIN = 0x02;
+    byte constant DRAW = 0x03;
+    byte constant CLEAR = 0x00;
+    byte constant OFFER = 0x01;
+    byte constant CLAIM = 0x02;
+    byte constant SURRENDER = 0x03;
+    byte constant ACCEPT = 0x04;
+    byte constant CLAIMED = 0x01;
+    byte constant DEFENSE = 0x02;
+    byte constant NORMAL = 0x03;
+    byte constant WOFFER = 0x04;
+    byte constant BOFFER = 0x05;
+    byte constant OFFBOARD = 0x40;
 
     // :: state layouts
     struct LeagueState {
@@ -60,7 +61,7 @@ contract Castle(
         // :: user declared fields
         byte[32] white_player;
         byte[32] black_player;
-        int status;
+        byte status;
     }
     struct Gen__SettleState {
         // :: generated fields
@@ -71,7 +72,7 @@ contract Castle(
         // :: user declared fields
         byte[32] white_player;
         byte[32] black_player;
-        int status;
+        byte status;
     }
 
     // :: shared helper functions
@@ -85,8 +86,8 @@ contract Castle(
         }
         return result_;
     }
-    function timeout_status(int turn_, int draw_state_) : int {
-        int status_ = WWIN;
+    function timeout_status(byte turn_, byte draw_state_) : byte {
+        byte status_ = WWIN;
         if (turn_ == WHITE) {
             status_ = BWIN;
         }
@@ -116,16 +117,16 @@ contract Castle(
     byte[32] white_player = init_white_player;
     byte[32] black_player = init_black_player;
     byte[64] board = init_board;
-    int turn = init_turn;
-    int status = init_status;
+    byte turn = init_turn;
+    byte status = init_status;
     int move_timeout = init_move_timeout;
     byte[4] castle_rights = init_castle_rights;
-    int en_passant_idx = init_en_passant_idx;
-    int pending_src_idx = init_pending_src_idx;
-    int pending_dst_idx = init_pending_dst_idx;
-    int pending_promo = init_pending_promo;
-    int recent_castle = init_recent_castle;
-    int draw_state = init_draw_state;
+    byte en_passant_idx = init_en_passant_idx;
+    byte pending_src_idx = init_pending_src_idx;
+    byte pending_dst_idx = init_pending_dst_idx;
+    byte pending_promo = init_pending_promo;
+    byte recent_castle = init_recent_castle;
+    byte draw_state = init_draw_state;
 
     // :: entrypoints
     // :: leader entry (1:N)
@@ -136,8 +137,8 @@ contract Castle(
 
         require(status == LIVE);
         require(draw_state >= NORMAL);
-        int from_idx = pending_src_idx;
-        int to_idx = pending_dst_idx;
+        int from_idx = signed(pending_src_idx);
+        int to_idx = signed(pending_dst_idx);
         require(turn == WHITE || turn == BLACK);
         require(from_idx != to_idx);
         byte[64] prev_board = board;
@@ -231,12 +232,12 @@ contract Castle(
                 + byte[1](next_black_can_castle_k)
                 + byte[1](next_black_can_castle_q)
         );
-        int next_recent_castle = 1;
+        byte next_recent_castle = 0x01;
         if (!is_king_side) {
-            next_recent_castle = 2;
+            next_recent_castle = 0x02;
         }
         if (moving_is_black) {
-            next_recent_castle = next_recent_castle + 2;
+            next_recent_castle = (signed(next_recent_castle) + 2) as byte;
         }
         State next_state = State {
             // :: generated fields
@@ -248,13 +249,13 @@ contract Castle(
             white_player: white_player,
             black_player: black_player,
             board: next_board,
-            turn: 1 - turn,
+            turn: (1 - signed(turn)) as byte,
             status: status,
             move_timeout: move_timeout,
             castle_rights: next_castle_rights,
-            en_passant_idx: -1,
-            pending_src_idx: -1,
-            pending_dst_idx: -1,
+            en_passant_idx: OFFBOARD,
+            pending_src_idx: OFFBOARD,
+            pending_dst_idx: OFFBOARD,
             pending_promo: CLEAR,
             recent_castle: next_recent_castle,
             draw_state: draw_state,

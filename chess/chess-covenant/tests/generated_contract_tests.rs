@@ -1,4 +1,4 @@
-use argent_artifact::Artifact;
+use argent_artifact::{Artifact, TypeArtifact};
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 use kaspa_consensus_core::tx::PopulatedTransaction;
 use kaspa_txscript::parse_script;
@@ -62,99 +62,99 @@ fn size_snapshots() -> [SizeSnapshot; 12] {
         },
         SizeSnapshot {
             actor: "Player",
-            expected_script_len: 3657,
-            expected_instruction_count: 2623,
-            expected_charged_op_count: 1745,
+            expected_script_len: 3650,
+            expected_instruction_count: 2604,
+            expected_charged_op_count: 1734,
             baseline_script_len: 3456,
             baseline_instruction_count: 2550,
             baseline_charged_op_count: 1660,
         },
         SizeSnapshot {
             actor: "Mux",
-            expected_script_len: 2196,
-            expected_instruction_count: 1386,
-            expected_charged_op_count: 941,
+            expected_script_len: 2152,
+            expected_instruction_count: 1356,
+            expected_charged_op_count: 924,
             baseline_script_len: 1754,
             baseline_instruction_count: 1086,
             baseline_charged_op_count: 736,
         },
         SizeSnapshot {
             actor: "Settle",
-            expected_script_len: 2970,
-            expected_instruction_count: 2196,
-            expected_charged_op_count: 1448,
+            expected_script_len: 2968,
+            expected_instruction_count: 2197,
+            expected_charged_op_count: 1449,
             baseline_script_len: 2656,
             baseline_instruction_count: 2068,
             baseline_charged_op_count: 1347,
         },
         SizeSnapshot {
             actor: "Pawn",
-            expected_script_len: 2000,
-            expected_instruction_count: 1296,
-            expected_charged_op_count: 853,
+            expected_script_len: 1972,
+            expected_instruction_count: 1284,
+            expected_charged_op_count: 847,
             baseline_script_len: 1972,
             baseline_instruction_count: 1332,
             baseline_charged_op_count: 872,
         },
         SizeSnapshot {
             actor: "Knight",
-            expected_script_len: 1596,
-            expected_instruction_count: 923,
-            expected_charged_op_count: 605,
+            expected_script_len: 1563,
+            expected_instruction_count: 907,
+            expected_charged_op_count: 596,
             baseline_script_len: 1496,
             baseline_instruction_count: 891,
             baseline_charged_op_count: 594,
         },
         SizeSnapshot {
             actor: "Vert",
-            expected_script_len: 2129,
-            expected_instruction_count: 1422,
-            expected_charged_op_count: 965,
+            expected_script_len: 2096,
+            expected_instruction_count: 1406,
+            expected_charged_op_count: 956,
             baseline_script_len: 2104,
             baseline_instruction_count: 1469,
             baseline_charged_op_count: 1011,
         },
         SizeSnapshot {
             actor: "Horiz",
-            expected_script_len: 2128,
-            expected_instruction_count: 1421,
-            expected_charged_op_count: 965,
+            expected_script_len: 2095,
+            expected_instruction_count: 1405,
+            expected_charged_op_count: 956,
             baseline_script_len: 2104,
             baseline_instruction_count: 1469,
             baseline_charged_op_count: 1011,
         },
         SizeSnapshot {
             actor: "Diag",
-            expected_script_len: 2136,
-            expected_instruction_count: 1442,
-            expected_charged_op_count: 984,
+            expected_script_len: 2103,
+            expected_instruction_count: 1426,
+            expected_charged_op_count: 975,
             baseline_script_len: 2071,
             baseline_instruction_count: 1443,
             baseline_charged_op_count: 993,
         },
         SizeSnapshot {
             actor: "King",
-            expected_script_len: 1668,
-            expected_instruction_count: 979,
-            expected_charged_op_count: 646,
+            expected_script_len: 1635,
+            expected_instruction_count: 963,
+            expected_charged_op_count: 637,
             baseline_script_len: 1582,
             baseline_instruction_count: 958,
             baseline_charged_op_count: 637,
         },
         SizeSnapshot {
             actor: "Castle",
-            expected_script_len: 1684,
-            expected_instruction_count: 1012,
-            expected_charged_op_count: 659,
+            expected_script_len: 1628,
+            expected_instruction_count: 995,
+            expected_charged_op_count: 649,
             baseline_script_len: 1630,
             baseline_instruction_count: 1019,
             baseline_charged_op_count: 670,
         },
         SizeSnapshot {
             actor: "CastleChallengePrep",
-            expected_script_len: 1858,
-            expected_instruction_count: 1175,
-            expected_charged_op_count: 773,
+            expected_script_len: 1799,
+            expected_instruction_count: 1156,
+            expected_charged_op_count: 763,
             baseline_script_len: 1729,
             baseline_instruction_count: 1120,
             baseline_charged_op_count: 733,
@@ -172,6 +172,46 @@ fn generated_artifact_contains_the_complete_chess_application() {
 
     assert_eq!(actors, expected);
     assert_eq!(contracts, expected);
+}
+
+#[test]
+fn generated_artifact_uses_compact_chess_state_fields() {
+    let artifact = artifact();
+    let game = artifact.argent.states.iter().find(|state| state.name == "GameState").expect("GameState exists");
+    assert_eq!(
+        game.fields.iter().map(|field| (field.name.as_str(), field.ty.clone())).collect::<Vec<_>>(),
+        [
+            ("white_player", TypeArtifact::FixedBytes { len: 32 }),
+            ("black_player", TypeArtifact::FixedBytes { len: 32 }),
+            ("board", TypeArtifact::FixedBytes { len: 64 }),
+            ("turn", TypeArtifact::Byte),
+            ("status", TypeArtifact::Byte),
+            ("move_timeout", TypeArtifact::Int),
+            ("castle_rights", TypeArtifact::FixedBytes { len: 4 }),
+            ("en_passant_idx", TypeArtifact::Byte),
+            ("pending_src_idx", TypeArtifact::Byte),
+            ("pending_dst_idx", TypeArtifact::Byte),
+            ("pending_promo", TypeArtifact::Byte),
+            ("recent_castle", TypeArtifact::Byte),
+            ("draw_state", TypeArtifact::Byte),
+        ]
+    );
+    let authored_size = game
+        .fields
+        .iter()
+        .map(|field| match &field.ty {
+            TypeArtifact::Byte => 1,
+            TypeArtifact::Int => 8,
+            TypeArtifact::FixedBytes { len } => *len,
+            ty => panic!("unexpected GameState field type {ty:?}"),
+        })
+        .sum::<usize>();
+    assert_eq!(authored_size, 148);
+
+    let settle = artifact.argent.states.iter().find(|state| state.name == "SettleState").expect("SettleState exists");
+    let status = settle.fields.last().expect("SettleState has a status field");
+    assert_eq!(status.name, "status");
+    assert_eq!(status.ty, TypeArtifact::Byte);
 }
 
 #[test]
