@@ -139,7 +139,7 @@ contract Diag(
         int from_idx = signed(pending_src_idx);
         int to_idx = signed(pending_dst_idx);
         require(turn == WHITE || turn == BLACK);
-        bool is_draw_claim_mode = draw_state < NORMAL;
+        bool is_draw_claim_mode = signed(draw_state) < signed(NORMAL);
         byte effective_turn = turn;
         if (is_draw_claim_mode) {
             effective_turn = (1 - signed(turn)) as byte;
@@ -283,7 +283,7 @@ contract Diag(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status == LIVE);
-        require(this.age >= move_timeout);
+        require(this.ageDaa >= move_timeout);
         SettleState next_state = SettleState {
             // :: user declared fields
             white_player: white_player,
@@ -296,7 +296,7 @@ contract Diag(
             gen__mux_template: gen__mux_template,
             gen__player_template: gen__player_template,
             gen__settle_template: gen__settle_template,
-            gen__mux_routes_digest: blake2b(byte[](gen__mux_routes)),
+            gen__mux_routes_digest: blake3(byte[](gen__mux_routes)),
             // :: user declared fields
             white_player: next_state.white_player,
             black_player: next_state.black_player,

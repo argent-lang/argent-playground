@@ -158,7 +158,7 @@ contract Player(
         byte[256] gen__mux_routes
     ) {
         // :: routes: route_family/GameState/mux
-        require(blake2b(byte[](gen__mux_routes)) == gen__mux_routes_digest);
+        require(blake3(byte[](gen__mux_routes)) == gen__mux_routes_digest);
 
         // :: cov inputs
         byte[32] gen__cov_id = OpInputCovenantId(this.activeInputIndex);

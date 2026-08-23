@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use argent_artifact::{Artifact, TypeArtifact};
+use argent_artifact::{Artifact, DispatchTag, TypeArtifact};
 use kaspa_txscript::deserialize_i64;
 use kaspa_txscript::opcodes::codes::{
     Op0 as OP_0, Op1 as OP_1, Op16 as OP_16, Op1Negate as OP_1_NEGATE, OpPushData1 as OP_PUSHDATA1, OpPushData2 as OP_PUSHDATA2,
@@ -43,7 +43,7 @@ pub struct DecodedArg {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedCall {
     pub function: String,
-    pub selector: Option<i64>,
+    pub dispatch_tag: DispatchTag,
     pub args: Vec<DecodedArg>,
 }
 
@@ -67,7 +67,7 @@ pub struct ContractTemplate {
 #[derive(Debug, Clone)]
 struct EntryTemplate {
     name: String,
-    selector: Option<i64>,
+    dispatch_tag: DispatchTag,
     inputs: Vec<(String, TypeArtifact)>,
 }
 
@@ -87,8 +87,10 @@ pub enum DecodeError {
     MissingRedeemScript,
     #[error("redeem script does not match contract template {0}")]
     TemplateMismatch(String),
-    #[error("unknown entrypoint selector {selector} for contract {contract}")]
-    UnknownSelector { contract: String, selector: i64 },
+    #[error("invalid entrypoint dispatch tag length {0}")]
+    InvalidDispatchTagLength(usize),
+    #[error("unknown entrypoint dispatch tag {tag:?} for contract {contract}")]
+    UnknownDispatchTag { contract: String, tag: DispatchTag },
     #[error("sigscript argument count mismatch for {contract}.{function}: expected {expected}, got {actual}")]
     ArgumentCountMismatch { contract: String, function: String, expected: usize, actual: usize },
     #[error("unsupported type {0}")]
@@ -126,7 +128,7 @@ impl ContractTemplate {
             .iter()
             .map(|entry| EntryTemplate {
                 name: entry.name.clone(),
-                selector: entry.selector,
+                dispatch_tag: entry.dispatch_tag,
                 inputs: entry.params.iter().map(|param| (param.name.clone(), param.ty.clone())).collect(),
             })
             .collect();
@@ -172,19 +174,14 @@ impl ContractTemplate {
     }
 
     pub fn decode_call(&self, call_items: &[Vec<u8>]) -> Result<DecodedCall, DecodeError> {
-        let selectorless = self.entries.iter().find(|entry| entry.selector.is_none());
-        let (entry, selector, args_slice) = if let Some(entry) = selectorless {
-            (entry, None, call_items)
-        } else {
-            let selector_item = call_items.last().ok_or(DecodeError::UnexpectedEof)?;
-            let selector = decode_script_num(selector_item)?;
-            let entry = self
-                .entries
-                .iter()
-                .find(|entry| entry.selector == Some(selector))
-                .ok_or_else(|| DecodeError::UnknownSelector { contract: self.contract_name.clone(), selector })?;
-            (entry, Some(selector), &call_items[..call_items.len() - 1])
-        };
+        let (tag_item, args_slice) = call_items.split_last().ok_or(DecodeError::UnexpectedEof)?;
+        let tag_bytes: [u8; 4] = tag_item.as_slice().try_into().map_err(|_| DecodeError::InvalidDispatchTagLength(tag_item.len()))?;
+        let dispatch_tag = DispatchTag::from(tag_bytes);
+        let entry = self
+            .entries
+            .iter()
+            .find(|entry| entry.dispatch_tag == dispatch_tag)
+            .ok_or_else(|| DecodeError::UnknownDispatchTag { contract: self.contract_name.clone(), tag: dispatch_tag })?;
 
         if args_slice.len() != entry.inputs.len() {
             return Err(DecodeError::ArgumentCountMismatch {
@@ -201,7 +198,7 @@ impl ContractTemplate {
             args.push(DecodedArg { name: name.clone(), type_name: type_name(ty), value });
         }
 
-        Ok(DecodedCall { function: entry.name.clone(), selector, args })
+        Ok(DecodedCall { function: entry.name.clone(), dispatch_tag, args })
     }
 }
 

@@ -136,7 +136,7 @@ contract Castle(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Mux
 
         require(status == LIVE);
-        require(draw_state >= NORMAL);
+        require(signed(draw_state) >= signed(NORMAL));
         int from_idx = signed(pending_src_idx);
         int to_idx = signed(pending_dst_idx);
         require(turn == WHITE || turn == BLACK);
@@ -278,7 +278,7 @@ contract Castle(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status == LIVE);
-        require(this.age >= move_timeout);
+        require(this.ageDaa >= move_timeout);
         SettleState next_state = SettleState {
             // :: user declared fields
             white_player: white_player,
@@ -291,7 +291,7 @@ contract Castle(
             gen__mux_template: gen__mux_template,
             gen__player_template: gen__player_template,
             gen__settle_template: gen__settle_template,
-            gen__mux_routes_digest: blake2b(byte[](gen__mux_routes)),
+            gen__mux_routes_digest: blake3(byte[](gen__mux_routes)),
             // :: user declared fields
             white_player: next_state.white_player,
             black_player: next_state.black_player,

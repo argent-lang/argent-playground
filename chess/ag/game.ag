@@ -42,11 +42,11 @@ actor Mux owns GameState {
         byte next_draw_state = draw_state;
         require(from_x >= 0 && from_x < 8 && from_y >= 0 && from_y < 8);
         require(to_x >= 0 && to_x < 8 && to_y >= 0 && to_y < 8);
-        require(promo_piece == 0 || (target == Move::Pawn && promo_piece >= 2 && promo_piece <= 5));
-        require(draw_state >= NORMAL || target <= Move::King);
-        require(termination_action == CLEAR || (target <= Move::Castle && draw_state >= NORMAL));
+        require(promo_piece == 0 || (target == Move::Pawn && signed(promo_piece) >= 2 && signed(promo_piece) <= 5));
+        require(signed(draw_state) >= signed(NORMAL) || target <= Move::King);
+        require(termination_action == CLEAR || (target <= Move::Castle && signed(draw_state) >= signed(NORMAL)));
 
-        if (draw_state > NORMAL) {
+        if (signed(draw_state) > signed(NORMAL)) {
             next_draw_state = NORMAL;
         }
         if (termination_action == OFFER) {
@@ -147,7 +147,7 @@ actor Mux owns GameState {
             require(player_ref == white_player);
         }
         require(checkSig(s, pk));
-        require(this.age >= move_timeout);
+        require(this.ageDaa >= move_timeout);
 
         SettleState next_state = {
             white_player: white_player,
@@ -181,7 +181,7 @@ actor Pawn owns GameState {
         byte promo_piece = pending_promo;
         require(turn == WHITE || turn == BLACK);
 
-        bool is_draw_claim_mode = draw_state < NORMAL;
+        bool is_draw_claim_mode = signed(draw_state) < signed(NORMAL);
         byte effective_turn = turn;
         if (is_draw_claim_mode) {
             effective_turn = (1 - signed(turn)) as byte;
@@ -385,7 +385,7 @@ actor Pawn owns GameState {
 
     entry timeout() emits next: Settle {
         require(status == LIVE);
-        require(this.age >= move_timeout);
+        require(this.ageDaa >= move_timeout);
         SettleState next_state = {
             white_player: white_player,
             black_player: black_player,
@@ -408,7 +408,7 @@ actor Knight owns GameState {
         int to_x = to_idx % 8;
 
         require(turn == WHITE || turn == BLACK);
-        bool is_draw_claim_mode = draw_state < NORMAL;
+        bool is_draw_claim_mode = signed(draw_state) < signed(NORMAL);
         byte effective_turn = turn;
         if (is_draw_claim_mode) {
             effective_turn = (1 - signed(turn)) as byte;
@@ -519,7 +519,7 @@ actor Knight owns GameState {
 
     entry timeout() emits next: Settle {
         require(status == LIVE);
-        require(this.age >= move_timeout);
+        require(this.ageDaa >= move_timeout);
         SettleState next_state = {
             white_player: white_player,
             black_player: black_player,
@@ -538,7 +538,7 @@ actor Vert owns GameState {
         int to_idx = signed(pending_dst_idx);
         require(turn == WHITE || turn == BLACK);
 
-        bool is_draw_claim_mode = draw_state < NORMAL;
+        bool is_draw_claim_mode = signed(draw_state) < signed(NORMAL);
         byte effective_turn = turn;
         if (is_draw_claim_mode) {
             effective_turn = (1 - signed(turn)) as byte;
@@ -690,7 +690,7 @@ actor Vert owns GameState {
 
     entry timeout() emits next: Settle {
         require(status == LIVE);
-        require(this.age >= move_timeout);
+        require(this.ageDaa >= move_timeout);
         SettleState next_state = {
             white_player: white_player,
             black_player: black_player,
@@ -709,7 +709,7 @@ actor Horiz owns GameState {
         int to_idx = signed(pending_dst_idx);
         require(turn == WHITE || turn == BLACK);
 
-        bool is_draw_claim_mode = draw_state < NORMAL;
+        bool is_draw_claim_mode = signed(draw_state) < signed(NORMAL);
         byte effective_turn = turn;
         if (is_draw_claim_mode) {
             effective_turn = (1 - signed(turn)) as byte;
@@ -861,7 +861,7 @@ actor Horiz owns GameState {
 
     entry timeout() emits next: Settle {
         require(status == LIVE);
-        require(this.age >= move_timeout);
+        require(this.ageDaa >= move_timeout);
         SettleState next_state = {
             white_player: white_player,
             black_player: black_player,
@@ -879,7 +879,7 @@ actor Diag owns GameState {
         int to_idx = signed(pending_dst_idx);
         require(turn == WHITE || turn == BLACK);
 
-        bool is_draw_claim_mode = draw_state < NORMAL;
+        bool is_draw_claim_mode = signed(draw_state) < signed(NORMAL);
         byte effective_turn = turn;
         if (is_draw_claim_mode) {
             effective_turn = (1 - signed(turn)) as byte;
@@ -1015,7 +1015,7 @@ actor Diag owns GameState {
 
     entry timeout() emits next: Settle {
         require(status == LIVE);
-        require(this.age >= move_timeout);
+        require(this.ageDaa >= move_timeout);
         SettleState next_state = {
             white_player: white_player,
             black_player: black_player,
@@ -1033,7 +1033,7 @@ actor King owns GameState {
         int to_idx = signed(pending_dst_idx);
         require(turn == WHITE || turn == BLACK);
 
-        bool is_draw_claim_mode = draw_state < NORMAL;
+        bool is_draw_claim_mode = signed(draw_state) < signed(NORMAL);
         byte effective_turn = turn;
         if (is_draw_claim_mode) {
             effective_turn = (1 - signed(turn)) as byte;
@@ -1166,7 +1166,7 @@ actor King owns GameState {
 
     entry timeout() emits next: Settle {
         require(status == LIVE);
-        require(this.age >= move_timeout);
+        require(this.ageDaa >= move_timeout);
         SettleState next_state = {
             white_player: white_player,
             black_player: black_player,
@@ -1180,7 +1180,7 @@ actor King owns GameState {
 actor Castle owns GameState {
     entry apply() emits next: Mux {
         require(status == LIVE);
-        require(draw_state >= NORMAL);
+        require(signed(draw_state) >= signed(NORMAL));
 
         int from_idx = signed(pending_src_idx);
         int to_idx = signed(pending_dst_idx);
@@ -1316,7 +1316,7 @@ actor Castle owns GameState {
 
     entry timeout() emits next: Settle {
         require(status == LIVE);
-        require(this.age >= move_timeout);
+        require(this.ageDaa >= move_timeout);
         SettleState next_state = {
             white_player: white_player,
             black_player: black_player,
@@ -1331,7 +1331,7 @@ actor CastleChallengePrep owns GameState {
     entry apply(Move target) emits next: Move {
         require(status == LIVE);
         require(draw_state == NORMAL);
-        require(recent_castle >= 1 && recent_castle <= 4);
+        require(signed(recent_castle) >= 1 && signed(recent_castle) <= 4);
 
         int from_idx = signed(pending_src_idx);
         int to_idx = signed(pending_dst_idx);
@@ -1486,7 +1486,7 @@ actor CastleChallengePrep owns GameState {
 
     entry timeout() emits next: Settle {
         require(status == LIVE);
-        require(this.age >= move_timeout);
+        require(this.ageDaa >= move_timeout);
         SettleState next_state = {
             white_player: white_player,
             black_player: black_player,

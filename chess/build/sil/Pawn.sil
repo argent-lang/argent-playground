@@ -140,7 +140,7 @@ contract Pawn(
         int to_idx = signed(pending_dst_idx);
         byte promo_piece = pending_promo;
         require(turn == WHITE || turn == BLACK);
-        bool is_draw_claim_mode = draw_state < NORMAL;
+        bool is_draw_claim_mode = signed(draw_state) < signed(NORMAL);
         byte effective_turn = turn;
         if (is_draw_claim_mode) {
             effective_turn = (1 - signed(turn)) as byte;
@@ -345,7 +345,7 @@ contract Pawn(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status == LIVE);
-        require(this.age >= move_timeout);
+        require(this.ageDaa >= move_timeout);
         SettleState next_state = SettleState {
             // :: user declared fields
             white_player: white_player,
@@ -358,7 +358,7 @@ contract Pawn(
             gen__mux_template: gen__mux_template,
             gen__player_template: gen__player_template,
             gen__settle_template: gen__settle_template,
-            gen__mux_routes_digest: blake2b(byte[](gen__mux_routes)),
+            gen__mux_routes_digest: blake3(byte[](gen__mux_routes)),
             // :: user declared fields
             white_player: next_state.white_player,
             black_player: next_state.black_player,
