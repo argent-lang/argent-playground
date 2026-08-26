@@ -289,7 +289,7 @@ fn decode_value_from_bytes(
     }
 
     match ty {
-        TypeArtifact::Int => Ok(DecodeValue::Int(match mode {
+        TypeArtifact::Int | TypeArtifact::Temporal => Ok(DecodeValue::Int(match mode {
             DecodeMode::State => decode_fixed_i64(bytes)?,
             DecodeMode::SigScript => decode_script_num(bytes)?,
         })),
@@ -328,6 +328,7 @@ fn decode_fixed_i64(bytes: &[u8]) -> Result<i64, DecodeError> {
 fn type_name(ty: &TypeArtifact) -> String {
     match ty {
         TypeArtifact::Int => "int".to_string(),
+        TypeArtifact::Temporal => "temporal".to_string(),
         TypeArtifact::Bool => "bool".to_string(),
         TypeArtifact::Byte => "byte".to_string(),
         TypeArtifact::Bytes => "byte[]".to_string(),

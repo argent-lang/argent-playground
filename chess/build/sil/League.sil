@@ -30,6 +30,11 @@ contract League(
     byte constant OFFBOARD = 0x40;
 
     // :: state layouts
+    struct LeagueState {
+        // :: user declared fields
+        int base_rating;
+        byte[32] admin;
+    }
     struct PlayerState {
         // :: user declared fields
         byte[32] owner;
@@ -80,36 +85,36 @@ contract League(
         int losses;
     }
 
-    // :: shared helper functions
-    function player_ref(byte[32] owner_, byte[32] player_id_) : byte[32] {
-        return blake2b(byte[](owner_ + player_id_));
+    // :: global functions (isolated using the gen__glob_ namespace)
+    function player_ref(byte[32] gen__glob_owner, byte[32] gen__glob_player_id) : byte[32] {
+        return blake2b(byte[](gen__glob_owner + gen__glob_player_id));
     }
-    function abs_int(int value_) : int {
-        int result_ = value_;
-        if (value_ < 0) {
-            result_ = 0 - value_;
+    function abs_int(int gen__glob_value) : int {
+        int gen__glob_result = gen__glob_value;
+        if (gen__glob_value < 0) {
+            gen__glob_result = 0 - gen__glob_value;
         }
-        return result_;
+        return gen__glob_result;
     }
-    function timeout_status(byte turn_, byte draw_state_) : byte {
-        byte status_ = WWIN;
-        if (turn_ == WHITE) {
-            status_ = BWIN;
+    function timeout_status(byte gen__glob_turn, byte gen__glob_draw_state) : byte {
+        byte gen__glob_status = WWIN;
+        if (gen__glob_turn == WHITE) {
+            gen__glob_status = BWIN;
         }
-        if (draw_state_ == CLAIMED) {
-            status_ = DRAW;
+        if (gen__glob_draw_state == CLAIMED) {
+            gen__glob_status = DRAW;
         }
-        return status_;
+        return gen__glob_status;
     }
-    function invocation_uid(byte[] domain_) : byte[32] {
-        require(domain_.length > 0);
+    function invocation_uid(byte[] gen__glob_domain) : byte[32] {
+        require(gen__glob_domain.length > 0);
 
-        byte[36] outpoint_ = byte[36](
+        byte[36] gen__glob_outpoint = byte[36](
             OpOutpointTxId(this.activeInputIndex)
                 + (OpOutpointIndex(this.activeInputIndex) as byte[4])
         );
 
-        return blake2bWithKey(byte[](outpoint_), domain_);
+        return blake2bWithKey(byte[](gen__glob_outpoint), gen__glob_domain);
     }
 
     // :: route templates

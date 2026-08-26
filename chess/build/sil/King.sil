@@ -57,6 +57,22 @@ contract King(
         int draws;
         int losses;
     }
+    struct GameState {
+        // :: user declared fields
+        byte[32] white_player;
+        byte[32] black_player;
+        byte[64] board;
+        byte turn;
+        byte status;
+        int move_timeout;
+        byte[4] castle_rights;
+        byte en_passant_idx;
+        byte pending_src_idx;
+        byte pending_dst_idx;
+        byte pending_promo;
+        byte recent_castle;
+        byte draw_state;
+    }
     struct SettleState {
         // :: user declared fields
         byte[32] white_player;
@@ -75,36 +91,36 @@ contract King(
         byte status;
     }
 
-    // :: shared helper functions
-    function player_ref(byte[32] owner_, byte[32] player_id_) : byte[32] {
-        return blake2b(byte[](owner_ + player_id_));
+    // :: global functions (isolated using the gen__glob_ namespace)
+    function player_ref(byte[32] gen__glob_owner, byte[32] gen__glob_player_id) : byte[32] {
+        return blake2b(byte[](gen__glob_owner + gen__glob_player_id));
     }
-    function abs_int(int value_) : int {
-        int result_ = value_;
-        if (value_ < 0) {
-            result_ = 0 - value_;
+    function abs_int(int gen__glob_value) : int {
+        int gen__glob_result = gen__glob_value;
+        if (gen__glob_value < 0) {
+            gen__glob_result = 0 - gen__glob_value;
         }
-        return result_;
+        return gen__glob_result;
     }
-    function timeout_status(byte turn_, byte draw_state_) : byte {
-        byte status_ = WWIN;
-        if (turn_ == WHITE) {
-            status_ = BWIN;
+    function timeout_status(byte gen__glob_turn, byte gen__glob_draw_state) : byte {
+        byte gen__glob_status = WWIN;
+        if (gen__glob_turn == WHITE) {
+            gen__glob_status = BWIN;
         }
-        if (draw_state_ == CLAIMED) {
-            status_ = DRAW;
+        if (gen__glob_draw_state == CLAIMED) {
+            gen__glob_status = DRAW;
         }
-        return status_;
+        return gen__glob_status;
     }
-    function invocation_uid(byte[] domain_) : byte[32] {
-        require(domain_.length > 0);
+    function invocation_uid(byte[] gen__glob_domain) : byte[32] {
+        require(gen__glob_domain.length > 0);
 
-        byte[36] outpoint_ = byte[36](
+        byte[36] gen__glob_outpoint = byte[36](
             OpOutpointTxId(this.activeInputIndex)
                 + (OpOutpointIndex(this.activeInputIndex) as byte[4])
         );
 
-        return blake2bWithKey(byte[](outpoint_), domain_);
+        return blake2bWithKey(byte[](gen__glob_outpoint), gen__glob_domain);
     }
 
     // :: route templates
@@ -241,12 +257,7 @@ contract King(
                 + byte[1](next_black_can_castle_k)
                 + byte[1](next_black_can_castle_q)
         );
-        State next_state = State {
-            // :: generated fields
-            gen__player_template: gen__player_template,
-            gen__settle_template: gen__settle_template,
-            gen__mux_template: gen__mux_template,
-            gen__mux_routes: gen__mux_routes,
+        GameState next_state = GameState {
             // :: user declared fields
             white_player: white_player,
             black_player: black_player,
@@ -263,10 +274,31 @@ contract King(
             draw_state: next_draw_state,
         };
         require(tx.outputs[gen__next_output_idx].value == tx.inputs[this.activeInputIndex].value);
+        State gen__state_next_state = State {
+            // :: generated fields
+            gen__player_template: gen__player_template,
+            gen__settle_template: gen__settle_template,
+            gen__mux_template: gen__mux_template,
+            gen__mux_routes: gen__mux_routes,
+            // :: user declared fields
+            white_player: next_state.white_player,
+            black_player: next_state.black_player,
+            board: next_state.board,
+            turn: next_state.turn,
+            status: next_state.status,
+            move_timeout: next_state.move_timeout,
+            castle_rights: next_state.castle_rights,
+            en_passant_idx: next_state.en_passant_idx,
+            pending_src_idx: next_state.pending_src_idx,
+            pending_dst_idx: next_state.pending_dst_idx,
+            pending_promo: next_state.pending_promo,
+            recent_castle: next_state.recent_castle,
+            draw_state: next_state.draw_state,
+        };
         // :: become Mux
         validateOutputStateWithTemplate(
             gen__next_output_idx,
-            next_state,
+            gen__state_next_state,
             gen__mux_prefix,
             gen__mux_suffix,
             gen__mux_template

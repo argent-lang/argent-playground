@@ -33,21 +33,21 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "league", "auth_index": 0, "actors": ["League"] }, { "name": "player", "auth_index": 1, "actors": ["Player"] }] },
           "consumes": [],
-          "routes": [{ "output": "league", "actor": "League", "state": "self.state" }, { "output": "player", "actor": "Player", "state": "next_player" }]
+          "routes": [{ "output": "league", "successor": { "kind": "exact_self" } }, { "output": "player", "successor": { "kind": "constructed", "actor": "Player", "state": "next_player" } }]
         },
         {
           "name": "rebalance",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["League"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "League", "state": "self.state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "exact_self" } }]
         },
         {
           "name": "fork",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "left", "auth_index": 0, "actors": ["League"] }, { "name": "right", "auth_index": 1, "actors": ["League"] }] },
           "consumes": [],
-          "routes": [{ "output": "left", "actor": "League", "state": "self.state" }, { "output": "right", "actor": "League", "state": "self.state" }]
+          "routes": [{ "output": "left", "successor": { "kind": "exact_self" } }, { "output": "right", "successor": { "kind": "exact_self" } }]
         }
       ]
     },
@@ -61,7 +61,7 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "self_out", "auth_index": 0, "actors": ["Player"] }, { "name": "other_out", "auth_index": 1, "actors": ["Player"] }, { "name": "game", "auth_index": 2, "actors": ["Mux"] }] },
           "consumes": [{ "name": "other", "actor": "Player" }],
-          "routes": [{ "output": "self_out", "actor": "Player", "state": "next_self" }, { "output": "other_out", "actor": "Player", "state": "next_other" }, { "output": "game", "actor": "Mux", "state": "next_game" }]
+          "routes": [{ "output": "self_out", "successor": { "kind": "constructed", "actor": "Player", "state": "next_self" } }, { "output": "other_out", "successor": { "kind": "constructed", "actor": "Player", "state": "next_other" } }, { "output": "game", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_game" } }]
         },
         {
           "name": "delegate_start_game",
@@ -82,7 +82,7 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Player"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Player", "state": "self.state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "exact_self" } }]
         },
         {
           "name": "retire",
@@ -103,28 +103,28 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Move"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "target", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "target", "state": "next_state" } }]
         },
         {
           "name": "terminate",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Mux", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
         },
         {
           "name": "timeout",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Settle", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
         },
         {
           "name": "settle",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Settle", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
         }
       ]
     },
@@ -138,14 +138,14 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Mux", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
         },
         {
           "name": "timeout",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Settle", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
         }
       ]
     },
@@ -159,14 +159,14 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Mux", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
         },
         {
           "name": "timeout",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Settle", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
         }
       ]
     },
@@ -180,14 +180,14 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Mux", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
         },
         {
           "name": "timeout",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Settle", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
         }
       ]
     },
@@ -201,14 +201,14 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Mux", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
         },
         {
           "name": "timeout",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Settle", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
         }
       ]
     },
@@ -222,14 +222,14 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Mux", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
         },
         {
           "name": "timeout",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Settle", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
         }
       ]
     },
@@ -243,14 +243,14 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Mux", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
         },
         {
           "name": "timeout",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Settle", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
         }
       ]
     },
@@ -264,14 +264,14 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Mux", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
         },
         {
           "name": "timeout",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Settle", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
         }
       ]
     },
@@ -285,14 +285,14 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Move"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "target", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "target", "state": "next_state" } }]
         },
         {
           "name": "timeout",
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
           "consumes": [],
-          "routes": [{ "output": "next", "actor": "Settle", "state": "next_state" }]
+          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
         }
       ]
     },
@@ -306,7 +306,7 @@
           "kind": "leader",
           "emits": { "kind": "outputs", "outputs": [{ "name": "white_out", "auth_index": 0, "actors": ["Player"] }, { "name": "black_out", "auth_index": 1, "actors": ["Player"] }] },
           "consumes": [{ "name": "white_in", "actor": "Player" }, { "name": "black_in", "actor": "Player" }],
-          "routes": [{ "output": "white_out", "actor": "Player", "state": "next_white" }, { "output": "black_out", "actor": "Player", "state": "next_black" }]
+          "routes": [{ "output": "white_out", "successor": { "kind": "constructed", "actor": "Player", "state": "next_white" } }, { "output": "black_out", "successor": { "kind": "constructed", "actor": "Player", "state": "next_black" } }]
         }
       ]
     }

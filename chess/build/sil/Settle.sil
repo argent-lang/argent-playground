@@ -63,6 +63,12 @@ contract Settle(
         byte recent_castle;
         byte draw_state;
     }
+    struct SettleState {
+        // :: user declared fields
+        byte[32] white_player;
+        byte[32] black_player;
+        byte status;
+    }
     struct Gen__PlayerState {
         // :: generated fields
         byte[32] gen__mux_template;
@@ -80,36 +86,36 @@ contract Settle(
         int losses;
     }
 
-    // :: shared helper functions
-    function player_ref(byte[32] owner_, byte[32] player_id_) : byte[32] {
-        return blake2b(byte[](owner_ + player_id_));
+    // :: global functions (isolated using the gen__glob_ namespace)
+    function player_ref(byte[32] gen__glob_owner, byte[32] gen__glob_player_id) : byte[32] {
+        return blake2b(byte[](gen__glob_owner + gen__glob_player_id));
     }
-    function abs_int(int value_) : int {
-        int result_ = value_;
-        if (value_ < 0) {
-            result_ = 0 - value_;
+    function abs_int(int gen__glob_value) : int {
+        int gen__glob_result = gen__glob_value;
+        if (gen__glob_value < 0) {
+            gen__glob_result = 0 - gen__glob_value;
         }
-        return result_;
+        return gen__glob_result;
     }
-    function timeout_status(byte turn_, byte draw_state_) : byte {
-        byte status_ = WWIN;
-        if (turn_ == WHITE) {
-            status_ = BWIN;
+    function timeout_status(byte gen__glob_turn, byte gen__glob_draw_state) : byte {
+        byte gen__glob_status = WWIN;
+        if (gen__glob_turn == WHITE) {
+            gen__glob_status = BWIN;
         }
-        if (draw_state_ == CLAIMED) {
-            status_ = DRAW;
+        if (gen__glob_draw_state == CLAIMED) {
+            gen__glob_status = DRAW;
         }
-        return status_;
+        return gen__glob_status;
     }
-    function invocation_uid(byte[] domain_) : byte[32] {
-        require(domain_.length > 0);
+    function invocation_uid(byte[] gen__glob_domain) : byte[32] {
+        require(gen__glob_domain.length > 0);
 
-        byte[36] outpoint_ = byte[36](
+        byte[36] gen__glob_outpoint = byte[36](
             OpOutpointTxId(this.activeInputIndex)
                 + (OpOutpointIndex(this.activeInputIndex) as byte[4])
         );
 
-        return blake2bWithKey(byte[](outpoint_), domain_);
+        return blake2bWithKey(byte[](gen__glob_outpoint), gen__glob_domain);
     }
 
     // :: route templates
@@ -131,14 +137,14 @@ contract Settle(
         require(OpCovInputCount(gen__cov_id) == 3);
         require(OpCovInputIdx(gen__cov_id, 0) == this.activeInputIndex);
         int gen__white_in_input_idx = OpCovInputIdx(gen__cov_id, 1); // input Player at cov[1]
-        Gen__PlayerState white_in = readInputStateWithTemplate(
+        Gen__PlayerState gen__white_in_state = readInputStateWithTemplate(
             gen__white_in_input_idx,
             gen__player_prefix_len,
             gen__player_suffix_len,
             gen__player_template
         );
         int gen__black_in_input_idx = OpCovInputIdx(gen__cov_id, 2); // input Player at cov[2]
-        Gen__PlayerState black_in = readInputStateWithTemplate(
+        Gen__PlayerState gen__black_in_state = readInputStateWithTemplate(
             gen__black_in_input_idx,
             gen__player_prefix_len,
             gen__player_suffix_len,
@@ -153,16 +159,16 @@ contract Settle(
         int gen__black_out_output_idx = OpAuthOutputIdx(this.activeInputIndex, 1);
 
         require(status != LIVE);
-        require(player_ref(white_in.owner, white_in.player_id) == white_player);
-        require(player_ref(black_in.owner, black_in.player_id) == black_player);
+        require(player_ref(gen__white_in_state.owner, gen__white_in_state.player_id) == white_player);
+        require(player_ref(gen__black_in_state.owner, gen__black_in_state.player_id) == black_player);
         int white_output_value = tx.inputs[gen__white_in_input_idx].value;
         int black_output_value = tx.inputs[gen__black_in_input_idx].value;
-        int white_wins = white_in.wins;
-        int white_draws = white_in.draws;
-        int white_losses = white_in.losses;
-        int black_wins = black_in.wins;
-        int black_draws = black_in.draws;
-        int black_losses = black_in.losses;
+        int white_wins = gen__white_in_state.wins;
+        int white_draws = gen__white_in_state.draws;
+        int white_losses = gen__white_in_state.losses;
+        int black_wins = gen__black_in_state.wins;
+        int black_draws = gen__black_in_state.draws;
+        int black_losses = gen__black_in_state.losses;
         int white_actual = 0;
         int black_actual = 0;
         int white_expected = 500;
@@ -188,7 +194,7 @@ contract Settle(
             white_output_value = white_output_value + white_share;
             black_output_value = black_output_value + black_share;
         }
-        int diff = black_in.rating - white_in.rating;
+        int diff = gen__black_in_state.rating - gen__white_in_state.rating;
         int abs_diff = abs_int(diff);
         int favored_expected = 990;
         if (abs_diff < 800) {
@@ -216,28 +222,28 @@ contract Settle(
             white_expected = 1000 - favored_expected;
             black_expected = favored_expected;
         }
-        int white_rating = white_in.rating + ((32 * (white_actual - white_expected)) / 1000);
-        int black_rating = black_in.rating + ((32 * (black_actual - black_expected)) / 1000);
-        require(white_in.open_games > 0);
-        require(black_in.open_games > 0);
+        int white_rating = gen__white_in_state.rating + ((32 * (white_actual - white_expected)) / 1000);
+        int black_rating = gen__black_in_state.rating + ((32 * (black_actual - black_expected)) / 1000);
+        require(gen__white_in_state.open_games > 0);
+        require(gen__black_in_state.open_games > 0);
         PlayerState next_white = PlayerState {
             // :: user declared fields
-            owner: white_in.owner,
-            player_id: white_in.player_id,
-            open_games: white_in.open_games - 1,
+            owner: gen__white_in_state.owner,
+            player_id: gen__white_in_state.player_id,
+            open_games: gen__white_in_state.open_games - 1,
             rating: white_rating,
-            games: white_in.games + 1,
+            games: gen__white_in_state.games + 1,
             wins: white_wins,
             draws: white_draws,
             losses: white_losses,
         };
         PlayerState next_black = PlayerState {
             // :: user declared fields
-            owner: black_in.owner,
-            player_id: black_in.player_id,
-            open_games: black_in.open_games - 1,
+            owner: gen__black_in_state.owner,
+            player_id: gen__black_in_state.player_id,
+            open_games: gen__black_in_state.open_games - 1,
             rating: black_rating,
-            games: black_in.games + 1,
+            games: gen__black_in_state.games + 1,
             wins: black_wins,
             draws: black_draws,
             losses: black_losses,

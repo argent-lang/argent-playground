@@ -41,6 +41,17 @@ contract Player(
         int base_rating;
         byte[32] admin;
     }
+    struct PlayerState {
+        // :: user declared fields
+        byte[32] owner;
+        byte[32] player_id;
+        int open_games;
+        int rating;
+        int games;
+        int wins;
+        int draws;
+        int losses;
+    }
     struct GameState {
         // :: user declared fields
         byte[32] white_player;
@@ -96,36 +107,36 @@ contract Player(
         byte status;
     }
 
-    // :: shared helper functions
-    function player_ref(byte[32] owner_, byte[32] player_id_) : byte[32] {
-        return blake2b(byte[](owner_ + player_id_));
+    // :: global functions (isolated using the gen__glob_ namespace)
+    function player_ref(byte[32] gen__glob_owner, byte[32] gen__glob_player_id) : byte[32] {
+        return blake2b(byte[](gen__glob_owner + gen__glob_player_id));
     }
-    function abs_int(int value_) : int {
-        int result_ = value_;
-        if (value_ < 0) {
-            result_ = 0 - value_;
+    function abs_int(int gen__glob_value) : int {
+        int gen__glob_result = gen__glob_value;
+        if (gen__glob_value < 0) {
+            gen__glob_result = 0 - gen__glob_value;
         }
-        return result_;
+        return gen__glob_result;
     }
-    function timeout_status(byte turn_, byte draw_state_) : byte {
-        byte status_ = WWIN;
-        if (turn_ == WHITE) {
-            status_ = BWIN;
+    function timeout_status(byte gen__glob_turn, byte gen__glob_draw_state) : byte {
+        byte gen__glob_status = WWIN;
+        if (gen__glob_turn == WHITE) {
+            gen__glob_status = BWIN;
         }
-        if (draw_state_ == CLAIMED) {
-            status_ = DRAW;
+        if (gen__glob_draw_state == CLAIMED) {
+            gen__glob_status = DRAW;
         }
-        return status_;
+        return gen__glob_status;
     }
-    function invocation_uid(byte[] domain_) : byte[32] {
-        require(domain_.length > 0);
+    function invocation_uid(byte[] gen__glob_domain) : byte[32] {
+        require(gen__glob_domain.length > 0);
 
-        byte[36] outpoint_ = byte[36](
+        byte[36] gen__glob_outpoint = byte[36](
             OpOutpointTxId(this.activeInputIndex)
                 + (OpOutpointIndex(this.activeInputIndex) as byte[4])
         );
 
-        return blake2bWithKey(byte[](outpoint_), domain_);
+        return blake2bWithKey(byte[](gen__glob_outpoint), gen__glob_domain);
     }
 
     // :: route templates
@@ -165,7 +176,7 @@ contract Player(
         require(OpCovInputCount(gen__cov_id) == 2);
         require(OpCovInputIdx(gen__cov_id, 0) == this.activeInputIndex);
         int gen__other_input_idx = OpCovInputIdx(gen__cov_id, 1); // input Player at cov[1]
-        State other = readInputStateWithTemplate(
+        State gen__other_state = readInputStateWithTemplate(
             gen__other_input_idx,
             gen__player_prefix_len,
             gen__player_suffix_len,
@@ -184,21 +195,16 @@ contract Player(
         require(move_timeout > 0);
         require(blake2b(byte[](owner_pk)) == owner);
         require(checkSig(owner_sig, owner_pk));
-        require(other.player_id != player_id);
+        require(gen__other_state.player_id != player_id);
         byte[32] self_ref = player_ref(owner, player_id);
-        byte[32] other_ref = player_ref(other.owner, other.player_id);
+        byte[32] other_ref = player_ref(gen__other_state.owner, gen__other_state.player_id);
         byte[32] white_player = self_ref;
         byte[32] black_player = other_ref;
         if (self_side == BLACK) {
             white_player = other_ref;
             black_player = self_ref;
         }
-        State next_self = State {
-            // :: generated fields
-            gen__mux_template: gen__mux_template,
-            gen__player_template: gen__player_template,
-            gen__settle_template: gen__settle_template,
-            gen__mux_routes_digest: gen__mux_routes_digest,
+        PlayerState next_self = PlayerState {
             // :: user declared fields
             owner: owner,
             player_id: player_id,
@@ -209,21 +215,16 @@ contract Player(
             draws: draws,
             losses: losses,
         };
-        State next_other = State {
-            // :: generated fields
-            gen__mux_template: gen__mux_template,
-            gen__player_template: gen__player_template,
-            gen__settle_template: gen__settle_template,
-            gen__mux_routes_digest: gen__mux_routes_digest,
+        PlayerState next_other = PlayerState {
             // :: user declared fields
-            owner: other.owner,
-            player_id: other.player_id,
-            open_games: other.open_games + 1,
-            rating: other.rating,
-            games: other.games,
-            wins: other.wins,
-            draws: other.draws,
-            losses: other.losses,
+            owner: gen__other_state.owner,
+            player_id: gen__other_state.player_id,
+            open_games: gen__other_state.open_games + 1,
+            rating: gen__other_state.rating,
+            games: gen__other_state.games,
+            wins: gen__other_state.wins,
+            draws: gen__other_state.draws,
+            losses: gen__other_state.losses,
         };
         GameState next_game = GameState {
             // :: user declared fields
@@ -241,10 +242,42 @@ contract Player(
             recent_castle: CLEAR,
             draw_state: NORMAL,
         };
+        State gen__state_self_out_state = State {
+            // :: generated fields
+            gen__mux_template: gen__mux_template,
+            gen__player_template: gen__player_template,
+            gen__settle_template: gen__settle_template,
+            gen__mux_routes_digest: gen__mux_routes_digest,
+            // :: user declared fields
+            owner: next_self.owner,
+            player_id: next_self.player_id,
+            open_games: next_self.open_games,
+            rating: next_self.rating,
+            games: next_self.games,
+            wins: next_self.wins,
+            draws: next_self.draws,
+            losses: next_self.losses,
+        };
         // :: become Player
-        validateOutputState(gen__self_out_output_idx, next_self);
+        validateOutputState(gen__self_out_output_idx, gen__state_self_out_state);
+        State gen__state_other_out_state = State {
+            // :: generated fields
+            gen__mux_template: gen__mux_template,
+            gen__player_template: gen__player_template,
+            gen__settle_template: gen__settle_template,
+            gen__mux_routes_digest: gen__mux_routes_digest,
+            // :: user declared fields
+            owner: next_other.owner,
+            player_id: next_other.player_id,
+            open_games: next_other.open_games,
+            rating: next_other.rating,
+            games: next_other.games,
+            wins: next_other.wins,
+            draws: next_other.draws,
+            losses: next_other.losses,
+        };
         // :: become Player
-        validateOutputState(gen__other_out_output_idx, next_other);
+        validateOutputState(gen__other_out_output_idx, gen__state_other_out_state);
         Gen__MuxState gen__state_game_gen__mux_state = Gen__MuxState {
             // :: generated fields
             gen__player_template: gen__player_template,
@@ -289,7 +322,7 @@ contract Player(
         require(OpCovInputCount(gen__cov_id) >= 2);
         require(OpCovInputIdx(gen__cov_id, 0) != this.activeInputIndex);
         int gen__leader_input_idx = OpCovInputIdx(gen__cov_id, 0); // input Player at cov[0]
-        State leader = readInputStateWithTemplate(
+        State gen__leader_state = readInputStateWithTemplate(
             gen__leader_input_idx,
             gen__player_prefix_len,
             gen__player_suffix_len,
@@ -302,7 +335,7 @@ contract Player(
         require(move_timeout > 0);
         require(blake2b(byte[](owner_pk)) == owner);
         require(checkSig(owner_sig, owner_pk));
-        require(leader.player_id != player_id);
+        require(gen__leader_state.player_id != player_id);
     }
 
     // :: delegate entry
@@ -312,7 +345,7 @@ contract Player(
         require(OpCovInputCount(gen__cov_id) >= 2);
         require(OpCovInputIdx(gen__cov_id, 0) != this.activeInputIndex);
         int gen__settlement_input_idx = OpCovInputIdx(gen__cov_id, 0); // input Settle at cov[0]
-        Gen__SettleState settlement = readInputStateWithTemplate(
+        Gen__SettleState gen__settlement_state = readInputStateWithTemplate(
             gen__settlement_input_idx,
             gen__settle_prefix_len,
             gen__settle_suffix_len,
@@ -322,9 +355,9 @@ contract Player(
         // :: auth outputs
         require(OpAuthOutputCount(this.activeInputIndex) == 0);
 
-        require(settlement.status != LIVE);
+        require(gen__settlement_state.status != LIVE);
         byte[32] self_ref = player_ref(owner, player_id);
-        require(self_ref == settlement.white_player || self_ref == settlement.black_player);
+        require(self_ref == gen__settlement_state.white_player || self_ref == gen__settlement_state.black_player);
     }
 
     // :: leader entry (1:N)

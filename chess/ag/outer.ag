@@ -25,7 +25,7 @@ actor League owns LeagueState {
         unrestricted(player.value);
 
         become {
-            league <- League(self.state),
+            league <- self,
             player <- Player(next_player),
         };
     }
@@ -34,7 +34,7 @@ actor League owns LeagueState {
         require(blake2b(byte[](admin_pk)) == admin);
         require(checkSig(admin_sig, admin_pk));
         unrestricted(next.value);
-        become next <- League(self.state);
+        become next <- self;
     }
 
     entry fork(sig admin_sig, pubkey admin_pk) emits {
@@ -46,8 +46,8 @@ actor League owns LeagueState {
         unrestricted(left.value);
         unrestricted(right.value);
         become {
-            left <- League(self.state),
-            right <- League(self.state),
+            left <- self,
+            right <- self,
         };
     }
 }
@@ -153,7 +153,7 @@ actor Player owns PlayerState {
         require(blake2b(byte[](owner_pk)) == owner);
         require(checkSig(owner_sig, owner_pk));
         unrestricted(next.value);
-        become next <- Player(self.state);
+        become next <- self;
     }
 
     entry retire(sig owner_sig, pubkey owner_pk) emits none {

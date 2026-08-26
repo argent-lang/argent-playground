@@ -64,25 +64,25 @@ state SettleState {
     byte status;
 }
 
-fn player_ref(byte[32] owner_, byte[32] player_id_) -> byte[32] {
-    return blake2b(byte[](owner_ + player_id_));
+fn player_ref(byte[32] owner, byte[32] player_id) -> byte[32] {
+    return blake2b(byte[](owner + player_id));
 }
 
-fn abs_int(int value_) -> int {
-    int result_ = value_;
-    if (value_ < 0) {
-        result_ = 0 - value_;
+fn abs_int(int value) -> int {
+    int result = value;
+    if (value < 0) {
+        result = 0 - value;
     }
-    return result_;
+    return result;
 }
 
-fn timeout_status(byte turn_, byte draw_state_) -> byte {
-    byte status_ = WWIN;
-    if (turn_ == WHITE) {
-        status_ = BWIN;
+fn timeout_status(byte turn, byte draw_state) -> byte {
+    byte status = WWIN;
+    if (turn == WHITE) {
+        status = BWIN;
     }
-    if (draw_state_ == CLAIMED) {
-        status_ = DRAW;
+    if (draw_state == CLAIMED) {
+        status = DRAW;
     }
-    return status_;
+    return status;
 }
