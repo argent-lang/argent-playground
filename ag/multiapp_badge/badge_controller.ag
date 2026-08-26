@@ -18,7 +18,7 @@ actor Controller owns ControllerState {
     emits {
         controller: Controller,
     } {
-        BadgeState prev_badge = asset.inputs.badge.state;
+        BadgeState prev_badge = state(asset.inputs.badge);
         require(prev_badge.controller_id == self.cov_id);
         require(amount > 0);
 

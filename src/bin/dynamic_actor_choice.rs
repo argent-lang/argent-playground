@@ -34,13 +34,13 @@ actor Router owns RouteState {
             require(nonce >= 0);
         }
 
-        RouteState next = {
+        RouteState next_state = {
             nonce: nonce,
             hops: hops + 1,
         };
 
         unrestricted(next.value);
-        become next <- target(next);
+        become next <- target(next_state);
     }
 }
 
