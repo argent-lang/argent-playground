@@ -21,7 +21,7 @@ actor Cell owns CellState {
     emits {
         cell: Cell,
     } {
-        AgentCapsule previous = remote.inputs.agent.state;
+        AgentCapsule previous = state(remote.inputs.agent);
         require(previous.energy > 0);
 
         AgentCapsule next_agent = {

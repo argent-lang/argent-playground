@@ -79,7 +79,7 @@ actor DexCore owns DexCoreState {
                 + pairs.records.slice(offset + PAIR_RECORD_BYTES, PAIR_RECORDS_BYTES)
         );
 
-        DexPairState pair = {
+        DexPairState pair_state = {
             initializer: initializer,
             initialized: true,
             core_id: self.cov_id,
@@ -96,7 +96,7 @@ actor DexCore owns DexCoreState {
 
         unrestricted(new_pair.outputs.pair.value);
         require new_pair.outputs become {
-            pair <- self.pair_type(pair),
+            pair <- self.pair_type(pair_state),
         };
 
         DexCoreState next_core = {
@@ -117,7 +117,7 @@ actor DexCore owns DexCoreState {
     // input/output pair. The linear preimage is supplied to the migrating Pair.
     entry witness_registry() emits next: DexCore {
         require(next.value == self.value);
-        become next <- DexCore(self.state);
+        become next <- self;
     }
 }
 
@@ -145,8 +145,8 @@ actor DexPair owns DexPairState {
     emits next: DexPair {
         require(initialized);
 
-        AssetCapsule quote_payment = quote.inputs.payment.state;
-        AssetCapsule base_reserve = base.inputs.reserve.state;
+        AssetCapsule quote_payment = state(quote.inputs.payment);
+        AssetCapsule base_reserve = state(base.inputs.reserve);
 
         require(quote_payment.owner_kind == OWNER_KEY);
         require(base_reserve.owner_kind == OWNER_COVID);
@@ -235,8 +235,8 @@ actor DexPair owns DexPairState {
                 || (asset_id == base_id && asset_type == base_type)
         );
 
-        DexCoreCapsule core = registry.inputs.core.state;
-        require(blake3(byte[](registry_preimage)) == core.pairs);
+        DexCoreCapsule core_state = state(registry.inputs.core);
+        require(blake3(byte[](registry_preimage)) == core_state.pairs);
         require(registry_authorizes_asset(
             registry_preimage,
             target_pair_index,
@@ -244,19 +244,19 @@ actor DexPair owns DexPairState {
             asset_id
         ));
 
-        AssetCapsule reserve = moved_asset.inputs.reserve.state;
-        require(reserve.owner_kind == OWNER_COVID);
-        require(reserve.owner == byte[32](self.cov_id));
+        AssetCapsule reserve_state = state(moved_asset.inputs.reserve);
+        require(reserve_state.owner_kind == OWNER_COVID);
+        require(reserve_state.owner == byte[32](self.cov_id));
 
         AssetCapsule moved_reserve = {
             owner: byte[32](target_pair_id),
             owner_kind: OWNER_COVID,
-            policy: reserve.policy,
-            amount: reserve.amount,
+            policy: reserve_state.policy,
+            amount: reserve_state.amount,
         };
 
         require registry.outputs become {
-            core <- self.core_type(core),
+            core <- self.core_type(core_state),
         };
         require moved_asset.outputs become {
             reserve <- asset_type(moved_reserve),
