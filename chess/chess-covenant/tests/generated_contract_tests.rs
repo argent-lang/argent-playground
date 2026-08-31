@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use argent_artifact::{Artifact, TypeArtifact};
 use kaspa_consensus_core::hashing::sighash::SigHashReusedValuesUnsync;
 use kaspa_consensus_core::tx::PopulatedTransaction;
@@ -20,18 +22,6 @@ fn artifact() -> Artifact {
     artifact.verify_id().expect("chess artifact id verifies");
     artifact.verify_template_plan().expect("chess template plan verifies");
     artifact
-}
-
-fn decode_hex(value: &str) -> Vec<u8> {
-    assert_eq!(value.len() % 2, 0, "hex value must contain complete bytes");
-    value
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|digits| {
-            let text = std::str::from_utf8(digits).expect("hex digits are ASCII");
-            u8::from_str_radix(text, 16).expect("artifact contains valid hex")
-        })
-        .collect()
 }
 
 fn script_op_counts(script: &[u8]) -> (usize, usize) {
@@ -166,12 +156,12 @@ fn size_snapshots() -> [SizeSnapshot; 12] {
 fn generated_artifact_contains_the_complete_chess_application() {
     let artifact = artifact();
     let actors = artifact.argent.actors.iter().map(|actor| actor.name.as_str()).collect::<Vec<_>>();
-    let contracts = artifact.sil_abi.contracts.iter().map(|contract| contract.name.as_str()).collect::<Vec<_>>();
+    let contracts = artifact.sil_abi.contracts.keys().map(String::as_str).collect::<BTreeSet<_>>();
     let expected =
         ["League", "Player", "Mux", "Pawn", "Knight", "Vert", "Horiz", "Diag", "King", "Castle", "CastleChallengePrep", "Settle"];
 
     assert_eq!(actors, expected);
-    assert_eq!(contracts, expected);
+    assert_eq!(contracts, expected.into_iter().collect());
 }
 
 #[test]
@@ -220,8 +210,8 @@ fn generated_contract_sizes_match_snapshots() {
     let mut actual = Vec::new();
     for snapshot in size_snapshots() {
         let contract = artifact.sil_abi.contract(snapshot.actor).expect("snapshot actor has a compiled contract");
-        let script = decode_hex(&contract.compiled.script_hex);
-        let (instruction_count, charged_op_count) = script_op_counts(&script);
+        let script = &contract.compiled.bytecode;
+        let (instruction_count, charged_op_count) = script_op_counts(script);
         actual.push((snapshot, script.len(), instruction_count, charged_op_count));
     }
 

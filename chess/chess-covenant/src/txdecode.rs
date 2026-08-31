@@ -105,35 +105,33 @@ pub enum DecodeError {
     StateFieldCountMismatch { contract: String, expected: usize, actual: usize },
     #[error("unknown contract {0}")]
     UnknownContract(String),
-    #[error("invalid hex in compiled contract {0}")]
-    InvalidHex(String),
 }
 
 impl ContractTemplate {
     pub fn from_artifact(artifact: &Artifact, contract_name: &str) -> Result<Self, DecodeError> {
         let contract =
             artifact.sil_abi.contract(contract_name).ok_or_else(|| DecodeError::UnknownContract(contract_name.to_string()))?;
-        let script = decode_hex(&contract.compiled.script_hex)?;
+        let script = &contract.compiled.bytecode;
         let (prefix, _, suffix) =
-            contract.compiled.script_parts(&script).ok_or_else(|| DecodeError::TemplateMismatch(contract_name.to_string()))?;
+            contract.compiled.script_parts(script).ok_or_else(|| DecodeError::TemplateMismatch(contract_name.to_string()))?;
         let fields = contract.runtime_state.fields.iter().map(|field| (field.name.clone(), field.ty.clone())).collect();
         let structs = artifact
             .sil_abi
-            .states
+            .structs
             .iter()
-            .map(|state| (state.name.clone(), state.fields.iter().map(|field| (field.name.clone(), field.ty.clone())).collect()))
+            .map(|(name, state)| (name.clone(), state.fields.iter().map(|field| (field.name.clone(), field.ty.clone())).collect()))
             .collect();
         let entries = contract
             .entries
             .iter()
-            .map(|entry| EntryTemplate {
-                name: entry.name.clone(),
+            .map(|(name, entry)| EntryTemplate {
+                name: name.clone(),
                 dispatch_tag: entry.dispatch_tag,
                 inputs: entry.params.iter().map(|param| (param.name.clone(), param.ty.clone())).collect(),
             })
             .collect();
         Ok(Self {
-            contract_name: contract.name.clone(),
+            contract_name: contract_name.to_string(),
             prefix: prefix.to_vec(),
             suffix: suffix.to_vec(),
             state_layout_len: contract.compiled.state_span.len,
@@ -343,16 +341,6 @@ fn type_name(ty: &TypeArtifact) -> String {
     }
 }
 
-fn decode_hex(hex: &str) -> Result<Vec<u8>, DecodeError> {
-    if !hex.len().is_multiple_of(2) {
-        return Err(DecodeError::InvalidHex(hex.to_string()));
-    }
-    (0..hex.len())
-        .step_by(2)
-        .map(|offset| u8::from_str_radix(&hex[offset..offset + 2], 16).map_err(|_| DecodeError::InvalidHex(hex.to_string())))
-        .collect()
-}
-
 pub fn decode_script_num(bytes: &[u8]) -> Result<i64, DecodeError> {
     if bytes.len() > 8 {
         return Err(DecodeError::InvalidIntegerEncoding);
@@ -380,10 +368,10 @@ mod tests {
             serde_json::from_str(include_str!("../../build/artifact.json")).expect("pinned chess artifact deserializes");
         let contract = artifact.sil_abi.contract("League").expect("League ABI exists");
         let template = ContractTemplate::from_artifact(&artifact, "League").expect("League template loads");
-        let script = decode_hex(&contract.compiled.script_hex).expect("compiled League script is valid hex");
+        let script = &contract.compiled.bytecode;
 
-        assert!(template.matches_redeem_script(&script));
-        let state = template.decode_state(&script).expect("canonical League state decodes");
+        assert!(template.matches_redeem_script(script));
+        let state = template.decode_state(script).expect("canonical League state decodes");
         assert_eq!(state.fields.len(), contract.runtime_state.fields.len());
         assert_eq!(state.fields.last().expect("admin field").name, "admin");
     }
