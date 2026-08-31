@@ -1,0 +1,3 @@
+[target.x86_64-pc-windows-msvc]
+# Sil's recursive AST processing can exceed Windows' default 1 MiB main-thread stack for large contracts.
+rustflags = ["-C", "link-arg=/STACK:8388608"]
