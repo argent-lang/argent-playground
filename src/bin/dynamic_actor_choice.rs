@@ -20,6 +20,7 @@ actor Alpha owns RouteState {
 actor Beta owns RouteState {
     entry done() emits none {
         require(hops >= 1);
+        require(nonce >= 0);
     }
 }
 
