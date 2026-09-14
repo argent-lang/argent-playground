@@ -190,6 +190,8 @@ contract Player(
         // :: output other_out: Player
         int gen__other_out_output_idx = OpAuthOutputIdx(this.activeInputIndex, 1);
         int gen__game_output_idx = OpAuthOutputIdx(this.activeInputIndex, 2); // output game: Mux
+        // :: leader authorizes all covenant continuations (rule 5)
+        require(OpCovOutputCount(gen__cov_id) == OpAuthOutputCount(this.activeInputIndex));
 
         require(self_side == WHITE || self_side == BLACK);
         require(move_timeout > 0);

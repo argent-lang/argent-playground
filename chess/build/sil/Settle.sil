@@ -157,6 +157,8 @@ contract Settle(
         int gen__white_out_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0);
         // :: output black_out: Player
         int gen__black_out_output_idx = OpAuthOutputIdx(this.activeInputIndex, 1);
+        // :: leader authorizes all covenant continuations (rule 5)
+        require(OpCovOutputCount(gen__cov_id) == OpAuthOutputCount(this.activeInputIndex));
 
         require(status != LIVE);
         require(player_ref(gen__white_in_state.owner, gen__white_in_state.player_id) == white_player);
