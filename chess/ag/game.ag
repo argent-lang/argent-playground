@@ -1,6 +1,5 @@
 import "./types.ag";
-
-import actor Settle from "./outer.ag";
+import "./outer.ag";
 
 // Chess assumes the compiler maps these variants to integers in declaration order.
 actor enum Move {
@@ -29,11 +28,11 @@ actor Mux owns GameState {
     ) emits next: Move {
         require(status == LIVE);
 
-        byte[32] player_ref = player_ref(blake2b(byte[](pk)), player_id);
+        byte[32] player = player_ref(blake2b(byte[](pk)), player_id);
         if (turn == WHITE) {
-            require(player_ref == white_player);
+            require(player == white_player);
         } else {
-            require(player_ref == black_player);
+            require(player == black_player);
         }
         require(checkSig(s, pk));
 
@@ -87,11 +86,11 @@ actor Mux owns GameState {
     ) emits next: Mux {
         require(status == LIVE);
 
-        byte[32] player_ref = player_ref(blake2b(byte[](pk)), player_id);
+        byte[32] player = player_ref(blake2b(byte[](pk)), player_id);
         if (turn == WHITE) {
-            require(player_ref == white_player);
+            require(player == white_player);
         } else {
-            require(player_ref == black_player);
+            require(player == black_player);
         }
         require(checkSig(s, pk));
 
@@ -140,11 +139,11 @@ actor Mux owns GameState {
     ) emits next: Settle {
         require(status == LIVE);
 
-        byte[32] player_ref = player_ref(blake2b(byte[](pk)), player_id);
+        byte[32] player = player_ref(blake2b(byte[](pk)), player_id);
         if (turn == WHITE) {
-            require(player_ref == black_player);
+            require(player == black_player);
         } else {
-            require(player_ref == white_player);
+            require(player == white_player);
         }
         require(checkSig(s, pk));
         require(this.ageDaa >= move_timeout);

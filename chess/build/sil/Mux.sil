@@ -165,11 +165,11 @@ contract Mux(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Move
 
         require(status == LIVE);
-        byte[32] player_ref = player_ref(blake2b(byte[](pk)), player_id);
+        byte[32] player = player_ref(blake2b(byte[](pk)), player_id);
         if (turn == WHITE) {
-            require(player_ref == white_player);
+            require(player == white_player);
         } else {
-            require(player_ref == black_player);
+            require(player == black_player);
         }
         require(checkSig(s, pk));
         require(termination_action == CLEAR || termination_action == OFFER);
@@ -251,11 +251,11 @@ contract Mux(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Mux
 
         require(status == LIVE);
-        byte[32] player_ref = player_ref(blake2b(byte[](pk)), player_id);
+        byte[32] player = player_ref(blake2b(byte[](pk)), player_id);
         if (turn == WHITE) {
-            require(player_ref == white_player);
+            require(player == white_player);
         } else {
-            require(player_ref == black_player);
+            require(player == black_player);
         }
         require(checkSig(s, pk));
         byte next_status = status;
@@ -330,11 +330,11 @@ contract Mux(
         int gen__next_output_idx = OpAuthOutputIdx(this.activeInputIndex, 0); // output next: Settle
 
         require(status == LIVE);
-        byte[32] player_ref = player_ref(blake2b(byte[](pk)), player_id);
+        byte[32] player = player_ref(blake2b(byte[](pk)), player_id);
         if (turn == WHITE) {
-            require(player_ref == black_player);
+            require(player == black_player);
         } else {
-            require(player_ref == white_player);
+            require(player == white_player);
         }
         require(checkSig(s, pk));
         require(this.ageDaa >= move_timeout);

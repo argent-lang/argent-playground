@@ -1,7 +1,6 @@
 import "std::core";
 import "./types.ag";
-
-import actor Mux from "./game.ag";
+import "./game.ag";
 
 actor League owns LeagueState {
     entry register_player(sig owner_sig, pubkey owner_pk) emits {
