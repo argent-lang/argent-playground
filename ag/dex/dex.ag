@@ -230,10 +230,16 @@ actor DexPair owns DexPairState {
     emits next: DexPair {
         require(initialized);
         require(target_pair_id != self.cov_id);
-        require(
-            (asset_id == quote_id && asset_type == quote_type)
-                || (asset_id == base_id && asset_type == base_type)
-        );
+
+        // Both reserves trust a co-spend of this Pair. Only the selected
+        // reserve transfer is checked here, so exclude the other asset.
+        if (asset_id == quote_id) {
+            require(asset_type == quote_type);
+            require(!base_id.co_spent());
+        } else {
+            require(asset_id == base_id && asset_type == base_type);
+            require(!quote_id.co_spent());
+        }
 
         DexCoreCapsule core_state = state(registry.inputs.core);
         require(blake3(byte[](registry_preimage)) == core_state.pairs);
