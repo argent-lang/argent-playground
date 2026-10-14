@@ -17,7 +17,7 @@ actor FixedToken owns FixedTokenState {
         sig owner_sig
     ) emits next: FixedToken {
         if (owner_kind == OWNER_KEY) {
-            require(checkSig(owner_sig, owner));
+            require(checkSig(owner_sig, pubkey(owner)));
         } else if (owner_kind == OWNER_COVID) {
             require(cov_id(owner).co_spent());
         } else {

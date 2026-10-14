@@ -13,13 +13,13 @@ actor Counter owns CounterState {
     entry bump(sig owner_sig, int delta) emits next: Counter {
         require(checkSig(owner_sig, owner));
 
-        CounterState next = {
+        CounterState next_state = {
             owner: owner,
             count: count + delta,
         };
 
         unrestricted(next.value);
-        become next <- Counter(next);
+        become next <- Counter(next_state);
     }
 }
 

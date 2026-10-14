@@ -460,3 +460,120 @@ fn k_asset_state(owner: &[u8], owner_kind: u8, amount: i64) -> BTreeMap<String, 
         amount: amount,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use argent_runtime::BuilderError;
+
+    #[test]
+    fn reserve_move_rejects_a_transfer_of_the_other_asset() -> PlaygroundResult<()> {
+        let core_artifact = build_file_app(DEX_SOURCE, "Dexc", "build/dex/tests/core")?;
+        let pair_artifact = build_file_app(DEX_SOURCE, "Dexp", "build/dex/tests/pair")?;
+        let m_asset_artifact = build_file(M_ASSET_SOURCE, "build/dex/tests/m_asset")?;
+        let k_asset_artifact = build_file(K_ASSET_SOURCE, "build/dex/tests/k_asset")?;
+        let bundle = ArtifactBundle::named("dexc", &core_artifact)?
+            .with_app("dexp", &pair_artifact)?
+            .with_app("m_asset", &m_asset_artifact)?
+            .with_app("k_asset", &k_asset_artifact)?;
+        let builder = TxBuilder::from_bundle(&bundle)?;
+
+        let core_id = Hash::from_bytes([0x40; 32]);
+        let source_pair_id = Hash::from_bytes([0x41; 32]);
+        let target_pair_id = Hash::from_bytes([0x42; 32]);
+        let quote_id = Hash::from_bytes([0x43; 32]);
+        let base_id = Hash::from_bytes([0x44; 32]);
+        let governor = demo_keypair(0x31).x_only_public_key().0.serialize().to_vec();
+        let attacker = demo_keypair(0x36).x_only_public_key().0.serialize().to_vec();
+        let core_type = builder.actor_type_handle("dexc::DexCore", "DexCoreCapsule")?;
+        let pair_type = builder.actor_type_handle("dexp::DexPair", "DexPairState")?;
+        let config = PairConfig {
+            initializer: governor.clone(),
+            core_id,
+            core_type: core_type.clone(),
+            quote_id,
+            quote_type: builder.actor_type_handle("m_asset::MintableToken", "AssetCapsule")?,
+            base_id,
+            base_type: builder.actor_type_handle("k_asset::KasToken", "AssetCapsule")?,
+        };
+        let pair = pair_state(&config, true, 0, 0);
+        let records = registry_records(&[config.record(source_pair_id), config.record(target_pair_id)]);
+        let core = core_state(&governor, &core_type, &pair_type, records.clone(), 2);
+        let reserves = [
+            (
+                "m_asset::MintableToken",
+                quote_id,
+                m_asset_state(&source_pair_id.as_bytes(), OWNER_COVID, &[0x51; 32], QUOTE_AMOUNT, QUOTE_AMOUNT),
+                QUOTE_VALUE,
+            ),
+            ("k_asset::KasToken", base_id, k_asset_state(&source_pair_id.as_bytes(), OWNER_COVID, BASE_AMOUNT), BASE_AMOUNT as u64),
+        ];
+        let transfer = |reserve_index: usize, owner: Vec<u8>, owner_kind: u8| {
+            let mut values = args![owner, owner_kind];
+            if reserve_index == 1 {
+                values.push(BASE_AMOUNT.into());
+            }
+            values.push(vec![0u8; 65].into());
+            EntryCall::new("transfer").args(values)
+        };
+
+        for selected in 0..reserves.len() {
+            let (actor, asset_id, reserve, value) = &reserves[selected];
+            let mut moved_reserve = reserve.clone();
+            moved_reserve.insert("owner".to_string(), target_pair_id.as_bytes().to_vec().into());
+            let context = TxContext::new()
+                .actor_input(
+                    "dexp::DexPair",
+                    pair.clone(),
+                    EntryCall::new("move_reserve").args(args![*asset_id, target_pair_id, 1, registry_preimage(&records, 2)]),
+                    demo_outpoint(0xa0, 0),
+                    builder.covenant_utxo("dexp::DexPair", pair.clone(), PAIR_VALUE, 0, false, Some(source_pair_id))?,
+                    0,
+                )
+                .actor_input(
+                    "dexc::DexCore",
+                    core.clone(),
+                    "witness_registry",
+                    demo_outpoint(0xa1, 0),
+                    builder.covenant_utxo("dexc::DexCore", core.clone(), CORE_VALUE, 0, false, Some(core_id))?,
+                    0,
+                )
+                .actor_input(
+                    *actor,
+                    reserve.clone(),
+                    transfer(selected, target_pair_id.as_bytes().to_vec(), OWNER_COVID),
+                    demo_outpoint(0xa2, 0),
+                    builder.covenant_utxo(*actor, reserve.clone(), *value, 0, false, Some(*asset_id))?,
+                    0,
+                )
+                .actor_output("dexp::DexPair", pair_state(&config, true, 0, 1), CovenantBinding::new(0, source_pair_id), PAIR_VALUE)
+                .actor_output("dexc::DexCore", core.clone(), CovenantBinding::new(1, core_id), CORE_VALUE)
+                .actor_output(*actor, moved_reserve, CovenantBinding::new(2, *asset_id), *value);
+            builder.build(&context)?;
+
+            // The other asset permits this transfer because the Pair is co-spent.
+            // The Pair must reject it, regardless of which reserve is being moved.
+            let other = 1 - selected;
+            let (other_actor, other_id, other_reserve, other_value) = &reserves[other];
+            let mut stolen_reserve = other_reserve.clone();
+            stolen_reserve.insert("owner".to_string(), attacker.clone().into());
+            stolen_reserve.insert("owner_kind".to_string(), OWNER_KEY.into());
+            let attack = context
+                .actor_input(
+                    *other_actor,
+                    other_reserve.clone(),
+                    transfer(other, attacker.clone(), OWNER_KEY),
+                    demo_outpoint(0xa3, 0),
+                    builder.covenant_utxo(*other_actor, other_reserve.clone(), *other_value, 0, false, Some(*other_id))?,
+                    0,
+                )
+                .actor_output(*other_actor, stolen_reserve, CovenantBinding::new(3, *other_id), *other_value);
+            let result = builder.build(&attack);
+            assert!(
+                matches!(result, Err(BuilderError::InputScript { input_index: 0, .. })),
+                "Pair must reject the extra asset transfer when moving {actor}: {result:?}"
+            );
+        }
+        Ok(())
+    }
+}

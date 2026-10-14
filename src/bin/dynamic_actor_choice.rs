@@ -20,6 +20,7 @@ actor Alpha owns RouteState {
 actor Beta owns RouteState {
     entry done() emits none {
         require(hops >= 1);
+        require(nonce >= 0);
     }
 }
 
@@ -34,13 +35,13 @@ actor Router owns RouteState {
             require(nonce >= 0);
         }
 
-        RouteState next = {
+        RouteState next_state = {
             nonce: nonce,
             hops: hops + 1,
         };
 
         unrestricted(next.value);
-        become next <- target(next);
+        become next <- target(next_state);
     }
 }
 
