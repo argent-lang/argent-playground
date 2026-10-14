@@ -118,6 +118,7 @@ dependencies = [
  "argent-genesis",
  "argent-runtime",
  "blake2b_simd",
+ "chrono",
  "clap",
  "colored",
  "kaspa-consensus-core",
@@ -164,6 +165,7 @@ version = "0.1.0"
 dependencies = [
  "argent",
  "argent-runtime",
+ "blake3",
  "kaspa-consensus-core",
  "secp256k1",
 ]
