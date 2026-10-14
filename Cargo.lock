@@ -118,6 +118,7 @@ dependencies = [
  "argent-genesis",
  "argent-runtime",
  "blake2b_simd",
+ "chrono",
  "clap",
  "colored",
  "kaspa-consensus-core",
