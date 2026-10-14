@@ -1,7 +1,7 @@
 import "./smt.ag";
 import "./registry.ag";
-import actor RegistryStore from "./registry-store.ag";
-import actor Name from "./name.ag";
+import "./registry-store.ag";
+import "./name.ag";
 
 actor RegistrySlow owns RegistryState {
     entry register(byte[] label, byte[] proof, byte[] witness_label, pubkey owner, sig owner_sig) consumes {
@@ -22,7 +22,7 @@ actor RegistrySlow owns RegistryState {
         byte[63] padded_label = byte[63](
             (
                 label
-                + 0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+                + byte[63](0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000)
             ).slice(0, NAME_BYTES)
         );
         NameState minted_name = {
@@ -36,7 +36,7 @@ actor RegistrySlow owns RegistryState {
         unrestricted(name.value);
 
         become {
-            registry <- RegistrySlow(self.state),
+            registry <- self,
             root_out <- RegistryStore(next_store_state),
             name <- Name(minted_name),
         };

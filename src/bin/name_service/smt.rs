@@ -29,6 +29,7 @@ impl CompactSparseMerkleSet {
     }
 
     /// Returns whether `key` is present.
+    #[allow(dead_code)]
     pub fn contains(&self, key: &Key) -> bool {
         let Some(mut node_index) = self.root else {
             return false;

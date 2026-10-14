@@ -23,6 +23,6 @@ actor Name owns NameState {
         require(checkSig(owner_sig, owner));
 
         unrestricted(next.value);
-        become next <- Name(self.state);
+        become next <- self;
     }
 }

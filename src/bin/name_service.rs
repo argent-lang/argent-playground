@@ -1,4 +1,5 @@
 /** WARNING: Do not treat this implementation as production ready */
+#[path = "name_service/smt.rs"]
 mod smt;
 
 use argent::build_file;
@@ -62,7 +63,7 @@ fn main() -> PlaygroundResult<()> {
 
     // Launch the registry
     let store_initial = state! { root: tree.root_hash().to_vec() };
-    let fast_initial = state! {};
+    let fast_initial = state! { marker: 0 };
     let registry_funding = UtxoEntry::new(STORE_VALUE + REGISTRY_VALUE, ScriptPublicKey::from_vec(0, vec![0x51]), 0, false, None);
     let registry_genesis_context = TxContext::new()
         .input(demo_outpoint(0x90, 0), registry_funding, Vec::new(), 0)
@@ -103,7 +104,7 @@ fn main() -> PlaygroundResult<()> {
         )
         .actor_input("RegistryStore", store_initial, "update_fast", store_empty.outpoint, store_empty.utxo, 0)
         .input(demo_outpoint(0x91, 0), alice_funding, Vec::new(), 0)
-        .actor_output("RegistryFast", state! {}, CovenantBinding::new(0, fast_empty.covenant_id), REGISTRY_VALUE)
+        .actor_output("RegistryFast", state! { marker: 0 }, CovenantBinding::new(0, fast_empty.covenant_id), REGISTRY_VALUE)
         .actor_output("RegistryStore", store_alice.clone(), CovenantBinding::new(0, fast_empty.covenant_id), STORE_VALUE)
         .actor_output("Name", alice_name_state.clone(), CovenantBinding::new(0, fast_empty.covenant_id), NAME_VALUE);
     let mint_alice_tx = builder.build(&mint_alice_context)?;
@@ -130,7 +131,7 @@ fn main() -> PlaygroundResult<()> {
     let mint_bob_context = TxContext::new()
         .actor_input(
             "RegistryFast",
-            state! {},
+            state! { marker: 0 },
             EntryCall::new("register").args_with(|tx, input_idx| {
                 args![
                     bob_name.padded[..bob_name.len].to_vec(),
@@ -146,7 +147,7 @@ fn main() -> PlaygroundResult<()> {
         )
         .actor_input("RegistryStore", store_alice, "update_fast", store_alice_output.outpoint, store_alice_output.utxo, 0)
         .input(demo_outpoint(0x92, 0), bob_funding, Vec::new(), 0)
-        .actor_output("RegistryFast", state! {}, CovenantBinding::new(0, fast_alice.covenant_id), REGISTRY_VALUE)
+        .actor_output("RegistryFast", state! { marker: 0 }, CovenantBinding::new(0, fast_alice.covenant_id), REGISTRY_VALUE)
         .actor_output("RegistryStore", store_bob, CovenantBinding::new(0, fast_alice.covenant_id), STORE_VALUE)
         .actor_output("Name", bob_name_state, CovenantBinding::new(0, fast_alice.covenant_id), NAME_VALUE);
     let mint_bob_tx = builder.build(&mint_bob_context)?;

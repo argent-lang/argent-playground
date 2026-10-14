@@ -1,5 +1,5 @@
-import actor RegistryFast from "./registry-fast.ag";
-import actor RegistrySlow from "./registry-slow.ag";
+import "./registry-fast.ag";
+import "./registry-slow.ag";
 
 state RegistryStoreState {
     byte[32] root;

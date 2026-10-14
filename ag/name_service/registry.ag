@@ -1,1 +1,3 @@
-state RegistryState {}
+state RegistryState {
+    int marker;
+}
