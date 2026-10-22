@@ -1,6 +1,909 @@
 {
+  "actors": [
+    {
+      "entries": [
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "League"
+                ],
+                "auth_index": 0,
+                "name": "league"
+              },
+              {
+                "actors": [
+                  "Player"
+                ],
+                "auth_index": 1,
+                "name": "player"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "register_player",
+          "routes": [
+            {
+              "output": "league",
+              "successor": {
+                "kind": "exact_self"
+              }
+            },
+            {
+              "output": "player",
+              "successor": {
+                "actor": "Player",
+                "kind": "constructed",
+                "state": "next_player"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "League"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "rebalance",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "kind": "exact_self"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "League"
+                ],
+                "auth_index": 0,
+                "name": "left"
+              },
+              {
+                "actors": [
+                  "League"
+                ],
+                "auth_index": 1,
+                "name": "right"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "fork",
+          "routes": [
+            {
+              "output": "left",
+              "successor": {
+                "kind": "exact_self"
+              }
+            },
+            {
+              "output": "right",
+              "successor": {
+                "kind": "exact_self"
+              }
+            }
+          ]
+        }
+      ],
+      "name": "League",
+      "sil": "sil/League.sil",
+      "state": "LeagueState"
+    },
+    {
+      "entries": [
+        {
+          "consumes": [
+            {
+              "actor": "Player",
+              "name": "other"
+            }
+          ],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Player"
+                ],
+                "auth_index": 0,
+                "name": "self_out"
+              },
+              {
+                "actors": [
+                  "Player"
+                ],
+                "auth_index": 1,
+                "name": "other_out"
+              },
+              {
+                "actors": [
+                  "Mux"
+                ],
+                "auth_index": 2,
+                "name": "game"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "start_game",
+          "routes": [
+            {
+              "output": "self_out",
+              "successor": {
+                "actor": "Player",
+                "kind": "constructed",
+                "state": "next_self"
+              }
+            },
+            {
+              "output": "other_out",
+              "successor": {
+                "actor": "Player",
+                "kind": "constructed",
+                "state": "next_other"
+              }
+            },
+            {
+              "output": "game",
+              "successor": {
+                "actor": "Mux",
+                "kind": "constructed",
+                "state": "next_game"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [
+            {
+              "actor": "Player",
+              "name": "leader"
+            }
+          ],
+          "emits": {
+            "kind": "none"
+          },
+          "kind": "delegate",
+          "name": "delegate_start_game",
+          "routes": []
+        },
+        {
+          "consumes": [
+            {
+              "actor": "Settle",
+              "name": "settlement"
+            }
+          ],
+          "emits": {
+            "kind": "none"
+          },
+          "kind": "delegate",
+          "name": "delegate_settle",
+          "routes": []
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Player"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "rebalance",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "kind": "exact_self"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "none"
+          },
+          "kind": "leader",
+          "name": "retire",
+          "routes": []
+        }
+      ],
+      "name": "Player",
+      "sil": "sil/Player.sil",
+      "state": "PlayerState"
+    },
+    {
+      "entries": [
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Move"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "route",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "target",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Mux"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "terminate",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Mux",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Settle"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "timeout",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Settle",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Settle"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "settle",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Settle",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        }
+      ],
+      "name": "Mux",
+      "sil": "sil/Mux.sil",
+      "state": "GameState"
+    },
+    {
+      "entries": [
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Mux"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "apply",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Mux",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Settle"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "timeout",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Settle",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        }
+      ],
+      "name": "Pawn",
+      "sil": "sil/Pawn.sil",
+      "state": "GameState"
+    },
+    {
+      "entries": [
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Mux"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "apply",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Mux",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Settle"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "timeout",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Settle",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        }
+      ],
+      "name": "Knight",
+      "sil": "sil/Knight.sil",
+      "state": "GameState"
+    },
+    {
+      "entries": [
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Mux"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "apply",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Mux",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Settle"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "timeout",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Settle",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        }
+      ],
+      "name": "Vert",
+      "sil": "sil/Vert.sil",
+      "state": "GameState"
+    },
+    {
+      "entries": [
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Mux"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "apply",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Mux",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Settle"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "timeout",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Settle",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        }
+      ],
+      "name": "Horiz",
+      "sil": "sil/Horiz.sil",
+      "state": "GameState"
+    },
+    {
+      "entries": [
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Mux"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "apply",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Mux",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Settle"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "timeout",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Settle",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        }
+      ],
+      "name": "Diag",
+      "sil": "sil/Diag.sil",
+      "state": "GameState"
+    },
+    {
+      "entries": [
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Mux"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "apply",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Mux",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Settle"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "timeout",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Settle",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        }
+      ],
+      "name": "King",
+      "sil": "sil/King.sil",
+      "state": "GameState"
+    },
+    {
+      "entries": [
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Mux"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "apply",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Mux",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Settle"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "timeout",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Settle",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        }
+      ],
+      "name": "Castle",
+      "sil": "sil/Castle.sil",
+      "state": "GameState"
+    },
+    {
+      "entries": [
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Move"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "apply",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "target",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        },
+        {
+          "consumes": [],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Settle"
+                ],
+                "auth_index": 0,
+                "name": "next"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "timeout",
+          "routes": [
+            {
+              "output": "next",
+              "successor": {
+                "actor": "Settle",
+                "kind": "constructed",
+                "state": "next_state"
+              }
+            }
+          ]
+        }
+      ],
+      "name": "CastleChallengePrep",
+      "sil": "sil/CastleChallengePrep.sil",
+      "state": "GameState"
+    },
+    {
+      "entries": [
+        {
+          "consumes": [
+            {
+              "actor": "Player",
+              "name": "white_in"
+            },
+            {
+              "actor": "Player",
+              "name": "black_in"
+            }
+          ],
+          "emits": {
+            "kind": "outputs",
+            "outputs": [
+              {
+                "actors": [
+                  "Player"
+                ],
+                "auth_index": 0,
+                "name": "white_out"
+              },
+              {
+                "actors": [
+                  "Player"
+                ],
+                "auth_index": 1,
+                "name": "black_out"
+              }
+            ]
+          },
+          "kind": "leader",
+          "name": "settle",
+          "routes": [
+            {
+              "output": "white_out",
+              "successor": {
+                "actor": "Player",
+                "kind": "constructed",
+                "state": "next_white"
+              }
+            },
+            {
+              "output": "black_out",
+              "successor": {
+                "actor": "Player",
+                "kind": "constructed",
+                "state": "next_black"
+              }
+            }
+          ]
+        }
+      ],
+      "name": "Settle",
+      "sil": "sil/Settle.sil",
+      "state": "SettleState"
+    }
+  ],
   "app": "Chess",
-  "root": "ag/app.ag",
   "modules": [
     "ag/app.ag",
     "ag/types.ag",
@@ -8,307 +911,67 @@
     "std::core",
     "ag/game.ag"
   ],
+  "root": "ag/app.ag",
   "templates": [
-    { "actor": "League", "symbol": "gen__league_template", "hash": null },
-    { "actor": "Player", "symbol": "gen__player_template", "hash": null },
-    { "actor": "Mux", "symbol": "gen__mux_template", "hash": null },
-    { "actor": "Pawn", "symbol": "gen__pawn_template", "hash": null },
-    { "actor": "Knight", "symbol": "gen__knight_template", "hash": null },
-    { "actor": "Vert", "symbol": "gen__vert_template", "hash": null },
-    { "actor": "Horiz", "symbol": "gen__horiz_template", "hash": null },
-    { "actor": "Diag", "symbol": "gen__diag_template", "hash": null },
-    { "actor": "King", "symbol": "gen__king_template", "hash": null },
-    { "actor": "Castle", "symbol": "gen__castle_template", "hash": null },
-    { "actor": "CastleChallengePrep", "symbol": "gen__castle_challenge_prep_template", "hash": null },
-    { "actor": "Settle", "symbol": "gen__settle_template", "hash": null }
-  ],
-  "actors": [
     {
-      "name": "League",
-      "state": "LeagueState",
-      "sil": "sil/League.sil",
-      "entries": [
-        {
-          "name": "register_player",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "league", "auth_index": 0, "actors": ["League"] }, { "name": "player", "auth_index": 1, "actors": ["Player"] }] },
-          "consumes": [],
-          "routes": [{ "output": "league", "successor": { "kind": "exact_self" } }, { "output": "player", "successor": { "kind": "constructed", "actor": "Player", "state": "next_player" } }]
-        },
-        {
-          "name": "rebalance",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["League"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "exact_self" } }]
-        },
-        {
-          "name": "fork",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "left", "auth_index": 0, "actors": ["League"] }, { "name": "right", "auth_index": 1, "actors": ["League"] }] },
-          "consumes": [],
-          "routes": [{ "output": "left", "successor": { "kind": "exact_self" } }, { "output": "right", "successor": { "kind": "exact_self" } }]
-        }
-      ]
+      "actor": "League",
+      "hash": null,
+      "symbol": "gen__league_template"
     },
     {
-      "name": "Player",
-      "state": "PlayerState",
-      "sil": "sil/Player.sil",
-      "entries": [
-        {
-          "name": "start_game",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "self_out", "auth_index": 0, "actors": ["Player"] }, { "name": "other_out", "auth_index": 1, "actors": ["Player"] }, { "name": "game", "auth_index": 2, "actors": ["Mux"] }] },
-          "consumes": [{ "name": "other", "actor": "Player" }],
-          "routes": [{ "output": "self_out", "successor": { "kind": "constructed", "actor": "Player", "state": "next_self" } }, { "output": "other_out", "successor": { "kind": "constructed", "actor": "Player", "state": "next_other" } }, { "output": "game", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_game" } }]
-        },
-        {
-          "name": "delegate_start_game",
-          "kind": "delegate",
-          "emits": { "kind": "none" },
-          "consumes": [{ "name": "leader", "actor": "Player" }],
-          "routes": []
-        },
-        {
-          "name": "delegate_settle",
-          "kind": "delegate",
-          "emits": { "kind": "none" },
-          "consumes": [{ "name": "settlement", "actor": "Settle" }],
-          "routes": []
-        },
-        {
-          "name": "rebalance",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Player"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "exact_self" } }]
-        },
-        {
-          "name": "retire",
-          "kind": "leader",
-          "emits": { "kind": "none" },
-          "consumes": [],
-          "routes": []
-        }
-      ]
+      "actor": "Player",
+      "hash": null,
+      "symbol": "gen__player_template"
     },
     {
-      "name": "Mux",
-      "state": "GameState",
-      "sil": "sil/Mux.sil",
-      "entries": [
-        {
-          "name": "route",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Move"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "target", "state": "next_state" } }]
-        },
-        {
-          "name": "terminate",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
-        },
-        {
-          "name": "timeout",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
-        },
-        {
-          "name": "settle",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
-        }
-      ]
+      "actor": "Mux",
+      "hash": null,
+      "symbol": "gen__mux_template"
     },
     {
-      "name": "Pawn",
-      "state": "GameState",
-      "sil": "sil/Pawn.sil",
-      "entries": [
-        {
-          "name": "apply",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
-        },
-        {
-          "name": "timeout",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
-        }
-      ]
+      "actor": "Pawn",
+      "hash": null,
+      "symbol": "gen__pawn_template"
     },
     {
-      "name": "Knight",
-      "state": "GameState",
-      "sil": "sil/Knight.sil",
-      "entries": [
-        {
-          "name": "apply",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
-        },
-        {
-          "name": "timeout",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
-        }
-      ]
+      "actor": "Knight",
+      "hash": null,
+      "symbol": "gen__knight_template"
     },
     {
-      "name": "Vert",
-      "state": "GameState",
-      "sil": "sil/Vert.sil",
-      "entries": [
-        {
-          "name": "apply",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
-        },
-        {
-          "name": "timeout",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
-        }
-      ]
+      "actor": "Vert",
+      "hash": null,
+      "symbol": "gen__vert_template"
     },
     {
-      "name": "Horiz",
-      "state": "GameState",
-      "sil": "sil/Horiz.sil",
-      "entries": [
-        {
-          "name": "apply",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
-        },
-        {
-          "name": "timeout",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
-        }
-      ]
+      "actor": "Horiz",
+      "hash": null,
+      "symbol": "gen__horiz_template"
     },
     {
-      "name": "Diag",
-      "state": "GameState",
-      "sil": "sil/Diag.sil",
-      "entries": [
-        {
-          "name": "apply",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
-        },
-        {
-          "name": "timeout",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
-        }
-      ]
+      "actor": "Diag",
+      "hash": null,
+      "symbol": "gen__diag_template"
     },
     {
-      "name": "King",
-      "state": "GameState",
-      "sil": "sil/King.sil",
-      "entries": [
-        {
-          "name": "apply",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
-        },
-        {
-          "name": "timeout",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
-        }
-      ]
+      "actor": "King",
+      "hash": null,
+      "symbol": "gen__king_template"
     },
     {
-      "name": "Castle",
-      "state": "GameState",
-      "sil": "sil/Castle.sil",
-      "entries": [
-        {
-          "name": "apply",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Mux"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Mux", "state": "next_state" } }]
-        },
-        {
-          "name": "timeout",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
-        }
-      ]
+      "actor": "Castle",
+      "hash": null,
+      "symbol": "gen__castle_template"
     },
     {
-      "name": "CastleChallengePrep",
-      "state": "GameState",
-      "sil": "sil/CastleChallengePrep.sil",
-      "entries": [
-        {
-          "name": "apply",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Move"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "target", "state": "next_state" } }]
-        },
-        {
-          "name": "timeout",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "next", "auth_index": 0, "actors": ["Settle"] }] },
-          "consumes": [],
-          "routes": [{ "output": "next", "successor": { "kind": "constructed", "actor": "Settle", "state": "next_state" } }]
-        }
-      ]
+      "actor": "CastleChallengePrep",
+      "hash": null,
+      "symbol": "gen__castle_challenge_prep_template"
     },
     {
-      "name": "Settle",
-      "state": "SettleState",
-      "sil": "sil/Settle.sil",
-      "entries": [
-        {
-          "name": "settle",
-          "kind": "leader",
-          "emits": { "kind": "outputs", "outputs": [{ "name": "white_out", "auth_index": 0, "actors": ["Player"] }, { "name": "black_out", "auth_index": 1, "actors": ["Player"] }] },
-          "consumes": [{ "name": "white_in", "actor": "Player" }, { "name": "black_in", "actor": "Player" }],
-          "routes": [{ "output": "white_out", "successor": { "kind": "constructed", "actor": "Player", "state": "next_white" } }, { "output": "black_out", "successor": { "kind": "constructed", "actor": "Player", "state": "next_black" } }]
-        }
-      ]
+      "actor": "Settle",
+      "hash": null,
+      "symbol": "gen__settle_template"
     }
   ]
 }

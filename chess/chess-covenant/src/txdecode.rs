@@ -320,7 +320,7 @@ fn decode_fixed_i64(bytes: &[u8]) -> Result<i64, DecodeError> {
     if bytes.len() != 8 {
         return Err(DecodeError::InvalidIntegerEncoding);
     }
-    deserialize_i64(bytes, false).map_err(|_| DecodeError::InvalidIntegerEncoding)
+    deserialize_i64(bytes).map_err(|_| DecodeError::InvalidIntegerEncoding)
 }
 
 fn type_name(ty: &TypeArtifact) -> String {

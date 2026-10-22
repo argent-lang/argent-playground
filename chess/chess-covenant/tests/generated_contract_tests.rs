@@ -50,9 +50,9 @@ fn size_snapshots() -> [SizeSnapshot; 12] {
         },
         SizeSnapshot {
             actor: "Player",
-            expected_script_len: 3730,
-            expected_instruction_count: 2659,
-            expected_charged_op_count: 1772,
+            expected_script_len: 3544,
+            expected_instruction_count: 2635,
+            expected_charged_op_count: 1752,
             baseline_script_len: 3456,
             baseline_instruction_count: 2550,
             baseline_charged_op_count: 1660,
