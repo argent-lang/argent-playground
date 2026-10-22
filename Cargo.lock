@@ -118,6 +118,7 @@ dependencies = [
  "argent-genesis",
  "argent-runtime",
  "blake2b_simd",
+ "chrono",
  "clap",
  "colored",
  "kaspa-consensus-core",
@@ -1911,8 +1912,9 @@ dependencies = [
 
 [[package]]
 name = "kaspa-addresses"
-version = "2.0.1"
-source = "git+https://github.com/kaspanet/rusty-kaspa?rev=a41a333b08848f41bf737b72592e463a6011b8ac#a41a333b08848f41bf737b72592e463a6011b8ac"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24fe6a838df0cb72cc8bc574d41ea536f5f027d940fadc0ef86fb3fcf2d0faf8"
 dependencies = [
  "borsh",
  "js-sys",
@@ -1926,8 +1928,9 @@ dependencies = [
 
 [[package]]
 name = "kaspa-consensus-core"
-version = "2.0.1"
-source = "git+https://github.com/kaspanet/rusty-kaspa?rev=a41a333b08848f41bf737b72592e463a6011b8ac#a41a333b08848f41bf737b72592e463a6011b8ac"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d893b4b9e2d572b1075931ed79bdfec0a160cb4adbdf683aa24299c1c70725b"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -1965,8 +1968,9 @@ dependencies = [
 
 [[package]]
 name = "kaspa-core"
-version = "2.0.1"
-source = "git+https://github.com/kaspanet/rusty-kaspa?rev=a41a333b08848f41bf737b72592e463a6011b8ac#a41a333b08848f41bf737b72592e463a6011b8ac"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eb37cbed11008ef926a0373707096f04cbf502c2ed870ed89a968826198acaf"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -1985,8 +1989,9 @@ dependencies = [
 
 [[package]]
 name = "kaspa-hashes"
-version = "2.0.1"
-source = "git+https://github.com/kaspanet/rusty-kaspa?rev=a41a333b08848f41bf737b72592e463a6011b8ac#a41a333b08848f41bf737b72592e463a6011b8ac"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b84bf73434bdcf060ec3cc7a637e9cdb85e7e141910fee7b7cc574efa22514af"
 dependencies = [
  "blake2b_simd",
  "blake3",
@@ -2004,8 +2009,9 @@ dependencies = [
 
 [[package]]
 name = "kaspa-math"
-version = "2.0.1"
-source = "git+https://github.com/kaspanet/rusty-kaspa?rev=a41a333b08848f41bf737b72592e463a6011b8ac#a41a333b08848f41bf737b72592e463a6011b8ac"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3673f7a496fb71fce017db1f9afcb99e08c5ce119814c8f3c98c00fb7ad42d7b"
 dependencies = [
  "borsh",
  "faster-hex 0.9.0",
@@ -2024,16 +2030,18 @@ dependencies = [
 
 [[package]]
 name = "kaspa-merkle"
-version = "2.0.1"
-source = "git+https://github.com/kaspanet/rusty-kaspa?rev=a41a333b08848f41bf737b72592e463a6011b8ac#a41a333b08848f41bf737b72592e463a6011b8ac"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66cfe0181f424ee637d951e170c0d05c82b12de601eafa2b163ad1f91058bdbb"
 dependencies = [
  "kaspa-hashes",
 ]
 
 [[package]]
 name = "kaspa-muhash"
-version = "2.0.1"
-source = "git+https://github.com/kaspanet/rusty-kaspa?rev=a41a333b08848f41bf737b72592e463a6011b8ac#a41a333b08848f41bf737b72592e463a6011b8ac"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10d0dd223223d647fd8464f49502e14fdc868ce28faa862e7ca1f5c9d4a4f797"
 dependencies = [
  "kaspa-hashes",
  "kaspa-math",
@@ -2043,8 +2051,9 @@ dependencies = [
 
 [[package]]
 name = "kaspa-smt"
-version = "2.0.1"
-source = "git+https://github.com/kaspanet/rusty-kaspa?rev=a41a333b08848f41bf737b72592e463a6011b8ac#a41a333b08848f41bf737b72592e463a6011b8ac"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "afc8e67381dfbc60ffdd1d25916648b0ec833a416b70ab74980623ca5cd0a1cb"
 dependencies = [
  "blake3",
  "kaspa-hashes",
@@ -2054,8 +2063,9 @@ dependencies = [
 
 [[package]]
 name = "kaspa-txscript"
-version = "2.0.1"
-source = "git+https://github.com/kaspanet/rusty-kaspa?rev=a41a333b08848f41bf737b72592e463a6011b8ac#a41a333b08848f41bf737b72592e463a6011b8ac"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "363a10df2d620f700001bb4d6a453c879ee7a96e55a5fe6356aceff2867967eb"
 dependencies = [
  "ark-bn254 0.6.0",
  "ark-ec 0.6.0",
@@ -2097,8 +2107,9 @@ dependencies = [
 
 [[package]]
 name = "kaspa-txscript-errors"
-version = "2.0.1"
-source = "git+https://github.com/kaspanet/rusty-kaspa?rev=a41a333b08848f41bf737b72592e463a6011b8ac#a41a333b08848f41bf737b72592e463a6011b8ac"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d5b061f2d1c2881dd1377a21ad2167878d3c7117809d4012388e92d83ff3cce"
 dependencies = [
  "borsh",
  "kaspa-hashes",
@@ -2108,8 +2119,9 @@ dependencies = [
 
 [[package]]
 name = "kaspa-txscript-zk-sdk"
-version = "2.0.1"
-source = "git+https://github.com/kaspanet/rusty-kaspa?rev=a41a333b08848f41bf737b72592e463a6011b8ac#a41a333b08848f41bf737b72592e463a6011b8ac"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e0c7a531e4dad0c531c0a2662d324d1fd025d059ad4007658bfa8428c912887"
 dependencies = [
  "ark-bn254 0.6.0",
  "ark-ec 0.6.0",
@@ -2125,8 +2137,9 @@ dependencies = [
 
 [[package]]
 name = "kaspa-utils"
-version = "2.0.1"
-source = "git+https://github.com/kaspanet/rusty-kaspa?rev=a41a333b08848f41bf737b72592e463a6011b8ac#a41a333b08848f41bf737b72592e463a6011b8ac"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95da50d233d424d6d8a639433fb43a4e56ef5ecbbb25af6cf7ea421d2a817991"
 dependencies = [
  "async-channel 2.5.0",
  "borsh",
@@ -3366,8 +3379,9 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "silverscript-abi"
-version = "0.1.0"
-source = "git+https://github.com/kaspanet/silverscript?rev=3ed973335b59269293564805cc2c58a14595ec03#3ed973335b59269293564805cc2c58a14595ec03"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a71f2222523438132f0e6eac6fd33aed4862ccb7a0448be9c0ede7668dd497a"
 dependencies = [
  "blake3",
  "faster-hex 0.10.0",
@@ -3380,8 +3394,9 @@ dependencies = [
 
 [[package]]
 name = "silverscript-lang"
-version = "1.0.0"
-source = "git+https://github.com/kaspanet/silverscript?rev=3ed973335b59269293564805cc2c58a14595ec03#3ed973335b59269293564805cc2c58a14595ec03"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24c4ede7723b39f62f97648324b209a848b37d6fac24d75098c69c76b2560b08"
 dependencies = [
  "blake2b_simd",
  "blake3",
