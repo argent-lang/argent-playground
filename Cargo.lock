@@ -1989,9 +1989,9 @@ dependencies = [
 
 [[package]]
 name = "kaspa-hashes"
-version = "2.1.0"
+version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad607d2d41c3ba426b5ecb48e3070d2783d71249ebda6132404b338e19f9025c"
+checksum = "b84bf73434bdcf060ec3cc7a637e9cdb85e7e141910fee7b7cc574efa22514af"
 dependencies = [
  "blake2b_simd",
  "blake3",
