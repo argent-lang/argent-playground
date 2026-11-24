@@ -330,8 +330,8 @@ contract Pawn(byte[32] gen__init_player_template, byte[32] gen__init_settle_temp
         byte[64] next_board = byte[64](prefix + byte[1](vx) + middle_xy + byte[1](vy) + middle_yz + byte[1](vz) + suffix);
         GameState next_state = GameState {white_player: white_player, black_player: black_player, board: next_board, turn: (1 - signed(turn)) as byte, status: next_status, move_timeout: move_timeout, castle_rights: castle_rights, en_passant_idx: next_en_passant_idx, pending_src_idx: OFFBOARD, pending_dst_idx: OFFBOARD, pending_promo: CLEAR, recent_castle: CLEAR, draw_state: next_draw_state};
         require(tx.outputs[gen__next_output_idx].value == tx.inputs[this.activeInputIndex].value);
-        State gen__state_next_state = State {gen__player_template: gen__player_template, gen__settle_template: gen__settle_template, gen__mux_template: gen__mux_template, gen__mux_routes: gen__mux_routes, white_player: next_state.white_player, black_player: next_state.black_player, board: next_state.board, turn: next_state.turn, status: next_state.status, move_timeout: next_state.move_timeout, castle_rights: next_state.castle_rights, en_passant_idx: next_state.en_passant_idx, pending_src_idx: next_state.pending_src_idx, pending_dst_idx: next_state.pending_dst_idx, pending_promo: next_state.pending_promo, recent_castle: next_state.recent_castle, draw_state: next_state.draw_state};
-        validateOutputStateWithTemplate(gen__next_output_idx, gen__state_next_state, gen__mux_prefix, gen__mux_suffix, gen__mux_template);
+        State gen__0_route_physical_next = State {gen__player_template: gen__player_template, gen__settle_template: gen__settle_template, gen__mux_template: gen__mux_template, gen__mux_routes: gen__mux_routes, white_player: next_state.white_player, black_player: next_state.black_player, board: next_state.board, turn: next_state.turn, status: next_state.status, move_timeout: next_state.move_timeout, castle_rights: next_state.castle_rights, en_passant_idx: next_state.en_passant_idx, pending_src_idx: next_state.pending_src_idx, pending_dst_idx: next_state.pending_dst_idx, pending_promo: next_state.pending_promo, recent_castle: next_state.recent_castle, draw_state: next_state.draw_state};
+        validateOutputStateWithTemplate(gen__next_output_idx, gen__0_route_physical_next, gen__mux_prefix, gen__mux_suffix, gen__mux_template);
     }
 
     entry timeout(byte[] gen__settle_prefix, byte[] gen__settle_suffix) {
@@ -341,7 +341,7 @@ contract Pawn(byte[32] gen__init_player_template, byte[32] gen__init_settle_temp
         require(this.ageDaa >= move_timeout);
         SettleState next_state = SettleState {white_player: white_player, black_player: black_player, status: timeout_status(turn, draw_state)};
         require(tx.outputs[gen__next_output_idx].value == tx.inputs[this.activeInputIndex].value);
-        Gen__SettleState gen__state_next_gen__settle_state = Gen__SettleState {gen__mux_template: gen__mux_template, gen__player_template: gen__player_template, gen__settle_template: gen__settle_template, gen__mux_routes_digest: blake3(byte[](gen__mux_routes)), white_player: next_state.white_player, black_player: next_state.black_player, status: next_state.status};
-        validateOutputStateWithTemplate(gen__next_output_idx, gen__state_next_gen__settle_state, gen__settle_prefix, gen__settle_suffix, gen__settle_template);
+        Gen__SettleState gen__0_route_physical_next = Gen__SettleState {gen__mux_template: gen__mux_template, gen__player_template: gen__player_template, gen__settle_template: gen__settle_template, gen__mux_routes_digest: blake3(byte[](gen__mux_routes)), white_player: next_state.white_player, black_player: next_state.black_player, status: next_state.status};
+        validateOutputStateWithTemplate(gen__next_output_idx, gen__0_route_physical_next, gen__settle_prefix, gen__settle_suffix, gen__settle_template);
     }
 }

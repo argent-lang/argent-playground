@@ -137,8 +137,8 @@ contract League(byte[32] gen__init_mux_template, byte[32] gen__init_player_templ
         PlayerState next_player = PlayerState {owner: blake2b(byte[](owner_pk)), player_id: invocation_uid(byte[]("LeaguePlayerId")), open_games: 0, rating: base_rating, games: 0, wins: 0, draws: 0, losses: 0};
         require(tx.outputs[gen__league_output_idx].value == tx.inputs[this.activeInputIndex].value);
         require(tx.outputs[gen__league_output_idx].scriptPubKey == tx.inputs[this.activeInputIndex].scriptPubKey);
-        Gen__PlayerState gen__state_player_gen__player_state = Gen__PlayerState {gen__mux_template: gen__mux_template, gen__player_template: gen__player_template, gen__settle_template: gen__settle_template, gen__mux_routes_digest: gen__mux_routes_digest, owner: next_player.owner, player_id: next_player.player_id, open_games: next_player.open_games, rating: next_player.rating, games: next_player.games, wins: next_player.wins, draws: next_player.draws, losses: next_player.losses};
-        validateOutputStateWithTemplate(gen__player_output_idx, gen__state_player_gen__player_state, gen__player_prefix, gen__player_suffix, gen__player_template);
+        Gen__PlayerState gen__1_route_physical_player = Gen__PlayerState {gen__mux_template: gen__mux_template, gen__player_template: gen__player_template, gen__settle_template: gen__settle_template, gen__mux_routes_digest: gen__mux_routes_digest, owner: next_player.owner, player_id: next_player.player_id, open_games: next_player.open_games, rating: next_player.rating, games: next_player.games, wins: next_player.wins, draws: next_player.draws, losses: next_player.losses};
+        validateOutputStateWithTemplate(gen__player_output_idx, gen__1_route_physical_player, gen__player_prefix, gen__player_suffix, gen__player_template);
     }
 
     entry rebalance(sig admin_sig, pubkey admin_pk) {
